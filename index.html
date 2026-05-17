@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Khair Bolt Dashboard</title>
+<title>Bolt — Performance Dashboard</title>
 <style>
 :root {
   --bolt-green: #34D186;
@@ -294,16 +294,6 @@ body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg);
 
 @media (max-width: 1000px) { .summary-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 600px)  { .summary-grid { grid-template-columns: repeat(2, 1fr); } .modal-panel { width: 100vw; } }
-
-/* ── Search + Pagination ── */
-.search-input { padding: 5px 11px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; color: var(--text); background: var(--bg-card); outline: none; width: 180px; transition: border-color .15s; }
-.search-input:focus { border-color: var(--bolt-green); }
-.pagination { display: flex; align-items: center; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
-.pg-btn { font-size: 12px; padding: 5px 11px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); cursor: pointer; color: var(--text-muted); transition: all .15s; min-width: 36px; text-align: center; }
-.pg-btn:hover:not([disabled]) { background: var(--bolt-black); color: #fff; border-color: var(--bolt-black); }
-.pg-btn.active { background: var(--bolt-black); color: #fff; border-color: var(--bolt-black); font-weight: 600; }
-.pg-btn:disabled { opacity: .4; cursor: default; }
-.pg-count { font-size: 12px; color: var(--text-muted); margin-right: 6px; }
 /* ── Name Mapping ── */
 .d-foreign { color: var(--bolt-green); font-weight: 400; font-size: 11px; margin-left: 4px; }
 .mapping-list { margin-top: 10px; border: 0.5px solid var(--border); border-radius: 8px; overflow: hidden; }
@@ -318,6 +308,14 @@ body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg);
 .mapping-count { font-size: 11px; color: var(--text-muted); margin: 6px 0 2px; }
 .mapping-header { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--bg-card2); border-bottom: 0.5px solid var(--border); font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
 .mapping-header .mapping-saudi, .mapping-header .mapping-foreign { color: var(--text-muted); }
+
+/* ── Summary Tab ── */
+.sum-day-bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.sum-day-pill { font-size: 12px; padding: 5px 13px; border-radius: 20px; border: 1px solid var(--border); cursor: pointer; background: var(--bg-card); color: var(--text-muted); transition: all .15s; user-select: none; white-space: nowrap; }
+.sum-day-pill.active { background: var(--bolt-black); color: #fff; border-color: var(--bolt-black); }
+.sum-day-pill:hover:not(.active) { border-color: var(--bolt-green); color: var(--text); }
+.sum-day-pill.all-pill { background: var(--bg-card2); font-weight: 600; }
+.sum-day-pill.all-pill.active { background: var(--bolt-green); color: #000; border-color: var(--bolt-green); }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
@@ -369,6 +367,7 @@ body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg);
   <div class="tab active" data-tab="fleet"    onclick="showTab('fleet',this)">Fleet</div>
   <div class="tab"        data-tab="daily"    onclick="showTab('daily',this)">Daily View</div>
   <div class="tab"        data-tab="history"  onclick="showTab('history',this)">History</div>
+  <div class="tab"        data-tab="summary"  onclick="showTab('summary',this)">Summary</div>
   <div class="tab"        data-tab="settings" onclick="showTab('settings',this)">Settings</div>
 </div>
 
@@ -401,6 +400,17 @@ body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg);
       <div class="empty-icon">🗂</div>
       <div class="empty-title">No history yet</div>
       <div class="empty-sub">Each upload is automatically saved here</div>
+    </div>
+  </div>
+</div>
+
+<!-- Summary Panel -->
+<div id="summary" class="panel">
+  <div id="summaryContent">
+    <div class="empty-state">
+      <div class="empty-icon">📊</div>
+      <div class="empty-title">No data yet</div>
+      <div class="empty-sub">Upload daily reports — they will appear here for review</div>
     </div>
   </div>
 </div>
@@ -484,26 +494,16 @@ let showInactive      = false;
 let dailyMode         = 'single';   // 'single' | 'compare'
 let selectedDate      = null;
 let compareKPI        = 'netEarnings';
-let dailySelectedMonth = 'all';
-let dailySelectedDay   = 'all';
-let dailySortCol2      = 'net';
-let dailySortAsc2      = false;
-let dailySearch2       = '';
-let dailyPage2         = 1;
-let dailyShowInactive2 = false;
 let pendingDrivers    = null;       // holds parsed data before date confirmation
 let pendingFilename   = '';
-let nameMapping       = JSON.parse(localStorage.getItem('khair_name_mapping') || '[]');
+let nameMapping       = JSON.parse(localStorage.getItem('bolt_name_mapping') || '[]');
 let fleetPeriod       = null;       // null = latest, 'all' = aggregated, else specific period string
-let currentPage       = 1;
-let searchQuery       = '';
-const PAGE_SIZE       = 50;
 
 // ═══════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════
 function loadSettings() {
-  const s = JSON.parse(localStorage.getItem('khair_settings3') || '{}');
+  const s = JSON.parse(localStorage.getItem('bolt_settings3') || '{}');
   return {
     monthlyTarget: s.monthlyTarget ?? 6000,
     cutBronze:     s.cutBronze     ?? 1000,
@@ -527,7 +527,7 @@ function saveSettings() {
     flagRatAmber:  get('flagRatAmber', 4.7),
     flagRatRed:    get('flagRatRed', 4.5),
   };
-  localStorage.setItem('khair_settings3', JSON.stringify(s));
+  localStorage.setItem('bolt_settings3', JSON.stringify(s));
   if (currentDrivers) renderFleet(currentDrivers, currentPeriod);
   toast('Settings saved ✓');
 }
@@ -545,6 +545,7 @@ function showTab(id, el) {
   document.getElementById(id).classList.add('active');
   el.classList.add('active');
   if (id === 'daily') renderDailyView();
+  if (id === 'summary') renderSummary();
   if (id === 'fleet') {
     if (currentDrivers) {
       renderFleet(currentDrivers, currentPeriod);
@@ -809,8 +810,6 @@ function buildAggregatedDrivers(history) {
 }
 
 function selectFleetPeriod(p) {
-  currentPage = 1;
-  searchQuery = '';
   fleetPeriod = p;
   const history = getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
   if (p === 'all') {
@@ -844,21 +843,8 @@ function renderFleet(drivers, period) {
     ...d,
     monthlyNet: pInfo ? getMonthlyNet(d.driverId, d.name, pInfo.end.month, pInfo.end.year) : d.netEarnings
   }));
-  const sorted     = sortDrivers(enriched);
-  let display      = showInactive ? sorted : sorted.filter(d => d.isActive);
-  if (searchQuery) {
-    const q = searchQuery.toLowerCase();
-    display = display.filter(d =>
-      d.name.toLowerCase().includes(q) ||
-      (d.phone && d.phone.toLowerCase().includes(q)) ||
-      (d.email && d.email.toLowerCase().includes(q))
-    );
-  }
-  const totalFiltered = display.length;
-  const totalPages    = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
-  if (currentPage > totalPages) currentPage = Math.max(1, totalPages);
-  const pageStart   = (currentPage - 1) * PAGE_SIZE;
-  const pageDrivers = display.slice(pageStart, pageStart + PAGE_SIZE);
+  const sorted  = sortDrivers(enriched);
+  const display = showInactive ? sorted : sorted.filter(d => d.isActive);
 
   // Build day pills from history
   const history     = getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
@@ -892,7 +878,6 @@ function renderFleet(drivers, period) {
       <button class="sort-btn ${sortCol==='target'?'active':''}" onclick="setSort('target')">6k Progress</button>
       <div class="spacer"></div>
       <label class="filter-inactive"><input type="checkbox" ${showInactive?'checked':''} onchange="toggleInactive(this)"> Show inactive</label>
-      <input id="driverSearch" class="search-input" type="text" placeholder="🔍 Search driver…" value="${searchQuery}" oninput="setSearch(this.value)">
     </div>
 
     <div class="table-wrap">
@@ -913,12 +898,11 @@ function renderFleet(drivers, period) {
           <th></th>
         </tr></thead>
         <tbody>
-          ${pageDrivers.map(d => driverRow(d, target, pInfo, s)).join('')}
-          ${totalFiltered===0 ? `<tr><td colspan="13" style="text-align:center;padding:30px;color:var(--text-muted)">${searchQuery ? 'No drivers match your search' : 'No active drivers in this period'}</td></tr>` : ''}
+          ${display.map(d => driverRow(d, target, pInfo, s)).join('')}
+          ${display.length===0 ? `<tr><td colspan="11" style="text-align:center;padding:30px;color:var(--text-muted)">No active drivers in this period</td></tr>` : ''}
         </tbody>
       </table>
-    </div>
-    ${buildPagination(totalFiltered, currentPage)}`;
+    </div>`;
 }
 
 function driverRow(d, target, pInfo, s) {
@@ -944,7 +928,7 @@ function driverRow(d, target, pInfo, s) {
         <div><div class="d-name">${d.name}${foreignName?`<span class="d-foreign">→ ${foreignName}</span>`:''}</div><div class="d-meta">${d.phone||d.email||'—'}</div></div>
       </div></td>
       <td><span class="tier ${tierClass}">${d.tier.englishName}</span></td>
-      <td class="td-r kv">${(d.hoursOnline||0).toFixed?((d.hoursOnline||0).toFixed(1)):(d.hoursOnline||0)}<span style="font-size:11px;color:var(--text-dim)">h</span></td>
+      <td class="td-r kv">${(d.hoursOnline||0).toFixed ? (d.hoursOnline||0).toFixed(1) : (d.hoursOnline||0)}<span style="font-size:11px;color:var(--text-dim)">h</span></td>
       <td class="td-r kv">${d.orders||0}</td>
       <td class="td-r ${d.isActive?accFlag:'kv-muted'}">${d.isActive?(d.acceptance||0)+'%':'—'}</td>
       <td class="td-r kv">${fmt(d.netEarnings||0)}</td>
@@ -970,69 +954,11 @@ function sortDrivers(drivers) {
     return sortAsc ? (a[k]||0)-(b[k]||0) : (b[k]||0)-(a[k]||0);
   });
 }
-// Helper: returns correct driver array + period label for current fleet view
-function getFleetData() {
-  if (fleetPeriod === 'all') {
-    const h = getHistory().sort((a,b) => periodSortKey(b.period) - periodSortKey(a.period));
-    return { drivers: buildAggregatedDrivers(h), period: 'All Days' };
-  }
-  return { drivers: currentDrivers, period: currentPeriod };
-}
 function setSort(c) {
   if (sortCol===c) sortAsc=!sortAsc; else { sortCol=c; sortAsc=false; }
-  currentPage = 1;
-  const { drivers, period } = getFleetData();
-  if (drivers) renderFleet(drivers, period);
+  if (currentDrivers) renderFleet(currentDrivers, currentPeriod);
 }
-function toggleInactive(el) {
-  showInactive = el.checked; currentPage = 1;
-  const { drivers, period } = getFleetData();
-  if (drivers) renderFleet(drivers, period);
-}
-function setSearch(q) {
-  searchQuery = (q || '').trim();
-  currentPage = 1;
-  const { drivers, period } = getFleetData();
-  if (drivers) {
-    renderFleet(drivers, period);
-    const el = document.getElementById('driverSearch');
-    if (el) { el.value = searchQuery; el.focus(); }
-  }
-}
-function goToPage(p) {
-  currentPage = p;
-  const { drivers, period } = getFleetData();
-  if (drivers) renderFleet(drivers, period);
-  document.querySelector('.table-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-function buildPagination(total, current) {
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  if (pages <= 1) {
-    return total > 0 ? `<div class="pg-count">${total} driver${total !== 1 ? 's' : ''}</div>` : '';
-  }
-  const from = (current - 1) * PAGE_SIZE + 1;
-  const to   = Math.min(current * PAGE_SIZE, total);
-  // Build smart page range
-  const range = [1];
-  if (current > 3) range.push('…');
-  for (let p = Math.max(2, current - 1); p <= Math.min(pages - 1, current + 1); p++) range.push(p);
-  if (current < pages - 2) range.push('…');
-  if (pages > 1) range.push(pages);
-  // Deduplicate
-  const deduped = range.filter((v, i, a) => a.indexOf(v) === i);
-  const btnHtml = deduped.map(p =>
-    p === '…'
-      ? `<span style="color:var(--text-dim);font-size:12px;padding:0 2px">…</span>`
-      : `<button class="pg-btn${p === current ? ' active' : ''}" onclick="goToPage(${p})">${p}</button>`
-  ).join('');
-  return `
-    <div class="pagination">
-      <span class="pg-count">${from}–${to} of ${total} drivers</span>
-      <button class="pg-btn" ${current === 1 ? 'disabled' : ''} onclick="goToPage(${current - 1})">← Prev</button>
-      ${btnHtml}
-      <button class="pg-btn" ${current === pages ? 'disabled' : ''} onclick="goToPage(${current + 1})">Next →</button>
-    </div>`;
-}
+function toggleInactive(el) { showInactive=el.checked; if (currentDrivers) renderFleet(currentDrivers, currentPeriod); }
 
 // ═══════════════════════════════════════════
 // DRIVER DETAIL MODAL
@@ -1193,121 +1119,43 @@ function setCompareKPI(kpi) { compareKPI=kpi; renderDailyView(); }
 
 // ── Single Day ──
 function renderSingleDay(sorted) {
-  const s = loadSettings();
-
-  // Validate month/day state against available data
-  const monthOptions = getMonthOptions(sorted);
-  if (dailySelectedMonth !== 'all' && !monthOptions.includes(dailySelectedMonth))
-    dailySelectedMonth = monthOptions.length ? monthOptions[0] : 'all';
-  const dayOptions = getDayOptions(sorted, dailySelectedMonth);
-  if (dailySelectedDay !== 'all' && !dayOptions.includes(dailySelectedDay))
-    dailySelectedDay = 'all';
-
-  // Summary bar entry (specific day only)
-  const entry  = dailySelectedDay !== 'all' ? sorted.find(h => h.period === dailySelectedDay) : null;
-  const isAgg  = dailySelectedDay === 'all';
-
-  // Get + filter + sort + paginate
-  let display = getDailyDisplayDrivers(sorted);
-  if (!dailyShowInactive2) display = display.filter(d => d.isActive);
-  if (dailySearch2) {
-    const q = dailySearch2.toLowerCase();
-    display = display.filter(d =>
-      d.name.toLowerCase().includes(q) ||
-      (d.phone && d.phone.toLowerCase().includes(q))
-    );
-  }
-  display = sortDailyDrivers(display);
-  const totalFiltered   = display.length;
-  const totalDailyPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
-  if (dailyPage2 > totalDailyPages) dailyPage2 = Math.max(1, totalDailyPages);
-  const pageDrivers = display.slice((dailyPage2 - 1) * PAGE_SIZE, dailyPage2 * PAGE_SIZE);
-
-  // Build rows separately to avoid deep template nesting
-  const rowsHtml = pageDrivers.map(d => {
-    const accF    = d.acceptance < s.flagAccRed ? 'c-red' : d.acceptance < s.flagAccAmber ? 'c-amber' : 'c-green';
-    const tc      = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Active:'tier-active'})[d.tier.englishName] || 'tier-none';
-    const fn      = lookupForeignName(d.name);
-    const clickFn = !isAgg
-      ? `openModalForEntry('${d.driverId||d.name}','${dailySelectedDay}')`
-      : `openModal('${d.driverId||d.name}')`;
-    return `<tr class="driver-row ${d.isActive?'':'inactive-row'}" onclick="${clickFn}">
-      <td><div class="driver-cell">
-        <div class="avatar ${d.isActive?'':'av-inactive'}">${d.name[0].toUpperCase()}</div>
-        <div>
-          <div class="d-name">${d.name}${fn ? `<span class="d-foreign">→ ${fn}</span>` : ''}</div>
-          <div class="d-meta">${d.phone || '—'}</div>
-        </div>
-      </div></td>
-      <td><span class="tier ${tc}">${d.tier.englishName}</span></td>
-      <td class="td-r kv">${(d.hoursOnline||0).toFixed?((d.hoursOnline||0).toFixed(1)):(d.hoursOnline||0)}h</td>
-      <td class="td-r kv">${d.orders||0}</td>
-      <td class="td-r ${d.isActive ? accF : 'kv-muted'}">${d.isActive ? (d.acceptance||0) + '%' : '—'}</td>
-      <td class="td-r kv">${fmt(d.netEarnings)}</td>
-      <td class="td-r">${d.rating > 0 ? d.rating.toFixed(2) + '★' : '—'}</td>
-      <td class="td-r kv-muted">${d.distanceTotal > 0 ? fmt(d.distanceTotal) + ' km' : '—'}</td>
-    </tr>`;
-  }).join('');
+  const entry = sorted.find(h=>h.period===selectedDate);
+  const s     = loadSettings();
+  const datePills = sorted.map(h=>`
+    <div class="date-pill ${h.period===selectedDate?'active':''}" onclick="selectDate('${h.period}')">${h.period}</div>`).join('');
 
   document.getElementById('dailyInner').innerHTML = `
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;align-items:flex-end;">
-      <div>
-        <div class="ctrl-label" style="margin-bottom:5px;">Month</div>
-        <select class="kpi-select" onchange="setDailyMonth(this.value)">
-          <option value="all" ${dailySelectedMonth==='all'?'selected':''}>All Months</option>
-          ${monthOptions.map(mk => `<option value="${mk}" ${dailySelectedMonth===mk?'selected':''}>${getMonthLabel(mk)}</option>`).join('')}
-        </select>
-      </div>
-      <div>
-        <div class="ctrl-label" style="margin-bottom:5px;">Day</div>
-        <select class="kpi-select" onchange="setDailyDay(this.value)">
-          <option value="all" ${dailySelectedDay==='all'?'selected':''}>All Days</option>
-          ${dayOptions.map(d => `<option value="${d}" ${dailySelectedDay===d?'selected':''}>${d}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-
+    <div class="daily-date-bar">${datePills}</div>
     ${entry ? `
-    <div class="daily-totals" style="margin-bottom:14px;">
+    <div class="daily-totals">
       <div class="dt-card"><div class="dt-label">Active / Total</div><div class="dt-value">${entry.activeCount}/${entry.driverCount}</div><div class="dt-sub">with rides</div></div>
       <div class="dt-card"><div class="dt-label">Orders</div><div class="dt-value">${entry.totalOrders.toLocaleString()}</div><div class="dt-sub">fleet total</div></div>
       <div class="dt-card"><div class="dt-label">Gross SAR</div><div class="dt-value">${fmt(entry.totalGross)}</div><div class="dt-sub">fleet total</div></div>
       <div class="dt-card"><div class="dt-label">Net SAR</div><div class="dt-value">${fmt(entry.totalNet)}</div><div class="dt-sub">fleet total</div></div>
-      <div class="dt-card"><div class="dt-label">Avg Accept</div><div class="dt-value">${entry.avgAcceptance.toFixed(0)}%</div><div class="dt-sub">active drivers</div></div>
-    </div>` : ''}
-
-    <div class="table-controls" style="margin-bottom:12px;">
-      <span class="ctrl-label">Sort:</span>
-      <button class="sort-btn ${dailySortCol2==='name'?'active':''}"   onclick="setDailySort('name')">Name</button>
-      <button class="sort-btn ${dailySortCol2==='orders'?'active':''}" onclick="setDailySort('orders')">Orders</button>
-      <button class="sort-btn ${dailySortCol2==='hours'?'active':''}"  onclick="setDailySort('hours')">Hours</button>
-      <button class="sort-btn ${dailySortCol2==='accept'?'active':''}" onclick="setDailySort('accept')">Acceptance</button>
-      <button class="sort-btn ${dailySortCol2==='net'?'active':''}"    onclick="setDailySort('net')">Net SAR</button>
-      <div class="spacer"></div>
-      <label class="filter-inactive"><input type="checkbox" ${dailyShowInactive2?'checked':''} onchange="setDailyInactive(this)"> Show inactive</label>
-      <input id="dailySearchInput" class="search-input" type="text" placeholder="🔍 Search driver…" value="${dailySearch2}" oninput="setDailySearch2(this.value)">
+      <div class="dt-card"><div class="dt-label">Avg Acceptance</div><div class="dt-value">${entry.avgAcceptance.toFixed(0)}%</div><div class="dt-sub">active drivers</div></div>
     </div>
-
     <div class="table-wrap">
       <table class="driver-table">
-        <thead><tr>
-          <th>Driver</th><th>Tier</th>
-          <th class="td-r">Hours</th><th class="td-r">Orders</th>
-          <th class="td-r">Acceptance</th><th class="td-r">Net SAR</th>
-          <th class="td-r">Rating</th><th class="td-r">KM</th>
-        </tr></thead>
+        <thead><tr><th>Driver</th><th>Tier</th><th class="td-r">Hours</th><th class="td-r">Orders</th><th class="td-r">Acceptance</th><th class="td-r">Net SAR</th><th class="td-r">Rating</th><th class="td-r">KM</th></tr></thead>
         <tbody>
-          ${rowsHtml}
-          ${totalFiltered === 0 ? `<tr><td colspan="8" style="text-align:center;padding:30px;color:var(--text-muted)">${dailySearch2 ? 'No drivers match your search' : 'No drivers for selected period'}</td></tr>` : ''}
+          ${[...entry.drivers].filter(d=>d.isActive).sort((a,b)=>b.netEarnings-a.netEarnings).map(d=>{
+            const accF = d.acceptance<s.flagAccRed?'c-red':d.acceptance<s.flagAccAmber?'c-amber':'c-green';
+            const tc   = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Active:'tier-active'})[d.tier.englishName]||'tier-none';
+            const fn = lookupForeignName(d.name);
+            return `<tr class="driver-row" onclick="openModalForEntry('${d.driverId||d.name}','${entry.period}')">
+              <td><div class="driver-cell"><div class="avatar">${d.name[0].toUpperCase()}</div><div><div class="d-name">${d.name}${fn?`<span class="d-foreign">→ ${fn}</span>`:''}</div><div class="d-meta">${d.phone||'—'}</div></div></div></td>
+              <td><span class="tier ${tc}">${d.tier.englishName}</span></td>
+              <td class="td-r kv">${d.hoursOnline}h</td>
+              <td class="td-r kv">${d.orders}</td>
+              <td class="td-r ${accF}">${d.acceptance}%</td>
+              <td class="td-r kv">${fmt(d.netEarnings)}</td>
+              <td class="td-r">${d.rating>0?d.rating.toFixed(2)+'★':'—'}</td>
+              <td class="td-r kv-muted">${d.distanceTotal>0?fmt(d.distanceTotal):' —'}</td>
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
-    </div>
-    ${buildDailyPagination(totalFiltered, dailyPage2)}`;
-
-  if (dailySearch2) {
-    const el = document.getElementById('dailySearchInput');
-    if (el) el.focus();
-  }
+    </div>` : '<div class="empty-state"><div class="empty-sub">No data for selected date</div></div>'}`;
 }
 
 // ── Day-over-Day Compare ──
@@ -1396,107 +1244,6 @@ function renderCompareView(sorted) {
 
 function selectDate(period) { selectedDate=period; renderDailyView(); }
 
-// ── Daily view helpers ──
-function getMonthKey(period) {
-  const m = period.match(/(\d{1,2})\s(\w{3})\s(\d{4})/);
-  if (!m) return null;
-  const mn = MONTH_MAP[m[2]];
-  if (mn === undefined) return null;
-  return `${m[3]}-${String(mn + 1).padStart(2, '0')}`;
-}
-function getMonthLabel(key) {
-  const [y, m] = key.split('-');
-  return `${MONTH_NAMES[parseInt(m) - 1]} ${y}`;
-}
-function getMonthOptions(history) {
-  const months = new Set();
-  history.forEach(h => { const mk = getMonthKey(h.period); if (mk) months.add(mk); });
-  return [...months].sort().reverse(); // most recent first
-}
-function getDayOptions(history, monthKey) {
-  const days = monthKey === 'all'
-    ? history.map(h => h.period)
-    : history.filter(h => getMonthKey(h.period) === monthKey).map(h => h.period);
-  return days.sort((a, b) => periodSortKey(b) - periodSortKey(a));
-}
-function getDailyDisplayDrivers(sorted) {
-  if (dailySelectedDay !== 'all') {
-    const entry = sorted.find(h => h.period === dailySelectedDay);
-    return entry ? entry.drivers : [];
-  }
-  const entries = dailySelectedMonth !== 'all'
-    ? sorted.filter(h => getMonthKey(h.period) === dailySelectedMonth)
-    : sorted;
-  return buildAggregatedDrivers(entries);
-}
-function sortDailyDrivers(drivers) {
-  return [...drivers].sort((a, b) => {
-    if (dailySortCol2 === 'name') return dailySortAsc2 ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
-    const map = { orders:'orders', hours:'hoursOnline', accept:'acceptance', net:'netEarnings' };
-    const k = map[dailySortCol2] || 'netEarnings';
-    return dailySortAsc2 ? (a[k]||0) - (b[k]||0) : (b[k]||0) - (a[k]||0);
-  });
-}
-function setDailyMonth(val) {
-  dailySelectedMonth = val;
-  dailySelectedDay   = 'all'; // reset day when month changes
-  dailyPage2         = 1;
-  renderDailyView();
-}
-function setDailyDay(val) {
-  dailySelectedDay = val;
-  dailyPage2       = 1;
-  renderDailyView();
-}
-function setDailySort(col) {
-  if (dailySortCol2 === col) dailySortAsc2 = !dailySortAsc2;
-  else { dailySortCol2 = col; dailySortAsc2 = false; }
-  dailyPage2 = 1;
-  renderDailyView();
-}
-function setDailySearch2(q) {
-  dailySearch2 = (q || '').trim();
-  dailyPage2   = 1;
-  renderDailyView();
-  const el = document.getElementById('dailySearchInput');
-  if (el) { el.value = dailySearch2; el.focus(); }
-}
-function setDailyInactive(el) {
-  dailyShowInactive2 = el.checked;
-  dailyPage2         = 1;
-  renderDailyView();
-}
-function goToDailyPage(p) {
-  dailyPage2 = p;
-  renderDailyView();
-}
-function buildDailyPagination(total, current) {
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  if (pages <= 1) {
-    return total > 0 ? `<div class="pg-count">${total} driver${total !== 1 ? 's' : ''}</div>` : '';
-  }
-  const from = (current - 1) * PAGE_SIZE + 1;
-  const to   = Math.min(current * PAGE_SIZE, total);
-  const range = [1];
-  if (current > 3) range.push('…');
-  for (let p = Math.max(2, current - 1); p <= Math.min(pages - 1, current + 1); p++) range.push(p);
-  if (current < pages - 2) range.push('…');
-  if (pages > 1) range.push(pages);
-  const deduped = range.filter((v, i, a) => a.indexOf(v) === i);
-  const btnHtml = deduped.map(p =>
-    p === '…'
-      ? `<span style="color:var(--text-dim);font-size:12px;padding:0 2px">…</span>`
-      : `<button class="pg-btn${p === current ? ' active' : ''}" onclick="goToDailyPage(${p})">${p}</button>`
-  ).join('');
-  return `
-    <div class="pagination">
-      <span class="pg-count">${from}–${to} of ${total} drivers</span>
-      <button class="pg-btn" ${current === 1 ? 'disabled' : ''} onclick="goToDailyPage(${current - 1})">← Prev</button>
-      ${btnHtml}
-      <button class="pg-btn" ${current === pages ? 'disabled' : ''} onclick="goToDailyPage(${current + 1})">Next →</button>
-    </div>`;
-}
-
 function openModalForEntry(id, period) {
   const h = getHistory().find(h=>h.period===period);
   if (!h) return;
@@ -1509,7 +1256,7 @@ function openModalForEntry(id, period) {
 // ═══════════════════════════════════════════
 // HISTORY TAB
 // ═══════════════════════════════════════════
-function getHistory() { return JSON.parse(localStorage.getItem('khair_perf_history')||'[]'); }
+function getHistory() { return JSON.parse(localStorage.getItem('bolt_perf_history')||'[]'); }
 
 function saveToHistory(period, drivers, filename, pInfo) {
   const history  = getHistory().filter(h=>h.period!==period);
@@ -1517,13 +1264,13 @@ function saveToHistory(period, drivers, filename, pInfo) {
   history.unshift({
     period, filename, uploadedAt:new Date().toISOString(), periodInfo:pInfo,
     driverCount:drivers.length, activeCount:active.length,
-    totalOrders: drivers.reduce((a,d)=>a+(d.orders||0),0),
-    totalGross:  drivers.reduce((a,d)=>a+(d.grossEarnings||0),0),
-    totalNet:    drivers.reduce((a,d)=>a+(d.netEarnings||0),0),
-    avgAcceptance: active.length ? active.reduce((a,d)=>a+(d.acceptance||0),0)/active.length : 0,
+    totalOrders: drivers.reduce((a,d)=>a+d.orders,0),
+    totalGross:  drivers.reduce((a,d)=>a+d.grossEarnings,0),
+    totalNet:    drivers.reduce((a,d)=>a+d.netEarnings,0),
+    avgAcceptance: active.length ? active.reduce((a,d)=>a+d.acceptance,0)/active.length : 0,
     drivers,
   });
-  localStorage.setItem('khair_perf_history', JSON.stringify(history.slice(0,120)));
+  localStorage.setItem('bolt_perf_history', JSON.stringify(history.slice(0,120)));
 }
 
 function renderHistory() {
@@ -1576,7 +1323,7 @@ function toast(msg) {
 }
 function clearAllData() {
   if (!confirm('Clear all history? Cannot be undone.')) return;
-  localStorage.removeItem('khair_perf_history');
+  localStorage.removeItem('bolt_perf_history');
   currentDrivers=null; currentPeriod=''; currentPeriodInfo=null;
   document.getElementById('headerPeriod').textContent='No data loaded';
   document.getElementById('fleetContent').innerHTML=`<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No data loaded</div><div class="empty-sub">Click "Upload Report" to load a Bolt earnings CSV</div></div>`;
@@ -1592,8 +1339,8 @@ const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
 
 function getBinId() {
   const p = new URLSearchParams(window.location.search).get('bin');
-  if (p) { localStorage.setItem('khair_bin_id', p); return p; }
-  return localStorage.getItem('khair_bin_id') || null;
+  if (p) { localStorage.setItem('bolt_bin_id', p); return p; }
+  return localStorage.getItem('bolt_bin_id');
 }
 
 function getShareUrl(binId) {
@@ -1659,9 +1406,9 @@ async function createBin() {
     headers: {
       'Content-Type': 'application/json',
       'X-Master-Key': JSONBIN_KEY,
-      'X-Bin-Name': 'khair-bolt-dashboard',
+      'X-Bin-Name': 'bolt-fleet-dashboard',
     },
-    body: JSON.stringify({ khair_history: [], version: 1 })
+    body: JSON.stringify({ history: [], version: 1 })
   });
   if (!data) return null;
   const binId = data.metadata?.id;
@@ -1670,52 +1417,25 @@ async function createBin() {
     setSyncStatus('error', 'no bin ID');
     return null;
   }
-  localStorage.setItem('khair_bin_id', binId);
+  localStorage.setItem('bolt_bin_id', binId);
   console.log('JSONBin bin created:', binId);
   return binId;
 }
 
 // Strip heavy/unused fields before cloud push — keeps payload under 100KB
-function slimForCloud(history, limit = 10) {
+function slimForCloud(history, limit = 30) {
   return history.slice(0, limit).map(h => ({
-    period:        h.period,
-    filename:      h.filename,
-    uploadedAt:    h.uploadedAt,
-    periodInfo:    h.periodInfo,
-    driverCount:   h.driverCount,
-    activeCount:   h.activeCount,
-    totalOrders:   h.totalOrders,
-    totalGross:    h.totalGross,
-    totalNet:      h.totalNet,
-    avgAcceptance: h.avgAcceptance,
+    ...h,
     drivers: h.drivers.map(d => ({
-      name:             d.name,
-      driverId:         d.driverId,
-      phone:            d.phone,
-      tier:             d.tier,
-      orders:           d.orders,
-      hoursOnline:      d.hoursOnline,
-      netEarnings:      d.netEarnings,
-      grossEarnings:    d.grossEarnings,
-      acceptance:       d.acceptance,
-      rating:           d.rating,
-      score:            d.score,
-      cashGap:          d.cashGap,
-      payoutGap:        d.payoutGap,
-      projectedPayout:  d.projectedPayout,
-      actualPayout:     d.actualPayout,
-      distanceTotal:    d.distanceTotal,
-      distanceAvg:      d.distanceAvg,
-      fleetCut:         d.fleetCut,
-      driverPayout:     d.driverPayout,
-      isActive:         d.isActive,
-      tips:             d.tips,
-      campaign:         d.campaign,
-      commission:       d.commission,
-      netPerHour:       d.netPerHour,
-      finishRate:       d.finishRate,
-      utilization:      d.utilization,
-      activeCategories: d.activeCategories,
+      name: d.name, driverId: d.driverId, phone: d.phone, email: d.email,
+      tier: d.tier, orders: d.orders, hoursOnline: d.hoursOnline,
+      acceptance: d.acceptance, netEarnings: d.netEarnings,
+      grossEarnings: d.grossEarnings, rating: d.rating,
+      distanceTotal: d.distanceTotal, cashGap: d.cashGap,
+      payoutGap: d.payoutGap, projectedPayout: d.projectedPayout,
+      actualPayout: d.actualPayout, isActive: d.isActive,
+      fleetCut: d.fleetCut, driverPayout: d.driverPayout,
+      activeCategories: d.activeCategories, cashEnabled: d.cashEnabled,
     }))
   }));
 }
@@ -1726,36 +1446,28 @@ async function syncToCloud() {
   if (!binId) binId = await createBin();
   if (!binId) return;
 
-  // Fetch full bin first — preserve original fleet data, only update khair_ keys
+  // Fetch latest cloud data first — so we don't overwrite team uploads
   const fetchData = await jbFetch(`${JSONBIN_BASE}/b/${binId}/latest`, {
     headers: { 'X-Master-Key': JSONBIN_KEY }
   });
-  if (!fetchData) return;
-
-  const record = fetchData.record || {};
-  const cloudKhairHistory = record.khair_history || [];
-  const merged = mergeHistories(getHistory(), cloudKhairHistory);
-  localStorage.setItem('khair_perf_history', JSON.stringify(merged)); // full local
-
-  // Write back: preserve ALL existing keys, slim khair_ fields only
-  const updated = {
-    ...record,
-    khair_history:     slimForCloud(merged),   // slimmed 30 days
-    khair_nameMapping: JSON.parse(localStorage.getItem('khair_name_mapping') || '[]'),
-    version: 1
-  };
+  const cloudHistory = fetchData?.record?.history || [];
+  const merged = mergeHistories(getHistory(), cloudHistory);
+  localStorage.setItem('bolt_perf_history', JSON.stringify(merged)); // full local
 
   const data = await jbFetch(`${JSONBIN_BASE}/b/${binId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
-    body: JSON.stringify(updated)
+    body: JSON.stringify({
+      history:     slimForCloud(merged),   // slimmed 30 days for cloud
+      nameMapping: JSON.parse(localStorage.getItem('bolt_name_mapping') || '[]'),
+      version: 1
+    })
   });
 
   if (data) {
-    localStorage.setItem('khair_bin_id', binId);
     setSyncStatus('synced', 'synced ✓');
     updateShareUI(binId);
-    localStorage.setItem('khair_last_sync', new Date().toISOString());
+    localStorage.setItem('bolt_last_sync', new Date().toISOString());
   }
 }
 
@@ -1767,17 +1479,18 @@ async function fetchFromCloud() {
     headers: { 'X-Master-Key': JSONBIN_KEY }
   });
   if (!data) return;
-
-  // Read only the khair_ namespace — don't touch original fleet data
-  const khairHistory = data.record?.khair_history;
-  if (khairHistory && khairHistory.length) {
-    const merged = mergeHistories(getHistory(), khairHistory);
-    localStorage.setItem('khair_perf_history', JSON.stringify(merged));
+  const cloudHistory = data.record?.history;
+  if (!cloudHistory || !cloudHistory.length) {
+    setSyncStatus('synced', 'synced ✓');
+    return;
   }
-  const cloudMapping = data.record?.khair_nameMapping;
+  const merged = mergeHistories(getHistory(), cloudHistory);
+  localStorage.setItem('bolt_perf_history', JSON.stringify(merged));
+  // Pull name mapping from cloud if present and newer than local
+  const cloudMapping = data.record?.nameMapping;
   if (cloudMapping && cloudMapping.length && cloudMapping.length >= nameMapping.length) {
     nameMapping = cloudMapping;
-    localStorage.setItem('khair_name_mapping', JSON.stringify(cloudMapping));
+    localStorage.setItem('bolt_name_mapping', JSON.stringify(cloudMapping));
     renderMappingList();
   }
   setSyncStatus('synced', 'synced ✓');
@@ -1806,11 +1519,11 @@ async function manualSync() {
 }
 
 function resetCloudLink() {
-  localStorage.removeItem('khair_bin_id');
+  localStorage.removeItem('bolt_bin_id');
   const input = document.getElementById('shareInput');
   if (input) input.value = '';
   setSyncStatus('offline', 'Not synced yet');
-  toast('Reset done — click Sync Now');
+  toast('Cloud link reset — click Sync Now to create a fresh one');
 }
 
 // ═══════════════════════════════════════════
@@ -1861,7 +1574,7 @@ function handleMappingFile(file) {
 
 function applyNameMapping(mapping) {
   nameMapping = mapping;
-  localStorage.setItem('khair_name_mapping', JSON.stringify(mapping));
+  localStorage.setItem('bolt_name_mapping', JSON.stringify(mapping));
   renderMappingList();
   syncToCloud();
   if (currentDrivers) renderFleet(currentDrivers, currentPeriod);
@@ -1911,12 +1624,205 @@ function renderMappingList() {
 }
 
 // ═══════════════════════════════════════════
+// SUMMARY TAB
+// ═══════════════════════════════════════════
+let summarySelectedDays = null;   // null = all loaded on first render
+let summaryView         = 'fleet'; // 'fleet' | 'courier'
+
+function renderSummary() {
+  const history = getHistory();
+  const el = document.getElementById('summaryContent');
+  if (!history.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">No data yet</div><div class="empty-sub">Upload daily reports — they will appear here for review</div></div>`;
+    return;
+  }
+  const sorted = [...history].sort((a,b) => periodSortKey(a.period) - periodSortKey(b.period));
+  if (summarySelectedDays === null) summarySelectedDays = new Set(sorted.map(h => h.period));
+  const selected = sorted.filter(h => summarySelectedDays.has(h.period));
+  const kpis     = sumKPIs(selected);
+  el.innerHTML   = buildSummaryHTML(sorted, selected, kpis);
+}
+
+function sumKPIs(entries) {
+  const active = entries.flatMap(h => h.drivers.filter(d => d.isActive));
+  if (!active.length) return { totalGross:0, totalNet:0, totalRides:0, totalDist:0, avgEarnHr:0, avgAccept:0, avgUtil:0, avgFinish:0 };
+  return {
+    totalGross: active.reduce((a,d)=>a+d.grossEarnings,0),
+    totalNet:   active.reduce((a,d)=>a+d.netEarnings,0),
+    totalRides: active.reduce((a,d)=>a+d.orders,0),
+    totalDist:  active.reduce((a,d)=>a+d.distanceTotal,0),
+    avgEarnHr:  active.reduce((a,d)=>a+d.grossPerHour,0) / active.length,
+    avgAccept:  active.reduce((a,d)=>a+d.acceptanceTotal,0) / active.length,
+    avgUtil:    active.reduce((a,d)=>a+d.utilization,0) / active.length,
+    avgFinish:  active.reduce((a,d)=>a+d.finishRate,0) / active.length,
+  };
+}
+
+function buildSummaryHTML(sorted, selected, k) {
+  const allOn = summarySelectedDays && summarySelectedDays.size === sorted.length;
+  const pills = sorted.map(h => {
+    const on = summarySelectedDays && summarySelectedDays.has(h.period);
+    return `<div class="sum-day-pill ${on?'active':''}" onclick="toggleSumDay('${h.period}')">${h.period}</div>`;
+  }).join('');
+
+  const kpiCards = [
+    { label:'Total Earnings',    value:`${fmt(k.totalGross)} SAR`,   sub:`Net ${fmt(k.totalNet)} SAR` },
+    { label:'Avg Earn / hr',     value:`${fmt(k.avgEarnHr)} SAR/h`,  sub:`gross per active driver` },
+    { label:'Avg Acceptance',    value:`${k.avgAccept.toFixed(1)}%`, sub:`total acceptance rate` },
+    { label:'Avg Utilisation',   value:`${k.avgUtil.toFixed(1)}%`,   sub:`of online time` },
+    { label:'Total Rides',       value:`${fmt(k.totalRides)}`,       sub:`${Math.round(k.totalDist).toLocaleString('en-US')} km` },
+  ].map(c => `
+    <div class="summary-card">
+      <div class="s-label">${c.label}</div>
+      <div class="s-value">${c.value}</div>
+      <div class="s-sub">${c.sub}</div>
+    </div>`).join('');
+
+  const fleetOn = summaryView === 'fleet';
+  const tbl = fleetOn ? buildFleetDayTable(selected) : buildCourierSummaryTable(selected);
+
+  return `
+    <div class="sum-day-bar">
+      <span class="ctrl-label">Days:</span>
+      <div class="sum-day-pill all-pill ${allOn?'active':''}" onclick="toggleSumAll()">${allOn?'✓ All days':'Select all'}</div>
+      ${pills}
+    </div>
+    <div class="summary-grid" style="margin-bottom:16px">${kpiCards}</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <div class="view-toggle">
+        <button class="view-toggle-btn ${fleetOn?'active':''}"  onclick="setSumView('fleet')">Fleet per day</button>
+        <button class="view-toggle-btn ${!fleetOn?'active':''}" onclick="setSumView('courier')">By Courier</button>
+      </div>
+      <span style="font-size:12px;color:var(--text-muted)">${selected.length} day(s) selected</span>
+    </div>
+    ${tbl}`;
+}
+
+function pctCol(val, good, bad) {
+  if (val >= good) return 'c-green';
+  if (val >= bad)  return 'c-amber';
+  return 'c-red';
+}
+
+function buildFleetDayTable(entries) {
+  if (!entries.length) return `<div class="empty-state" style="padding:30px"><div class="empty-title">No days selected</div></div>`;
+  const rows = entries.map(h => {
+    const act = h.drivers.filter(d => d.isActive);
+    if (!act.length) return '';
+    const tGross = act.reduce((a,d)=>a+d.grossEarnings,0);
+    const tNet   = act.reduce((a,d)=>a+d.netEarnings,0);
+    const tRides = act.reduce((a,d)=>a+d.orders,0);
+    const tDist  = act.reduce((a,d)=>a+d.distanceTotal,0);
+    const aEH    = act.reduce((a,d)=>a+d.grossPerHour,0)  / act.length;
+    const aFR    = act.reduce((a,d)=>a+d.finishRate,0)    / act.length;
+    const aAcc   = act.reduce((a,d)=>a+d.acceptanceTotal,0) / act.length;
+    const aUtil  = act.reduce((a,d)=>a+d.utilization,0)   / act.length;
+    return `<tr>
+      <td class="td-bold">${h.period}</td>
+      <td style="color:var(--text-muted)">${act.length} drivers</td>
+      <td class="td-r">${fmt(tGross)} <span style="font-size:11px;color:var(--text-muted)">/ ${fmt(tNet)} net</span></td>
+      <td class="td-r">${fmt(aEH)}/h</td>
+      <td class="td-r ${pctCol(aFR,80,70)}">${aFR.toFixed(1)}%</td>
+      <td class="td-r ${pctCol(aAcc,80,70)}">${aAcc.toFixed(1)}%</td>
+      <td class="td-r ${pctCol(aUtil,70,55)}">${aUtil.toFixed(1)}%</td>
+      <td class="td-r">${tRides}</td>
+      <td class="td-r">${Math.round(tDist).toLocaleString('en-US')} km</td>
+    </tr>`;
+  }).join('');
+  return `<div class="table-wrap"><table class="driver-table">
+    <thead><tr>
+      <th>Date</th><th>Active</th>
+      <th class="td-r">Earnings (SAR)</th>
+      <th class="td-r">Earn/hr</th>
+      <th class="td-r">Finish rate</th>
+      <th class="td-r">Acceptance</th>
+      <th class="td-r">Utilisation</th>
+      <th class="td-r">Rides</th>
+      <th class="td-r">Distance</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+function buildCourierSummaryTable(entries) {
+  if (!entries.length) return `<div class="empty-state" style="padding:30px"><div class="empty-title">No days selected</div></div>`;
+  const map = {};
+  entries.forEach(h => {
+    h.drivers.filter(d => d.isActive).forEach(d => {
+      if (!map[d.name]) map[d.name] = { name:d.name, days:0, gross:0, net:0, rides:0, dist:0, ehSum:0, frSum:0, acSum:0, utSum:0 };
+      const m = map[d.name];
+      m.days++; m.gross+=d.grossEarnings; m.net+=d.netEarnings;
+      m.rides+=d.orders; m.dist+=d.distanceTotal;
+      m.ehSum+=d.grossPerHour; m.frSum+=d.finishRate;
+      m.acSum+=d.acceptanceTotal; m.utSum+=d.utilization;
+    });
+  });
+  const couriers = Object.values(map).sort((a,b)=>b.gross-a.gross);
+  const rows = couriers.map(c => {
+    const aEH = c.ehSum/c.days, aFR = c.frSum/c.days;
+    const aAcc = c.acSum/c.days, aUtil = c.utSum/c.days;
+    const foreign = lookupForeignName(c.name);
+    const nameHTML = foreign
+      ? `<div class="d-name">${foreign}</div><div class="d-meta">${c.name}</div>`
+      : `<div class="d-name">${c.name}</div>`;
+    return `<tr>
+      <td><div class="driver-cell"><div class="avatar">${(foreign||c.name).charAt(0).toUpperCase()}</div><div>${nameHTML}</div></div></td>
+      <td class="td-r" style="color:var(--text-muted)">${c.days}d</td>
+      <td class="td-r">${fmt(c.gross)} <span style="font-size:11px;color:var(--text-muted)">/ ${fmt(c.net)} net</span></td>
+      <td class="td-r">${fmt(aEH)}/h</td>
+      <td class="td-r ${pctCol(aFR,80,70)}">${aFR.toFixed(1)}%</td>
+      <td class="td-r ${pctCol(aAcc,80,70)}">${aAcc.toFixed(1)}%</td>
+      <td class="td-r ${pctCol(aUtil,70,55)}">${aUtil.toFixed(1)}%</td>
+      <td class="td-r">${c.rides}</td>
+      <td class="td-r">${Math.round(c.dist).toLocaleString('en-US')} km</td>
+    </tr>`;
+  }).join('');
+  return `<div class="table-wrap"><table class="driver-table">
+    <thead><tr>
+      <th>Courier</th>
+      <th class="td-r">Days</th>
+      <th class="td-r">Earnings (SAR)</th>
+      <th class="td-r">Earn/hr</th>
+      <th class="td-r">Finish rate</th>
+      <th class="td-r">Acceptance</th>
+      <th class="td-r">Utilisation</th>
+      <th class="td-r">Rides</th>
+      <th class="td-r">Distance</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+function toggleSumDay(period) {
+  if (!summarySelectedDays) {
+    summarySelectedDays = new Set(getHistory().map(h => h.period));
+  }
+  if (summarySelectedDays.has(period)) {
+    if (summarySelectedDays.size > 1) summarySelectedDays.delete(period);
+  } else {
+    summarySelectedDays.add(period);
+  }
+  renderSummary();
+}
+
+function toggleSumAll() {
+  const history = getHistory();
+  const allOn   = summarySelectedDays && summarySelectedDays.size === history.length;
+  summarySelectedDays = allOn
+    ? new Set([history.sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period))[0]?.period].filter(Boolean))
+    : new Set(history.map(h => h.period));
+  renderSummary();
+}
+
+function setSumView(v) { summaryView = v; renderSummary(); }
+
+// ═══════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════
 initSettingsUI();
 renderMappingList();
 // Restore last sync label if known
-const _lastSync = localStorage.getItem('khair_last_sync');
+const _lastSync = localStorage.getItem('bolt_last_sync');
 if (_lastSync) {
   const t = new Date(_lastSync);
   const el = document.getElementById('lastSyncTime');
@@ -1924,51 +1830,13 @@ if (_lastSync) {
 }
 function autoLoadLatest() {
   const history = getHistory();
-  if (!history.length) {
-    // No data — show helpful connect panel if no bin ID is linked
-    if (!getBinId()) {
-      document.getElementById('fleetContent').innerHTML = `
-        <div class="empty-state">
-          <div class="empty-icon">🔗</div>
-          <div class="empty-title">No data linked</div>
-          <div class="empty-sub">Open this page using your share link (it includes <code style="font-family:monospace;background:#f0f0ea;padding:2px 6px;border-radius:4px">?bin=…</code> in the URL), or paste your bin ID / share URL below.</div>
-          <div style="margin-top:18px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;align-items:center;">
-            <input id="manualBinInput" class="search-input" style="width:300px;font-size:13px;" placeholder="Paste share URL or bin ID…">
-            <button class="save-btn" style="margin-top:0;" onclick="manualConnectBin()">Connect →</button>
-          </div>
-          <div style="margin-top:10px;font-size:12px;color:var(--text-muted)">Or upload a new report above to start fresh on this device.</div>
-        </div>`;
-    }
-    return;
-  }
+  if (!history.length) return;
   const latest = [...history].sort((a,b) => periodSortKey(b.period) - periodSortKey(a.period))[0];
   currentDrivers    = latest.drivers;
   currentPeriod     = latest.period;
   currentPeriodInfo = latest.periodInfo || null;
   document.getElementById('headerPeriod').textContent = latest.period;
   renderFleet(latest.drivers, latest.period);
-}
-
-function manualConnectBin() {
-  const input = document.getElementById('manualBinInput');
-  const val   = (input?.value || '').trim();
-  if (!val) { toast('Paste your share URL or bin ID first'); return; }
-  // Accept full share URL or bare bin ID
-  let binId = val;
-  if (val.includes('?')) {
-    try { binId = new URL(val).searchParams.get('bin') || val; } catch(_) {
-      binId = val.split('?').pop().replace('bin=','').split('&')[0];
-    }
-  }
-  if (!binId) { toast('Could not read bin ID — check the URL'); return; }
-  localStorage.setItem('khair_bin_id', binId);
-  toast('Connecting to cloud…');
-  fetchFromCloud().then(() => {
-    renderHistory();
-    autoLoadLatest();
-    const bid = getBinId();
-    if (bid) updateShareUI(bid);
-  });
 }
 
 // Load from cloud first, then render
