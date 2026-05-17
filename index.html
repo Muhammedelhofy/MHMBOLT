@@ -597,9 +597,13 @@ function confirmUpload() {
   document.getElementById('headerPeriod').textContent = period;
 
   saveToHistory(period, currentDrivers, pendingFilename, pInfo);
+  summarySelectedDays = null; // reset so Summary re-initialises to All on next visit
+  sumPeriodMode = 'all';
   renderFleet(currentDrivers, period);
   renderDailyView();
   renderHistory();
+  // Re-render Summary if it's currently open
+  if (document.getElementById('summary')?.classList.contains('active')) renderSummary();
   toast(`${currentDrivers.length} drivers saved for ${period}`);
   syncToCloud(); // auto-sync to cloud — manager sees it instantly
 }
@@ -1896,6 +1900,8 @@ function autoLoadLatest() {
 
 // Load from cloud first, then render
 fetchFromCloud().then(() => {
+  summarySelectedDays = null; // ensure Summary starts fresh after cloud load
+  sumPeriodMode = 'all';
   renderHistory();
   autoLoadLatest();
   // Restore shareInput if bin known
