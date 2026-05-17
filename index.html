@@ -1121,11 +1121,20 @@ function setCompareKPI(kpi) { compareKPI=kpi; renderDailyView(); }
 function renderSingleDay(sorted) {
   const entry = sorted.find(h=>h.period===selectedDate);
   const s     = loadSettings();
-  const datePills = sorted.map(h=>`
-    <div class="date-pill ${h.period===selectedDate?'active':''}" onclick="selectDate('${h.period}')">${h.period}</div>`).join('');
+  const descDates = [...sorted].reverse();
+  const datePicker = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+      <span class="ctrl-label">Date:</span>
+      <select class="kpi-select" onchange="selectDate(this.value)">
+        ${descDates.map(h=>`<option value="${h.period}" ${h.period===selectedDate?'selected':''}>${h.period}</option>`).join('')}
+      </select>
+      <button class="sort-btn" onclick="stepDate(-1,${JSON.stringify(sorted.map(h=>h.period))})" ${sorted[0].period===selectedDate?'disabled':''}>◀ Prev</button>
+      <button class="sort-btn" onclick="stepDate(1,${JSON.stringify(sorted.map(h=>h.period))})"  ${sorted[sorted.length-1].period===selectedDate?'disabled':''}>Next ▶</button>
+      <span style="font-size:11px;color:var(--text-muted)">${sorted.length} day(s) loaded</span>
+    </div>`;
 
   document.getElementById('dailyInner').innerHTML = `
-    <div class="daily-date-bar">${datePills}</div>
+    ${datePicker}
     ${entry ? `
     <div class="daily-totals">
       <div class="dt-card"><div class="dt-label">Active / Total</div><div class="dt-value">${entry.activeCount}/${entry.driverCount}</div><div class="dt-sub">with rides</div></div>
@@ -1243,6 +1252,11 @@ function renderCompareView(sorted) {
 }
 
 function selectDate(period) { selectedDate=period; renderDailyView(); }
+function stepDate(dir, periods) {
+  const idx = periods.indexOf(selectedDate);
+  const next = periods[idx + dir];
+  if (next) { selectedDate = next; renderDailyView(); }
+}
 
 function openModalForEntry(id, period) {
   const h = getHistory().find(h=>h.period===period);
@@ -1637,7 +1651,10 @@ function renderSummary() {
     return;
   }
   const sorted = [...history].sort((a,b) => periodSortKey(a.period) - periodSortKey(b.period));
-  if (summarySelectedDays === null) summarySelectedDays = new Set(sorted.map(h => h.period));
+  if (summarySelectedDays === null) {
+    summarySelectedDays = new Set(sorted.map(h => h.period));
+    sumPeriodMode = 'all';
+  }
   const selected = sorted.filter(h => summarySelectedDays.has(h.period));
   const kpis     = sumKPIs(selected);
   el.innerHTML   = buildSummaryHTML(sorted, selected, kpis);
@@ -1645,6 +1662,8 @@ function renderSummary() {
 
 // Safe number accessor — returns 0 for undefined, null, NaN
 function sN(v) { return (typeof v === 'number' && !isNaN(v)) ? v : 0; }
+// Use effective acceptance rate (d.acceptance) as primary; fall back to total acceptance
+function accVal(d) { return sN(d.acceptanceTotal) || sN(d.acceptance); }
 // Display helper: show '—' if value is 0 (means data missing), else show with suffix
 function pctOrDash(v, dec=1) { return v > 0 ? v.toFixed(dec) + '%' : '—'; }
 function earnHrOrDash(v)     { return v > 0 ? fmt(v) + '/h' : '—'; }
@@ -1653,35 +1672,67 @@ function sumKPIs(entries) {
   // Only include active drivers (orders > 0) — excludes drivers who didn't work that day
   const active = entries.flatMap(h => h.drivers.filter(d => d.isActive));
   if (!active.length) return { totalGross:0, totalNet:0, totalRides:0, totalDist:0, earnHr:0, avgAccept:0, avgUtil:0, avgFinish:0 };
-  const totalHrs = active.reduce((a,d)=>a+sN(d.hoursOnline),0);
+  const totalHrs   = active.reduce((a,d)=>a+sN(d.hoursOnline),0);
   const totalGross = active.reduce((a,d)=>a+sN(d.grossEarnings),0);
-  // Count only drivers with valid rate data for rate averages
-  const withRates = active.filter(d => sN(d.acceptanceTotal) > 0 || sN(d.utilization) > 0);
+  // Only average rates from drivers where at least acceptance or utilisation is available
+  const withRates  = active.filter(d => accVal(d) > 0 || sN(d.utilization) > 0);
   return {
     totalGross,
     totalNet:   active.reduce((a,d)=>a+sN(d.netEarnings),0),
     totalRides: active.reduce((a,d)=>a+sN(d.orders),0),
     totalDist:  active.reduce((a,d)=>a+sN(d.distanceTotal),0),
-    earnHr:     totalHrs > 0 ? totalGross / totalHrs : 0,  // weighted, not averaged
-    avgAccept:  withRates.length ? withRates.reduce((a,d)=>a+sN(d.acceptanceTotal),0) / withRates.length : 0,
+    earnHr:     totalHrs > 0 ? totalGross / totalHrs : 0,
+    avgAccept:  withRates.length ? withRates.reduce((a,d)=>a+accVal(d),0)      / withRates.length : 0,
     avgUtil:    withRates.length ? withRates.reduce((a,d)=>a+sN(d.utilization),0) / withRates.length : 0,
-    avgFinish:  withRates.length ? withRates.reduce((a,d)=>a+sN(d.finishRate),0) / withRates.length : 0,
+    avgFinish:  withRates.length ? withRates.reduce((a,d)=>a+sN(d.finishRate),0)  / withRates.length : 0,
   };
 }
 
+// ── Summary period helpers ──
+let sumPeriodMode = 'all'; // 'all' | '7' | '14' | 'month' | 'custom'
+
+function setSumPeriod(mode) {
+  const history = getHistory();
+  const sorted  = [...history].sort((a,b) => periodSortKey(b.period) - periodSortKey(a.period));
+  sumPeriodMode = mode;
+  if (mode === 'all') {
+    summarySelectedDays = new Set(sorted.map(h => h.period));
+  } else if (mode === '7' || mode === '14') {
+    const n = parseInt(mode);
+    summarySelectedDays = new Set(sorted.slice(0, n).map(h => h.period));
+  } else if (mode === 'month') {
+    const ref = sorted[0]?.period || '';
+    const m   = ref.match(/(\w+)\s(\d{4})/);
+    summarySelectedDays = m
+      ? new Set(sorted.filter(h => h.period.includes(m[1]) && h.period.includes(m[2])).map(h=>h.period))
+      : new Set(sorted.map(h=>h.period));
+  }
+  renderSummary();
+}
+
+function setSumDay(period) {
+  if (!period) return;
+  sumPeriodMode = 'custom';
+  summarySelectedDays = new Set([period]);
+  renderSummary();
+}
+
 function buildSummaryHTML(sorted, selected, k) {
-  const allOn = summarySelectedDays && summarySelectedDays.size === sorted.length;
-  const pills = sorted.map(h => {
-    const on = summarySelectedDays && summarySelectedDays.has(h.period);
-    return `<div class="sum-day-pill ${on?'active':''}" onclick="toggleSumDay('${h.period}')">${h.period}</div>`;
-  }).join('');
+  const n      = sorted.length;
+  const allOn  = summarySelectedDays && summarySelectedDays.size === n;
+  const is7    = summarySelectedDays?.size <= 7  && sumPeriodMode === '7';
+  const is14   = summarySelectedDays?.size <= 14 && sumPeriodMode === '14';
+  const isMon  = sumPeriodMode === 'month';
+  // Reverse sorted for dropdown (newest first)
+  const descSorted = [...sorted].reverse();
+  const singleSel  = summarySelectedDays?.size === 1 ? [...summarySelectedDays][0] : '';
 
   const kpiCards = [
-    { label:'Total Earnings',    value:`${fmt(k.totalGross)} SAR`,    sub:`Net ${fmt(k.totalNet)} SAR` },
-    { label:'Earn / hr',         value:earnHrOrDash(k.earnHr),        sub:`fleet gross ÷ online hrs` },
-    { label:'Avg Acceptance',    value:pctOrDash(k.avgAccept),        sub:`active drivers only` },
-    { label:'Avg Utilisation',   value:pctOrDash(k.avgUtil),          sub:`of online time` },
-    { label:'Total Rides',       value:`${fmt(k.totalRides)}`,        sub:`${Math.round(k.totalDist).toLocaleString('en-US')} km` },
+    { label:'Total Earnings',  value:`${fmt(k.totalGross)} SAR`,  sub:`Net ${fmt(k.totalNet)} SAR` },
+    { label:'Earn / hr',       value:earnHrOrDash(k.earnHr),      sub:`fleet gross ÷ online hrs` },
+    { label:'Avg Acceptance',  value:pctOrDash(k.avgAccept),      sub:`active drivers only` },
+    { label:'Avg Utilisation', value:pctOrDash(k.avgUtil),        sub:`of online time` },
+    { label:'Total Rides',     value:`${fmt(k.totalRides)}`,      sub:`${Math.round(k.totalDist).toLocaleString('en-US')} km` },
   ].map(c => `
     <div class="summary-card">
       <div class="s-label">${c.label}</div>
@@ -1690,13 +1741,21 @@ function buildSummaryHTML(sorted, selected, k) {
     </div>`).join('');
 
   const fleetOn = summaryView === 'fleet';
-  const tbl = fleetOn ? buildFleetDayTable(selected) : buildCourierSummaryTable(selected);
+  const tbl     = fleetOn ? buildFleetDayTable(selected) : buildCourierSummaryTable(selected);
 
   return `
-    <div class="sum-day-bar">
-      <span class="ctrl-label">Days:</span>
-      <div class="sum-day-pill all-pill ${allOn?'active':''}" onclick="toggleSumAll()">${allOn?'✓ All days':'Select all'}</div>
-      ${pills}
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+      <span class="ctrl-label">Period:</span>
+      <button class="sort-btn ${allOn?'active':''}" onclick="setSumPeriod('all')">All (${n})</button>
+      ${n>=7?`<button class="sort-btn ${is7?'active':''}" onclick="setSumPeriod('7')">Last 7 days</button>`:''}
+      ${n>=14?`<button class="sort-btn ${is14?'active':''}" onclick="setSumPeriod('14')">Last 14 days</button>`:''}
+      <button class="sort-btn ${isMon?'active':''}" onclick="setSumPeriod('month')">This month</button>
+      <span class="ctrl-label" style="margin-left:6px">Single day:</span>
+      <select class="kpi-select" onchange="setSumDay(this.value)">
+        <option value="">— pick a day —</option>
+        ${descSorted.map(h=>`<option value="${h.period}" ${singleSel===h.period?'selected':''}>${h.period}</option>`).join('')}
+      </select>
+      <span style="font-size:11px;color:var(--text-muted)">${selected.length} day(s) selected</span>
     </div>
     <div class="summary-grid" style="margin-bottom:16px">${kpiCards}</div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
@@ -1704,7 +1763,6 @@ function buildSummaryHTML(sorted, selected, k) {
         <button class="view-toggle-btn ${fleetOn?'active':''}"  onclick="setSumView('fleet')">Fleet per day</button>
         <button class="view-toggle-btn ${!fleetOn?'active':''}" onclick="setSumView('courier')">By Courier</button>
       </div>
-      <span style="font-size:12px;color:var(--text-muted)">${selected.length} day(s) selected</span>
     </div>
     ${tbl}`;
 }
@@ -1726,10 +1784,10 @@ function buildFleetDayTable(entries) {
     const tDist  = act.reduce((a,d)=>a+sN(d.distanceTotal),0);
     const tHrs   = act.reduce((a,d)=>a+sN(d.hoursOnline),0);
     const aEH    = tHrs > 0 ? tGross / tHrs : 0;  // weighted earn/hr
-    const wr     = act.filter(d => sN(d.acceptanceTotal) > 0 || sN(d.utilization) > 0);
-    const aFR    = wr.length ? wr.reduce((a,d)=>a+sN(d.finishRate),0)     / wr.length : 0;
-    const aAcc   = wr.length ? wr.reduce((a,d)=>a+sN(d.acceptanceTotal),0)/ wr.length : 0;
-    const aUtil  = wr.length ? wr.reduce((a,d)=>a+sN(d.utilization),0)    / wr.length : 0;
+    const wr     = act.filter(d => accVal(d) > 0 || sN(d.utilization) > 0);
+    const aFR    = wr.length ? wr.reduce((a,d)=>a+sN(d.finishRate),0) / wr.length : 0;
+    const aAcc   = wr.length ? wr.reduce((a,d)=>a+accVal(d),0)        / wr.length : 0;
+    const aUtil  = wr.length ? wr.reduce((a,d)=>a+sN(d.utilization),0)/ wr.length : 0;
     return `<tr>
       <td class="td-bold">${h.period}</td>
       <td style="color:var(--text-muted)">${act.length} drivers</td>
@@ -1767,8 +1825,8 @@ function buildCourierSummaryTable(entries) {
       m.days++; m.gross+=sN(d.grossEarnings); m.net+=sN(d.netEarnings);
       m.rides+=sN(d.orders); m.dist+=sN(d.distanceTotal); m.hrs+=sN(d.hoursOnline);
       // Only count rate data from days where driver had valid rate data
-      if (sN(d.acceptanceTotal) > 0 || sN(d.utilization) > 0) {
-        m.frSum+=sN(d.finishRate); m.acSum+=sN(d.acceptanceTotal);
+      if (accVal(d) > 0 || sN(d.utilization) > 0) {
+        m.frSum+=sN(d.finishRate); m.acSum+=accVal(d);
         m.utSum+=sN(d.utilization); m.rDays++;
       }
     });
@@ -1809,27 +1867,6 @@ function buildCourierSummaryTable(entries) {
     </tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
-}
-
-function toggleSumDay(period) {
-  if (!summarySelectedDays) {
-    summarySelectedDays = new Set(getHistory().map(h => h.period));
-  }
-  if (summarySelectedDays.has(period)) {
-    if (summarySelectedDays.size > 1) summarySelectedDays.delete(period);
-  } else {
-    summarySelectedDays.add(period);
-  }
-  renderSummary();
-}
-
-function toggleSumAll() {
-  const history = getHistory();
-  const allOn   = summarySelectedDays && summarySelectedDays.size === history.length;
-  summarySelectedDays = allOn
-    ? new Set([history.sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period))[0]?.period].filter(Boolean))
-    : new Set(history.map(h => h.period));
-  renderSummary();
 }
 
 function setSumView(v) { summaryView = v; renderSummary(); }
