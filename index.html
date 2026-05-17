@@ -1276,6 +1276,32 @@ function openModalForEntry(id, period) {
 // ═══════════════════════════════════════════
 function getHistory() { return JSON.parse(localStorage.getItem('bolt_perf_history')||'[]'); }
 
+// Protected localStorage write — never lets a save reduce history count
+function safeSetHistory(history) {
+  const current = getHistory();
+  // Build a union: keep everything in current, add/update from new list
+  const currentPeriods = new Set(current.map(h=>h.period));
+  const onlyInNew = history.filter(h => !currentPeriods.has(h.period));
+  const union = [...current, ...onlyInNew].sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
+  // Use new version for periods that exist in both (newer uploadedAt wins)
+  const map = new Map();
+  union.forEach(h => {
+    const ex = map.get(h.period);
+    if (!ex) { map.set(h.period, h); return; }
+    const tEx = new Date(ex.uploadedAt||0).getTime();
+    const tNw = new Date(h.uploadedAt||0).getTime();
+    if (tNw > tEx) map.set(h.period, h);
+  });
+  const safe = [...map.values()].sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period)).slice(0,120);
+  try {
+    localStorage.setItem('bolt_perf_history', JSON.stringify(safe));
+  } catch(e) {
+    console.warn('localStorage quota hit — trimming history');
+    // Trim to last 30 if quota exceeded
+    try { localStorage.setItem('bolt_perf_history', JSON.stringify(safe.slice(0,30))); } catch(_) {}
+  }
+}
+
 function saveToHistory(period, drivers, filename, pInfo) {
   const history  = getHistory().filter(h=>h.period!==period);
   const active   = drivers.filter(d=>d.isActive);
@@ -1288,7 +1314,7 @@ function saveToHistory(period, drivers, filename, pInfo) {
     avgAcceptance: active.length ? active.reduce((a,d)=>a+d.acceptance,0)/active.length : 0,
     drivers,
   });
-  localStorage.setItem('bolt_perf_history', JSON.stringify(history.slice(0,120)));
+  safeSetHistory(history);
 }
 
 function renderHistory() {
@@ -1464,19 +1490,31 @@ async function syncToCloud() {
   if (!binId) binId = await createBin();
   if (!binId) return;
 
-  // Fetch latest cloud data first — so we don't overwrite team uploads
-  const fetchData = await jbFetch(`${JSONBIN_BASE}/b/${binId}/latest`, {
+  // Read local BEFORE fetching cloud — local is ground truth
+  const localHistory  = getHistory();
+  const localPeriods  = new Set(localHistory.map(h => h.period));
+
+  // Fetch cloud to merge in any entries from other devices
+  const fetchData    = await jbFetch(`${JSONBIN_BASE}/b/${binId}/latest`, {
     headers: { 'X-Master-Key': JSONBIN_KEY }
   });
   const cloudHistory = fetchData?.record?.history || [];
-  const merged = mergeHistories(getHistory(), cloudHistory);
-  localStorage.setItem('bolt_perf_history', JSON.stringify(merged)); // full local
+
+  // Build merged for cloud push (union of local + cloud)
+  const merged = mergeHistories(localHistory, cloudHistory);
+
+  // Only write to localStorage if cloud added periods we didn't have locally.
+  // NEVER reduce local history — local is always ground truth.
+  const newFromCloud = merged.filter(h => !localPeriods.has(h.period));
+  if (newFromCloud.length > 0) {
+    safeSetHistory(merged);
+  }
 
   const data = await jbFetch(`${JSONBIN_BASE}/b/${binId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
     body: JSON.stringify({
-      history:     slimForCloud(merged),   // slimmed 30 days for cloud
+      history:     slimForCloud(merged),
       nameMapping: JSON.parse(localStorage.getItem('bolt_name_mapping') || '[]'),
       version: 1
     })
@@ -1502,8 +1540,12 @@ async function fetchFromCloud() {
     setSyncStatus('synced', 'synced ✓');
     return;
   }
-  const merged = mergeHistories(getHistory(), cloudHistory);
-  localStorage.setItem('bolt_perf_history', JSON.stringify(merged));
+  const localHistory = getHistory();
+  const localPeriods = new Set(localHistory.map(h => h.period));
+  const merged       = mergeHistories(localHistory, cloudHistory);
+  // Only write if cloud gave us periods we didn't have — never reduce local
+  const newFromCloud = merged.filter(h => !localPeriods.has(h.period));
+  if (newFromCloud.length > 0) safeSetHistory(merged);
   // Pull name mapping from cloud if present and newer than local
   const cloudMapping = data.record?.nameMapping;
   if (cloudMapping && cloudMapping.length && cloudMapping.length >= nameMapping.length) {
