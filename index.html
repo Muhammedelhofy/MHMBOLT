@@ -1643,18 +1643,29 @@ function renderSummary() {
   el.innerHTML   = buildSummaryHTML(sorted, selected, kpis);
 }
 
+// Safe number accessor — returns 0 for undefined, null, NaN
+function sN(v) { return (typeof v === 'number' && !isNaN(v)) ? v : 0; }
+// Display helper: show '—' if value is 0 (means data missing), else show with suffix
+function pctOrDash(v, dec=1) { return v > 0 ? v.toFixed(dec) + '%' : '—'; }
+function earnHrOrDash(v)     { return v > 0 ? fmt(v) + '/h' : '—'; }
+
 function sumKPIs(entries) {
+  // Only include active drivers (orders > 0) — excludes drivers who didn't work that day
   const active = entries.flatMap(h => h.drivers.filter(d => d.isActive));
-  if (!active.length) return { totalGross:0, totalNet:0, totalRides:0, totalDist:0, avgEarnHr:0, avgAccept:0, avgUtil:0, avgFinish:0 };
+  if (!active.length) return { totalGross:0, totalNet:0, totalRides:0, totalDist:0, earnHr:0, avgAccept:0, avgUtil:0, avgFinish:0 };
+  const totalHrs = active.reduce((a,d)=>a+sN(d.hoursOnline),0);
+  const totalGross = active.reduce((a,d)=>a+sN(d.grossEarnings),0);
+  // Count only drivers with valid rate data for rate averages
+  const withRates = active.filter(d => sN(d.acceptanceTotal) > 0 || sN(d.utilization) > 0);
   return {
-    totalGross: active.reduce((a,d)=>a+d.grossEarnings,0),
-    totalNet:   active.reduce((a,d)=>a+d.netEarnings,0),
-    totalRides: active.reduce((a,d)=>a+d.orders,0),
-    totalDist:  active.reduce((a,d)=>a+d.distanceTotal,0),
-    avgEarnHr:  active.reduce((a,d)=>a+d.grossPerHour,0) / active.length,
-    avgAccept:  active.reduce((a,d)=>a+d.acceptanceTotal,0) / active.length,
-    avgUtil:    active.reduce((a,d)=>a+d.utilization,0) / active.length,
-    avgFinish:  active.reduce((a,d)=>a+d.finishRate,0) / active.length,
+    totalGross,
+    totalNet:   active.reduce((a,d)=>a+sN(d.netEarnings),0),
+    totalRides: active.reduce((a,d)=>a+sN(d.orders),0),
+    totalDist:  active.reduce((a,d)=>a+sN(d.distanceTotal),0),
+    earnHr:     totalHrs > 0 ? totalGross / totalHrs : 0,  // weighted, not averaged
+    avgAccept:  withRates.length ? withRates.reduce((a,d)=>a+sN(d.acceptanceTotal),0) / withRates.length : 0,
+    avgUtil:    withRates.length ? withRates.reduce((a,d)=>a+sN(d.utilization),0) / withRates.length : 0,
+    avgFinish:  withRates.length ? withRates.reduce((a,d)=>a+sN(d.finishRate),0) / withRates.length : 0,
   };
 }
 
@@ -1666,11 +1677,11 @@ function buildSummaryHTML(sorted, selected, k) {
   }).join('');
 
   const kpiCards = [
-    { label:'Total Earnings',    value:`${fmt(k.totalGross)} SAR`,   sub:`Net ${fmt(k.totalNet)} SAR` },
-    { label:'Avg Earn / hr',     value:`${fmt(k.avgEarnHr)} SAR/h`,  sub:`gross per active driver` },
-    { label:'Avg Acceptance',    value:`${k.avgAccept.toFixed(1)}%`, sub:`total acceptance rate` },
-    { label:'Avg Utilisation',   value:`${k.avgUtil.toFixed(1)}%`,   sub:`of online time` },
-    { label:'Total Rides',       value:`${fmt(k.totalRides)}`,       sub:`${Math.round(k.totalDist).toLocaleString('en-US')} km` },
+    { label:'Total Earnings',    value:`${fmt(k.totalGross)} SAR`,    sub:`Net ${fmt(k.totalNet)} SAR` },
+    { label:'Earn / hr',         value:earnHrOrDash(k.earnHr),        sub:`fleet gross ÷ online hrs` },
+    { label:'Avg Acceptance',    value:pctOrDash(k.avgAccept),        sub:`active drivers only` },
+    { label:'Avg Utilisation',   value:pctOrDash(k.avgUtil),          sub:`of online time` },
+    { label:'Total Rides',       value:`${fmt(k.totalRides)}`,        sub:`${Math.round(k.totalDist).toLocaleString('en-US')} km` },
   ].map(c => `
     <div class="summary-card">
       <div class="s-label">${c.label}</div>
@@ -1709,22 +1720,24 @@ function buildFleetDayTable(entries) {
   const rows = entries.map(h => {
     const act = h.drivers.filter(d => d.isActive);
     if (!act.length) return '';
-    const tGross = act.reduce((a,d)=>a+d.grossEarnings,0);
-    const tNet   = act.reduce((a,d)=>a+d.netEarnings,0);
-    const tRides = act.reduce((a,d)=>a+d.orders,0);
-    const tDist  = act.reduce((a,d)=>a+d.distanceTotal,0);
-    const aEH    = act.reduce((a,d)=>a+d.grossPerHour,0)  / act.length;
-    const aFR    = act.reduce((a,d)=>a+d.finishRate,0)    / act.length;
-    const aAcc   = act.reduce((a,d)=>a+d.acceptanceTotal,0) / act.length;
-    const aUtil  = act.reduce((a,d)=>a+d.utilization,0)   / act.length;
+    const tGross = act.reduce((a,d)=>a+sN(d.grossEarnings),0);
+    const tNet   = act.reduce((a,d)=>a+sN(d.netEarnings),0);
+    const tRides = act.reduce((a,d)=>a+sN(d.orders),0);
+    const tDist  = act.reduce((a,d)=>a+sN(d.distanceTotal),0);
+    const tHrs   = act.reduce((a,d)=>a+sN(d.hoursOnline),0);
+    const aEH    = tHrs > 0 ? tGross / tHrs : 0;  // weighted earn/hr
+    const wr     = act.filter(d => sN(d.acceptanceTotal) > 0 || sN(d.utilization) > 0);
+    const aFR    = wr.length ? wr.reduce((a,d)=>a+sN(d.finishRate),0)     / wr.length : 0;
+    const aAcc   = wr.length ? wr.reduce((a,d)=>a+sN(d.acceptanceTotal),0)/ wr.length : 0;
+    const aUtil  = wr.length ? wr.reduce((a,d)=>a+sN(d.utilization),0)    / wr.length : 0;
     return `<tr>
       <td class="td-bold">${h.period}</td>
       <td style="color:var(--text-muted)">${act.length} drivers</td>
       <td class="td-r">${fmt(tGross)} <span style="font-size:11px;color:var(--text-muted)">/ ${fmt(tNet)} net</span></td>
-      <td class="td-r">${fmt(aEH)}/h</td>
-      <td class="td-r ${pctCol(aFR,80,70)}">${aFR.toFixed(1)}%</td>
-      <td class="td-r ${pctCol(aAcc,80,70)}">${aAcc.toFixed(1)}%</td>
-      <td class="td-r ${pctCol(aUtil,70,55)}">${aUtil.toFixed(1)}%</td>
+      <td class="td-r">${earnHrOrDash(aEH)}</td>
+      <td class="td-r ${aFR>0?pctCol(aFR,80,70):''}">${pctOrDash(aFR)}</td>
+      <td class="td-r ${aAcc>0?pctCol(aAcc,80,70):''}">${pctOrDash(aAcc)}</td>
+      <td class="td-r ${aUtil>0?pctCol(aUtil,70,55):''}">${pctOrDash(aUtil)}</td>
       <td class="td-r">${tRides}</td>
       <td class="td-r">${Math.round(tDist).toLocaleString('en-US')} km</td>
     </tr>`;
@@ -1749,18 +1762,23 @@ function buildCourierSummaryTable(entries) {
   const map = {};
   entries.forEach(h => {
     h.drivers.filter(d => d.isActive).forEach(d => {
-      if (!map[d.name]) map[d.name] = { name:d.name, days:0, gross:0, net:0, rides:0, dist:0, ehSum:0, frSum:0, acSum:0, utSum:0 };
+      if (!map[d.name]) map[d.name] = { name:d.name, days:0, gross:0, net:0, rides:0, dist:0, hrs:0, frSum:0, acSum:0, utSum:0, rDays:0 };
       const m = map[d.name];
-      m.days++; m.gross+=d.grossEarnings; m.net+=d.netEarnings;
-      m.rides+=d.orders; m.dist+=d.distanceTotal;
-      m.ehSum+=d.grossPerHour; m.frSum+=d.finishRate;
-      m.acSum+=d.acceptanceTotal; m.utSum+=d.utilization;
+      m.days++; m.gross+=sN(d.grossEarnings); m.net+=sN(d.netEarnings);
+      m.rides+=sN(d.orders); m.dist+=sN(d.distanceTotal); m.hrs+=sN(d.hoursOnline);
+      // Only count rate data from days where driver had valid rate data
+      if (sN(d.acceptanceTotal) > 0 || sN(d.utilization) > 0) {
+        m.frSum+=sN(d.finishRate); m.acSum+=sN(d.acceptanceTotal);
+        m.utSum+=sN(d.utilization); m.rDays++;
+      }
     });
   });
   const couriers = Object.values(map).sort((a,b)=>b.gross-a.gross);
   const rows = couriers.map(c => {
-    const aEH = c.ehSum/c.days, aFR = c.frSum/c.days;
-    const aAcc = c.acSum/c.days, aUtil = c.utSum/c.days;
+    const aEH  = c.hrs   > 0 ? c.gross / c.hrs : 0;  // weighted
+    const aFR  = c.rDays > 0 ? c.frSum / c.rDays : 0;
+    const aAcc = c.rDays > 0 ? c.acSum / c.rDays : 0;
+    const aUtil= c.rDays > 0 ? c.utSum / c.rDays : 0;
     const foreign = lookupForeignName(c.name);
     const nameHTML = foreign
       ? `<div class="d-name">${foreign}</div><div class="d-meta">${c.name}</div>`
@@ -1769,10 +1787,10 @@ function buildCourierSummaryTable(entries) {
       <td><div class="driver-cell"><div class="avatar">${(foreign||c.name).charAt(0).toUpperCase()}</div><div>${nameHTML}</div></div></td>
       <td class="td-r" style="color:var(--text-muted)">${c.days}d</td>
       <td class="td-r">${fmt(c.gross)} <span style="font-size:11px;color:var(--text-muted)">/ ${fmt(c.net)} net</span></td>
-      <td class="td-r">${fmt(aEH)}/h</td>
-      <td class="td-r ${pctCol(aFR,80,70)}">${aFR.toFixed(1)}%</td>
-      <td class="td-r ${pctCol(aAcc,80,70)}">${aAcc.toFixed(1)}%</td>
-      <td class="td-r ${pctCol(aUtil,70,55)}">${aUtil.toFixed(1)}%</td>
+      <td class="td-r">${earnHrOrDash(aEH)}</td>
+      <td class="td-r ${aFR>0?pctCol(aFR,80,70):''}">${pctOrDash(aFR)}</td>
+      <td class="td-r ${aAcc>0?pctCol(aAcc,80,70):''}">${pctOrDash(aAcc)}</td>
+      <td class="td-r ${aUtil>0?pctCol(aUtil,70,55):''}">${pctOrDash(aUtil)}</td>
       <td class="td-r">${c.rides}</td>
       <td class="td-r">${Math.round(c.dist).toLocaleString('en-US')} km</td>
     </tr>`;
