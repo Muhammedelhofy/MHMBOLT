@@ -1902,38 +1902,88 @@ function hideM8Picker() {
   m8SetOrb('idle');
 }
 function m8PickCmd(type, val) {
-  m8WakeMode = false; // button tap = done with picker
+  m8WakeMode = false;
   hideM8Picker();
-  const cmd =
-    type === 'tab'   ? { type:'tab',  id:val, label:val, extra:val==='analytics'?()=>renderAnalytics():undefined } :
-    type === 'sort'  ? { type:'sort', col:val, label:'Sort → '+val } :
-    type === 'mode'  ? { type:'mode', mode:val, label:val+' view' } :
-    type === 'clear' ? { type:'clear', label:'Filters cleared' } : null;
-  if (cmd) executeVoiceCommand(cmd);
+  // Direct execution — no async delay, no voice chain indirection
+  if (type === 'tab') {
+    const tabEl = document.querySelector(`[data-tab="${val}"]`);
+    if (tabEl) {
+      showTab(val, tabEl);
+      if (val === 'analytics') setTimeout(()=>renderAnalytics(), 80);
+    }
+    showVoicePanel(`<b>✓ ${val.charAt(0).toUpperCase()+val.slice(1)}</b>`);
+    return;
+  }
+  if (type === 'sort') {
+    setSort(val);
+    const tabEl = document.querySelector('[data-tab="captains"]');
+    if (tabEl) showTab('captains', tabEl);
+    showVoicePanel(`<b>✓ Sorted by ${val}</b>`);
+    return;
+  }
+  if (type === 'mode') {
+    dailyMode = val;
+    const tabEl = document.querySelector('[data-tab="captains"]');
+    if (tabEl) showTab('captains', tabEl);
+    showVoicePanel(`<b>✓ ${val.charAt(0).toUpperCase()+val.slice(1)} view</b>`);
+    return;
+  }
+  if (type === 'clear') {
+    compareSearch = '';
+    if (typeof comparePinnedNames !== 'undefined') comparePinnedNames.clear();
+    if (typeof searchQuery !== 'undefined') searchQuery = '';
+    renderCaptains();
+    showVoicePanel(`<b>✓ Filters cleared</b>`);
+    return;
+  }
 }
 function m8PickSearch() {
   const q = (document.getElementById('m8PickSearch')?.value || '').trim();
   if (!q) return;
+  m8WakeMode = false;
   hideM8Picker();
   const scored = findDriverByVoice(q);
   if (!scored.length) {
     showVoicePanel(`<span class="vt-err">No driver found: "<i>${q}</i>"</span><div class="vt-hint">Check spelling — Arabic names work too</div>`);
     return;
   }
-  executeVoiceCommand({ type:'driver', names:scored.map(x=>x.n), scores:scored });
+  // Pin the matched drivers and switch to compare view
+  dailyMode = 'compare';
+  if (typeof comparePinnedNames !== 'undefined') {
+    comparePinnedNames.clear();
+    scored.forEach(x => comparePinnedNames.add(x.n));
+  }
+  compareSearch = '';
+  const tabEl = document.querySelector('[data-tab="captains"]');
+  if (tabEl) showTab('captains', tabEl);
+  showVoicePanel(`<b>✓ Found:</b> ${scored.slice(0,3).map(x=>x.n).join(', ')}${scored.length>3?` +${scored.length-3} more`:''}`);
 }
 function m8PickIntel(type) {
+  m8WakeMode = false;
   hideM8Picker();
   const history = getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
   const entry = history[0];
   if (!entry) { showVoicePanel(`<span class="vt-err">No data loaded yet</span><div class="vt-hint">Upload a CSV report first</div>`); return; }
-  if (type==='daySummary') executeVoiceCommand({type:'daySummary',entry});
-  if (type==='inactive')   executeVoiceCommand({type:'inactive',entry});
-  if (type==='topDriver') {
-    const top=[...entry.drivers.filter(d=>d.isActive)].sort((a,b)=>(b.netEarnings||0)-(a.netEarnings||0))[0];
-    executeVoiceCommand({type:'topDriver',entry,driver:top});
+  if (type==='daySummary') { showVoicePanel(m8DaySummary(entry)); return; }
+  if (type==='inactive') {
+    const off = entry.drivers.filter(d=>!d.isActive);
+    if (!off.length) { showVoicePanel(`<b>✓ All drivers worked on ${entry.period}</b>`); return; }
+    showVoicePanel(`<b>${off.length} didn't work — ${entry.period}:</b><div class="vt-hint" style="margin-top:4px;line-height:1.9">${off.map(d=>d.name).join('<br>')}</div>`, false);
+    return;
   }
-  if (type==='belowTarget') executeVoiceCommand({type:'belowTarget'});
+  if (type==='topDriver') {
+    const top = [...entry.drivers.filter(d=>d.isActive)].sort((a,b)=>(b.netEarnings||0)-(a.netEarnings||0))[0];
+    if (!top) { showVoicePanel(`<span class="vt-err">No active drivers found</span>`); return; }
+    showVoicePanel(`<b>🏆 Top — ${entry.period}</b><br><span style="color:#FFD700">${top.name}</span><br>Net: <b style="color:var(--bolt-green)">${fmt(top.netEarnings||0)} SAR</b> · Orders: ${top.orders||0}`);
+    return;
+  }
+  if (type==='belowTarget') {
+    setSort('target'); sortAsc = true;
+    const tabEl = document.querySelector('[data-tab="captains"]');
+    if (tabEl) showTab('captains', tabEl);
+    showVoicePanel(`<b>✓ Showing drivers below target</b>`);
+    return;
+  }
 }
 // Close picker when clicking outside
 document.addEventListener('click', e=>{
@@ -1967,9 +2017,14 @@ function m8RestartListen() {
     let cmd = null;
     for (const alt of alts) { const c=parseVoiceCommand(alt); if(c.type!=='unknown'){cmd=c;break;} }
     if (!cmd) cmd = parseVoiceCommand(alts[0]);
-    // Close picker for real commands (not wake again)
-    if (cmd.type !== 'wake') hideM8Picker();
-    executeVoiceCommand(cmd);
+    // For real commands said into the picker mic, dispatch directly
+    if (cmd.type === 'tab') { m8PickCmd('tab', cmd.id); }
+    else if (cmd.type === 'sort') { m8PickCmd('sort', cmd.col); }
+    else if (cmd.type === 'mode') { m8PickCmd('mode', cmd.mode); }
+    else if (cmd.type === 'clear') { m8PickCmd('clear', null); }
+    else if (cmd.type === 'driver') { m8WakeMode=false; hideM8Picker(); executeVoiceCommand(cmd); }
+    else if (cmd.type === 'wake') { /* stay open, re-listen handled by onend */ }
+    else { hideM8Picker(); executeVoiceCommand(cmd); }
   };
   r.onerror = () => { got = true; };
   r.onend = () => {
