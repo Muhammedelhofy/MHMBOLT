@@ -718,7 +718,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
     <div class="m8pick-section">📊 SORT DRIVERS</div>
     <div class="m8pick-row">
       <button class="m8pick-btn" onclick="m8PickCmd('sort','net')">By Earnings</button>
-      <button class="m8pick-btn" onclick="m8PickCmd('sort','orders')">By Orders</button>
+      <button class="m8pick-btn" onclick="m8PickCmd('sort','orders')">By Rides</button>
       <button class="m8pick-btn" onclick="m8PickCmd('sort','hours')">By Hours</button>
       <button class="m8pick-btn" onclick="m8PickCmd('sort','accept')">By Acceptance</button>
     </div>
@@ -736,6 +736,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
     </div>
     <div class="m8pick-section">📅 VIEW</div>
     <div class="m8pick-row">
+      <button class="m8pick-btn" onclick="m8PickCmd('yesterday',null)">Show Yesterday</button>
       <button class="m8pick-btn" onclick="m8PickCmd('mode','compare')">Compare Days</button>
       <button class="m8pick-btn" onclick="m8PickCmd('mode','single')">Single Day</button>
       <button class="m8pick-btn m8pick-btn-red" onclick="m8PickCmd('clear',null)">Clear All</button>
@@ -1904,36 +1905,55 @@ function hideM8Picker() {
 function m8PickCmd(type, val) {
   m8WakeMode = false;
   hideM8Picker();
-  // Direct execution — no async delay, no voice chain indirection
   if (type === 'tab') {
+    // Simulate a real tab click — fires the element's own onclick handler (showTab + render)
     const tabEl = document.querySelector(`[data-tab="${val}"]`);
-    if (tabEl) {
-      showTab(val, tabEl);
-      if (val === 'analytics') setTimeout(()=>renderAnalytics(), 80);
-    }
-    showVoicePanel(`<b>✓ ${val.charAt(0).toUpperCase()+val.slice(1)}</b>`);
+    if (tabEl) tabEl.click();
+    const label = {captains:'Captains',finance:'Finance',analytics:'Analytics',settings:'Settings'}[val]||val;
+    showVoicePanel(`<b>✓ ${label}</b>`);
     return;
   }
   if (type === 'sort') {
-    setSort(val);
+    // Switch to captains tab first, then sort
     const tabEl = document.querySelector('[data-tab="captains"]');
-    if (tabEl) showTab('captains', tabEl);
-    showVoicePanel(`<b>✓ Sorted by ${val}</b>`);
+    if (tabEl && !tabEl.classList.contains('active')) tabEl.click();
+    setSort(val);
+    const label = {net:'Earnings',orders:'Rides',hours:'Hours',accept:'Acceptance',gross:'Gross'}[val]||val;
+    showVoicePanel(`<b>✓ Sorted by ${label}</b>`);
     return;
   }
   if (type === 'mode') {
+    // Set dailyMode BEFORE tab click so renderCaptains uses correct mode in one pass
     dailyMode = val;
     const tabEl = document.querySelector('[data-tab="captains"]');
-    if (tabEl) showTab('captains', tabEl);
-    showVoicePanel(`<b>✓ ${val.charAt(0).toUpperCase()+val.slice(1)} view</b>`);
+    if (tabEl) {
+      if (tabEl.classList.contains('active')) renderCaptains();
+      else tabEl.click(); // showTab calls renderCaptains() which now uses the updated dailyMode
+    }
+    showVoicePanel(`<b>✓ ${val==='compare'?'Compare Days':'Single Day'} view</b>`);
     return;
   }
   if (type === 'clear') {
-    compareSearch = '';
-    if (typeof comparePinnedNames !== 'undefined') comparePinnedNames.clear();
-    if (typeof searchQuery !== 'undefined') searchQuery = '';
-    renderCaptains();
-    showVoicePanel(`<b>✓ Filters cleared</b>`);
+    compareSearch = ''; comparePinnedNames.clear(); searchQuery = '';
+    const tabEl = document.querySelector('[data-tab="captains"]');
+    if (tabEl) {
+      if (tabEl.classList.contains('active')) renderCaptains();
+      else tabEl.click();
+    }
+    showVoicePanel(`<b>✓ All filters cleared</b>`);
+    return;
+  }
+  if (type === 'yesterday') {
+    const hist = getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
+    const latest = hist[0];
+    if (!latest) { showVoicePanel(`<span class="vt-err">No data loaded</span>`); return; }
+    selectFleetPeriod(latest.period);
+    const tabEl = document.querySelector('[data-tab="captains"]');
+    if (tabEl) {
+      if (tabEl.classList.contains('active')) renderCaptains();
+      else tabEl.click();
+    }
+    showVoicePanel(`<b>✓ Showing ${latest.period}</b>`);
     return;
   }
 }
@@ -2017,14 +2037,17 @@ function m8RestartListen() {
     let cmd = null;
     for (const alt of alts) { const c=parseVoiceCommand(alt); if(c.type!=='unknown'){cmd=c;break;} }
     if (!cmd) cmd = parseVoiceCommand(alts[0]);
-    // For real commands said into the picker mic, dispatch directly
-    if (cmd.type === 'tab') { m8PickCmd('tab', cmd.id); }
-    else if (cmd.type === 'sort') { m8PickCmd('sort', cmd.col); }
-    else if (cmd.type === 'mode') { m8PickCmd('mode', cmd.mode); }
-    else if (cmd.type === 'clear') { m8PickCmd('clear', null); }
-    else if (cmd.type === 'driver') { m8WakeMode=false; hideM8Picker(); executeVoiceCommand(cmd); }
-    else if (cmd.type === 'wake') { /* stay open, re-listen handled by onend */ }
-    else { hideM8Picker(); executeVoiceCommand(cmd); }
+    // Dispatch commands via m8PickCmd (uses .click() — same as button taps)
+    if      (cmd.type === 'tab')         { m8PickCmd('tab',       cmd.id);   }
+    else if (cmd.type === 'sort')        { m8PickCmd('sort',      cmd.col);  }
+    else if (cmd.type === 'mode')        { m8PickCmd('mode',      cmd.mode); }
+    else if (cmd.type === 'clear')       { m8PickCmd('clear',     null);     }
+    else if (cmd.type === 'yesterday' || cmd.type === 'daySummary')
+                                         { m8PickCmd('yesterday', null);     }
+    else if (cmd.type === 'driver')      { m8WakeMode=false; hideM8Picker(); executeVoiceCommand(cmd); }
+    else if (cmd.type === 'wake')        { /* stay open */ }
+    else if (cmd.type === 'unknown')     { /* say nothing — picker stays open */ }
+    else { m8WakeMode=false; hideM8Picker(); executeVoiceCommand(cmd); }
   };
   r.onerror = () => { got = true; };
   r.onend = () => {
