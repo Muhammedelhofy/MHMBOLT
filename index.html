@@ -1544,7 +1544,7 @@ function driverRow(d, target, pInfo, s, rank) {
       <td><div class="driver-cell">
         <span class="rank-badge ${rankBadgeCls}">${rankLabel}</span>
         <div class="avatar ${d.isActive?'':'av-inactive'}">${init}</div>
-        <div><div class="d-name">${d.name}${foreignName?`<span class="d-foreign">→ ${foreignName}</span>`:''}</div><div class="d-meta">${d.phone||d.email||'—'}</div></div>
+        <div><div class="d-name">${d.name}</div>${foreignName?`<div class="d-foreign">${foreignName}</div>`:''}<div class="d-meta">${d.phone||d.email||'—'}</div></div>
       </div></td>
       <td><span class="tier ${tierClass}">${d.tier.englishName}</span></td>
       <td class="td-r kv">${(d.hoursOnline||0).toFixed?((d.hoursOnline||0).toFixed(1)):(d.hoursOnline||0)}<span style="font-size:11px;color:var(--text-dim)">h</span></td>
@@ -1914,10 +1914,14 @@ function m8PickCmd(type, val) {
     return;
   }
   if (type === 'sort') {
-    // Switch to captains tab first, then sort
+    // Switch to captains tab first if needed
     const tabEl = document.querySelector('[data-tab="captains"]');
     if (tabEl && !tabEl.classList.contains('active')) tabEl.click();
-    setSort(val);
+    // Map picker keys → sumCourierSortCol keys (captains table) and re-render
+    const colMap = {net:'net', orders:'rides', hours:'earnhr', accept:'accept', gross:'gross'};
+    const col = colMap[val] || 'net';
+    sumCourierSortCol = col; sumCourierSortAsc = false;
+    renderCaptains();
     const label = {net:'Earnings',orders:'Rides',hours:'Hours',accept:'Acceptance',gross:'Gross'}[val]||val;
     showVoicePanel(`<b>✓ Sorted by ${label}</b>`);
     return;
@@ -1945,15 +1949,36 @@ function m8PickCmd(type, val) {
   }
   if (type === 'yesterday') {
     const hist = getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
-    const latest = hist[0];
-    if (!latest) { showVoicePanel(`<span class="vt-err">No data loaded</span>`); return; }
-    selectFleetPeriod(latest.period);
-    const tabEl = document.querySelector('[data-tab="captains"]');
-    if (tabEl) {
-      if (tabEl.classList.contains('active')) renderCaptains();
-      else tabEl.click();
-    }
-    showVoicePanel(`<b>✓ Showing ${latest.period}</b>`);
+    // hist[0]=today/latest, hist[1]=yesterday. Use hist[1] if available, else hist[0]
+    const yest = hist.length > 1 ? hist[1] : hist[0];
+    if (!yest) { showVoicePanel(`<span class="vt-err">No data loaded</span>`); return; }
+    // Show detailed yesterday report in the voice panel (no autohide)
+    const s = loadSettings();
+    const dailyTarget = Math.round((s.monthlyTarget||6000)/30);
+    const drivers = yest.drivers || [];
+    const active = drivers.filter(d=>d.isActive);
+    const inactive = drivers.filter(d=>!d.isActive);
+    const hitTarget = active.filter(d=>(d.netEarnings||0)>=dailyTarget);
+    const belowTarget = active.filter(d=>(d.netEarnings||0)<dailyTarget);
+    const totalNet = active.reduce((a,d)=>a+(d.netEarnings||0),0);
+    const top = [...active].sort((a,b)=>(b.netEarnings||0)-(a.netEarnings||0))[0];
+    const lookupFn = n => lookupForeignName(n)||n;
+    showVoicePanel(`
+      <b style="color:var(--bolt-green)">${yest.period}</b><br>
+      💰 Fleet Net: <b>${fmt(totalNet)} SAR</b> &nbsp;·&nbsp; Active: <b>${active.length}</b>/${drivers.length}<br>
+      🏆 Top: <b style="color:#FFD700">${top?lookupFn(top.name):'—'}</b>${top?` (${fmt(top.netEarnings||0)} SAR)`:''}<br>
+      <div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr;gap:4px">
+        <div style="background:rgba(0,255,179,.06);border:1px solid rgba(0,255,179,.2);border-radius:2px;padding:5px 8px">
+          <div style="font-size:9px;color:var(--text-muted);letter-spacing:.08em">✅ HIT TARGET (${hitTarget.length})</div>
+          <div style="font-size:10px;color:var(--bolt-green);margin-top:3px;line-height:1.6">${hitTarget.slice(0,5).map(d=>lookupFn(d.name)).join('<br>')||'—'}${hitTarget.length>5?`<br>+${hitTarget.length-5} more`:''}</div>
+        </div>
+        <div style="background:rgba(255,68,102,.05);border:1px solid rgba(255,68,102,.2);border-radius:2px;padding:5px 8px">
+          <div style="font-size:9px;color:var(--text-muted);letter-spacing:.08em">⚠️ BELOW TARGET (${belowTarget.length})</div>
+          <div style="font-size:10px;color:var(--amber);margin-top:3px;line-height:1.6">${belowTarget.slice(0,5).map(d=>lookupFn(d.name)).join('<br>')||'—'}${belowTarget.length>5?`<br>+${belowTarget.length-5} more`:''}</div>
+        </div>
+      </div>
+      ${inactive.length?`<div style="margin-top:5px;font-size:10px;color:var(--text-muted)">🔴 Didn't work (${inactive.length}): ${inactive.slice(0,4).map(d=>lookupFn(d.name)).join(', ')}${inactive.length>4?` +${inactive.length-4} more`:''}</div>`:'<div style="margin-top:5px;font-size:10px;color:var(--bolt-green)">✅ All drivers worked</div>'}
+    `, false); // false = no auto-hide, stays until dismissed
     return;
   }
 }
@@ -3756,7 +3781,8 @@ function renderSingleDay(sorted) {
       <td><div class="driver-cell">
         <div class="avatar ${d.isActive?'':'av-inactive'}">${d.name[0].toUpperCase()}</div>
         <div>
-          <div class="d-name">${d.name}${fn ? `<span class="d-foreign">→ ${fn}</span>` : ''}</div>
+          <div class="d-name">${d.name}</div>
+          ${fn ? `<div class="d-foreign">${fn}</div>` : ''}
           <div class="d-meta">${d.phone || '—'}</div>
         </div>
       </div></td>
@@ -3959,7 +3985,7 @@ function renderCompareView(sorted) {
           ${driverData.map(row=>{
             const cfn=lookupForeignName(row.name);
             return `<tr>
-              <td class="col-driver">${row.name}${cfn?`<span class="d-foreign">→ ${cfn}</span>`:''}</td>
+              <td class="col-driver"><div>${row.name}</div>${cfn?`<div class="d-foreign">${cfn}</div>`:''}</td>
               ${row.vals.map((v,i)=>`<td class="${heatClass(v,row.min,row.max)}">${formatCell(v)}</td>`).join('')}
               <td class="col-trend ${row.trendCls}" style="text-align:center;font-size:16px">${row.trend}</td>
             </tr>`;
@@ -4459,7 +4485,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
     const foreign = lookupForeignName(c.name);
     const displayName = foreign || c.name;
     const nameHTML = foreign
-      ? `<div class="d-name">${foreign}</div><div class="d-meta">${c.name}</div>`
+      ? `<div class="d-name">${c.name}</div><div class="d-foreign">${foreign}</div>`
       : `<div class="d-name">${c.name}</div>`;
     const clickFn = singlePeriod
       ? `openModalForEntry('${esc(c.name)}','${esc(singlePeriod)}')`
