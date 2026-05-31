@@ -675,6 +675,30 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
 /* Card corner brackets glow on hover */
 .summary-card:hover::before,
 .summary-card:hover::after { border-color:rgba(0,212,255,.7)!important; animation:corner-glow 1.5s ease infinite; }
+
+/* ── Modal month filter (driver detail) ── */
+.modal-month-select { font-size:11px; }
+.modal-month-select.filter-on {
+  border:1px solid var(--bolt-green)!important;
+  color:var(--bolt-green)!important;
+  box-shadow:0 0 0 1px rgba(0,255,179,.4), 0 0 12px rgba(0,255,179,.45)!important;
+  background:rgba(0,255,179,.08)!important;
+  animation:modal-filter-glow 1.8s ease-in-out infinite;
+}
+@keyframes modal-filter-glow { 0%,100%{box-shadow:0 0 0 1px rgba(0,255,179,.4),0 0 10px rgba(0,255,179,.35)} 50%{box-shadow:0 0 0 1px rgba(0,255,179,.6),0 0 20px rgba(0,255,179,.7)} }
+.modal-filter-pill {
+  font-size:10px; font-weight:700; letter-spacing:.04em; color:var(--bolt-green);
+  background:rgba(0,255,179,.1); border:1px solid rgba(0,255,179,.45);
+  border-radius:999px; padding:3px 9px; white-space:nowrap;
+  box-shadow:0 0 10px rgba(0,255,179,.3);
+}
+.modal-filter-banner {
+  font-size:11px; color:var(--bolt-green); background:rgba(0,255,179,.07);
+  border:1px solid rgba(0,255,179,.35); border-left:3px solid var(--bolt-green);
+  border-radius:3px; padding:7px 11px; margin-bottom:14px;
+  box-shadow:0 0 14px rgba(0,255,179,.12);
+}
+.modal-filter-banner b { color:var(--bolt-green); }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1314,18 +1338,72 @@ function parseTier(raw) {
 // ═══════════════════════════════════════════
 // MONTHLY NET FROM HISTORY
 // ═══════════════════════════════════════════
+// Robust {month,year} for a history entry. Uses periodInfo when present,
+// otherwise parses the period string (handles older entries / cloud pulls
+// that were saved before periodInfo existed — these used to get silently
+// dropped, which is why the modal "started at the 24th").
+function entryMonthYear(h) {
+  if (h.periodInfo && h.periodInfo.end) return { month:h.periodInfo.end.month, year:h.periodInfo.end.year };
+  const all = (h.period||'').match(/(\d{1,2})\s(\w{3})\s(\d{4})/g);
+  if (all && all.length) {
+    const last = all[all.length-1].match(/(\d{1,2})\s(\w{3})\s(\d{4})/);
+    return { month: MONTH_MAP[last[2]] ?? 0, year: parseInt(last[3]) };
+  }
+  return null;
+}
 function getMonthlyNet(driverId, driverName, month, year) {
   const seen = new Set(); let total = 0;
   for (const h of getHistory()) {
-    if (!h.periodInfo) continue;
-    const { start, end } = h.periodInfo;
-    const inMonth = (start.month===month && start.year===year) || (end.month===month && end.year===year);
+    const my = entryMonthYear(h);
+    if (!my) continue;
+    const inMonth = my.month===month && my.year===year;
     if (!inMonth || seen.has(h.period)) continue;
     seen.add(h.period);
     const d = h.drivers.find(d => d.driverId===driverId || d.name===driverName);
     if (d) total += d.netEarnings;
   }
   return total;
+}
+// All history rows for one driver, oldest→newest, since they first appear.
+// No periodInfo requirement — falls back to period-string ordering.
+function getDriverAllHistory(driverId, name) {
+  return getHistory()
+    .map(h => ({ period:h.period, d:h.drivers.find(d=>d.driverId===driverId||d.name===name) }))
+    .filter(x => x.d)
+    .sort((a,b) => periodSortKey(a.period) - periodSortKey(b.period));
+}
+// Aggregate a driver's per-day rows into cumulative + averaged stats so the
+// modal never shows zeros just because the latest loaded day was an off-day.
+function aggregateDriverRows(rows) {
+  const a = { days:0, activeDays:0, orders:0, hours:0, net:0, gross:0, tips:0,
+    campaign:0, commission:0, distance:0,
+    _accSum:0, _accN:0, _ratSum:0, _ratN:0, _scoreSum:0, _scoreN:0,
+    _finSum:0, _finN:0, _utilSum:0, _utilN:0 };
+  rows.forEach(({d}) => {
+    a.days++;
+    if (d.isActive) a.activeDays++;
+    a.orders     += sN(d.orders);
+    a.hours      += sN(d.hoursOnline);
+    a.net        += sN(d.netEarnings);
+    a.gross      += sN(d.grossEarnings);
+    a.tips       += sN(d.tips);
+    a.campaign   += sN(d.campaign);
+    a.commission += sN(d.commission);
+    a.distance   += sN(d.distanceTotal);
+    if (d.isActive && sN(d.acceptance) > 0) { a._accSum += sN(d.acceptance); a._accN++; }
+    if (sN(d.rating)      > 0) { a._ratSum   += sN(d.rating);      a._ratN++; }
+    if (sN(d.score)       > 0) { a._scoreSum += sN(d.score);       a._scoreN++; }
+    if (sN(d.finishRate)  > 0) { a._finSum   += sN(d.finishRate);  a._finN++; }
+    if (sN(d.utilization) > 0) { a._utilSum  += sN(d.utilization); a._utilN++; }
+  });
+  a.acceptance  = a._accN   ? a._accSum   / a._accN   : 0;
+  a.rating      = a._ratN   ? a._ratSum   / a._ratN   : 0;
+  a.score       = a._scoreN ? Math.round(a._scoreSum / a._scoreN) : 0;
+  a.finishRate  = a._finN   ? Math.round(a._finSum   / a._finN)   : 0;
+  a.utilization = a._utilN  ? Math.round(a._utilSum  / a._utilN)  : 0;
+  a.netPerHour  = a.hours   ? a.net / a.hours   : 0;
+  a.distanceAvg = a.orders  ? a.distance / a.orders : 0;
+  return a;
 }
 
 // ═══════════════════════════════════════════
@@ -1672,6 +1750,8 @@ function buildPagination(total, current) {
 // ═══════════════════════════════════════════
 // DRIVER DETAIL MODAL
 // ═══════════════════════════════════════════
+let modalMonthFilter = 'all';   // 'all' | 'YYYY-MM' — driver detail modal month filter
+let modalCtx         = null;    // cached context so the month filter can re-render in place
 function openModal(id) {
   const drivers = currentDrivers; if (!drivers) return;
   const d = drivers.find(x => x.driverId===id || x.name===id); if (!d) return;
@@ -1695,12 +1775,12 @@ function openModal(id) {
   const accFlag = d.acceptance<s.flagAccRed?'flag-red':d.acceptance<s.flagAccAmber?'flag-amber':'flag-green';
   const ratFlag = d.rating>0?(d.rating<s.flagRatRed?'flag-red':d.rating<s.flagRatAmber?'flag-amber':'flag-green'):'';
   const tc      = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Active:'tier-active'})[d.tier.englishName]||'tier-none';
-  const driverHistory = getDriverHistoryForMonth(d.driverId, d.name, pInfo);
-  // Lifetime total campaign bonus across ALL history entries
-  const lifetimeCampaign = getHistory().reduce((sum, h) => {
-    const dr = (h.drivers||[]).find(dr => dr.driverId===d.driverId || dr.name===d.name);
-    return sum + (dr ? sN(dr.campaign) : 0);
-  }, 0);
+  // Full history for this driver (since their first working day), not just one month.
+  const fullHistory = getDriverAllHistory(d.driverId, d.name);
+  // Store everything the body renderer needs so the month filter can re-render
+  // without re-deriving the driver lookup. Reset filter to 'all' on each open.
+  modalMonthFilter = 'all';
+  modalCtx = { d, s, target, effTarget, pInfo, monthly, pct, fillCls, projected, gap, paceText, paceColor, fullHistory };
 
   const modalForeignName = lookupForeignName(d.name);
   document.getElementById('modalHeader').innerHTML = `
@@ -1711,9 +1791,47 @@ function openModal(id) {
     </div>
     <div class="modal-close" onclick="closeModal()">×</div>`;
 
+  renderModalBody();
+  document.getElementById('modalOverlay').classList.add('open');
+  document.getElementById('modalPanel').classList.add('open');
+}
+
+// Change the modal's month filter and re-render the body in place.
+function setModalMonth(val) {
+  modalMonthFilter = val;
+  renderModalBody();
+}
+
+// Builds the modal body. Honours modalMonthFilter: 'all' = whole history,
+// else a 'YYYY-MM' key scoping Performance, Earnings AND the Day-by-Day table.
+function renderModalBody() {
+  if (!modalCtx) return;
+  const { d, s, target, effTarget, pInfo, monthly, pct, fillCls, projected, gap, paceText, paceColor, fullHistory } = modalCtx;
+
+  // Month options from THIS driver's own history (newest first)
+  const monthKeys = [...new Set(fullHistory.map(h => getMonthKey(h.period)).filter(Boolean))]
+    .sort((a,b) => b.localeCompare(a));
+  const filterActive = modalMonthFilter !== 'all' && monthKeys.includes(modalMonthFilter);
+  const rows = filterActive ? fullHistory.filter(h => getMonthKey(h.period) === modalMonthFilter) : fullHistory;
+  const agg  = aggregateDriverRows(rows);
+  const lifetimeCampaign = agg.campaign;
+  const scopeLbl = filterActive ? getMonthLabel(modalMonthFilter) : null;
+  const perfScope  = filterActive ? scopeLbl : `all ${agg.days} day${agg.days!==1?'s':''}`;
+  const earnScope  = filterActive ? scopeLbl : 'all-time';
+
+  const monthSelect = `
+    <select class="kpi-select modal-month-select${filterActive?' filter-on':''}" onchange="setModalMonth(this.value)" title="Filter day-by-day by month">
+      <option value="all" ${!filterActive?'selected':''}>All months</option>
+      ${monthKeys.map(mk => `<option value="${mk}" ${modalMonthFilter===mk?'selected':''}>${getMonthLabel(mk)}</option>`).join('')}
+    </select>`;
+  const filterPill = filterActive
+    ? `<span class="modal-filter-pill">● ${scopeLbl}<span onclick="setModalMonth('all')" style="cursor:pointer;margin-left:5px">✕</span></span>`
+    : '';
+
   document.getElementById('modalBody').innerHTML = `
+    ${filterActive?`<div class="modal-filter-banner">🔎 Filtered to <b>${scopeLbl}</b> — performance, earnings &amp; day-by-day below show this month only. <span onclick="setModalMonth('all')" style="cursor:pointer;text-decoration:underline">Show all months</span></div>`:''}
     <div class="target-section">
-      <div class="target-section-title">Monthly Target — ${fmt(effTarget)} SAR${effTarget!==target?`<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">(prorated from ${fmt(target)})</span>`:''}</div>
+      <div class="target-section-title">Monthly Target — ${fmt(effTarget)} SAR${effTarget!==target?`<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">(prorated from ${fmt(target)})</span>`:''}<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">· current month</span></div>
       <div class="target-big">
         <div><div class="target-earned">${fmt(monthly)}<small> SAR</small></div>
           <div style="font-size:12px;color:${paceColor};margin-top:3px;font-weight:600">${paceText}</div></div>
@@ -1727,36 +1845,39 @@ function openModal(id) {
       </div>
     </div>
 
-    <div class="section-label">Performance</div>
+    <div class="section-label">Performance <span style="font-size:11px;color:${filterActive?'var(--bolt-green)':'var(--text-muted)'};font-weight:400;text-transform:none;letter-spacing:0">— ${perfScope} (${agg.activeDays} worked)</span></div>
     <div class="kpi-grid-modal">
-      <div class="kpi-card"><div class="kpi-card-label">Hours Online</div><div class="kpi-card-value">${d.hoursOnline}<span class="kpi-card-unit"> h</span></div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Orders Done</div><div class="kpi-card-value">${d.orders}</div></div>
-      <div class="kpi-card ${accFlag}"><div class="kpi-card-label">Acceptance</div><div class="kpi-card-value">${d.isActive?d.acceptance+'%':'—'}</div></div>
-      <div class="kpi-card ${ratFlag}"><div class="kpi-card-label">Rating</div><div class="kpi-card-value">${d.rating>0?d.rating.toFixed(2)+'★':'—'}</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Driver Score</div><div class="kpi-card-value">${d.score>0?d.score+'%':'—'}</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Finish Rate</div><div class="kpi-card-value">${d.finishRate>0?d.finishRate+'%':'—'}</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Utilisation</div><div class="kpi-card-value">${d.utilization>0?d.utilization+'%':'—'}</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Avg Trip</div><div class="kpi-card-value">${d.distanceAvg>0?d.distanceAvg.toFixed(1)+' km':'—'}</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Total KM</div><div class="kpi-card-value">${d.distanceTotal>0?fmt(d.distanceTotal)+' km':'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Hours Online</div><div class="kpi-card-value">${agg.hours>0?agg.hours.toFixed(1):'0'}<span class="kpi-card-unit"> h</span></div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Orders Done</div><div class="kpi-card-value">${agg.orders}</div></div>
+      <div class="kpi-card ${agg.acceptance>0&&agg.acceptance<s.flagAccRed?'flag-red':agg.acceptance>0&&agg.acceptance<s.flagAccAmber?'flag-amber':agg.acceptance>0?'flag-green':''}"><div class="kpi-card-label">Acceptance <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.acceptance>0?Math.round(agg.acceptance)+'%':'—'}</div></div>
+      <div class="kpi-card ${agg.rating>0&&agg.rating<s.flagRatRed?'flag-red':agg.rating>0&&agg.rating<s.flagRatAmber?'flag-amber':agg.rating>0?'flag-green':''}"><div class="kpi-card-label">Rating <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.rating>0?agg.rating.toFixed(2)+'★':'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Driver Score <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.score>0?agg.score+'%':'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Finish Rate <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.finishRate>0?agg.finishRate+'%':'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Utilisation <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.utilization>0?agg.utilization+'%':'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Avg Trip</div><div class="kpi-card-value">${agg.distanceAvg>0?agg.distanceAvg.toFixed(1)+' km':'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Total KM</div><div class="kpi-card-value">${agg.distance>0?fmt(agg.distance)+' km':'—'}</div></div>
     </div>
 
-    <div class="section-label">Earnings</div>
+    <div class="section-label">Earnings <span style="font-size:11px;color:${filterActive?'var(--bolt-green)':'var(--text-muted)'};font-weight:400;text-transform:none;letter-spacing:0">— ${earnScope} total</span></div>
     <div class="kpi-grid-modal">
-      <div class="kpi-card"><div class="kpi-card-label">Gross</div><div class="kpi-card-value">${fmt(d.grossEarnings)} SAR</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Commission</div><div class="kpi-card-value">${fmt(d.commission)} SAR</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Net</div><div class="kpi-card-value">${fmt(d.netEarnings)} SAR</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Tips</div><div class="kpi-card-value">${fmt(d.tips)} SAR</div></div>
-      <div class="kpi-card${lifetimeCampaign>0?' flag-green':''}"><div class="kpi-card-label">Bolt Bonus ★</div><div class="kpi-card-value">${lifetimeCampaign>0?fmt(lifetimeCampaign)+' SAR':'—'}</div>${lifetimeCampaign>0?`<div style="font-size:10px;color:var(--text-muted);margin-top:2px">lifetime total</div>`:''}</div>
-      <div class="kpi-card"><div class="kpi-card-label">Net / Hour</div><div class="kpi-card-value">${d.netPerHour>0?d.netPerHour.toFixed(1)+' SAR/h':'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Gross</div><div class="kpi-card-value">${fmt(agg.gross)} SAR</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Commission</div><div class="kpi-card-value">${fmt(agg.commission)} SAR</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Net</div><div class="kpi-card-value">${fmt(agg.net)} SAR</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Tips</div><div class="kpi-card-value">${fmt(agg.tips)} SAR</div></div>
+      <div class="kpi-card${lifetimeCampaign>0?' flag-green':''}"><div class="kpi-card-label">Bolt Bonus ★</div><div class="kpi-card-value">${lifetimeCampaign>0?fmt(lifetimeCampaign)+' SAR':'—'}</div>${lifetimeCampaign>0?`<div style="font-size:10px;color:var(--text-muted);margin-top:2px">incl. in net</div>`:''}</div>
+      <div class="kpi-card"><div class="kpi-card-label">Net / Hour <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.netPerHour>0?agg.netPerHour.toFixed(1)+' SAR/h':'—'}</div></div>
       ${d.fleetCut!==null?`<div class="kpi-card"><div class="kpi-card-label">Fleet Cut</div><div class="kpi-card-value">${fmt(d.fleetCut)} SAR</div></div><div class="kpi-card"><div class="kpi-card-label">Driver Payout</div><div class="kpi-card-value">${fmt(d.driverPayout)} SAR</div></div>`:''}
     </div>
 
-    ${driverHistory.length>1?`
-    <div class="section-label">Day-by-Day This Month</div>
+    <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <span>Day-by-Day <span style="font-size:11px;color:${filterActive?'var(--bolt-green)':'var(--text-muted)'};font-weight:400;text-transform:none;letter-spacing:0">— ${filterActive?scopeLbl:'full history'} (${rows.length} day${rows.length!==1?'s':''})</span></span>
+      <span style="display:flex;align-items:center;gap:8px">${filterPill}${monthSelect}</span>
+    </div>
+    ${rows.length>=1?`
     <table class="day-table">
       <thead><tr><th>Date</th><th class="td-r">Orders</th><th class="td-r">Hours</th><th class="td-r">Net SAR</th><th class="td-r">Accept</th><th class="td-r">Rating</th><th class="td-r">Bonus ★</th></tr></thead>
       <tbody>
-        ${driverHistory.map(h=>`<tr>
+        ${rows.map(h=>`<tr>
           <td>${h.period}</td>
           <td class="td-r">${h.d.orders}</td>
           <td class="td-r">${h.d.hoursOnline}h</td>
@@ -1767,21 +1888,20 @@ function openModal(id) {
         </tr>`).join('')}
         <tr style="background:var(--bg-card2);font-weight:700">
           <td>Total</td>
-          <td class="td-r">${driverHistory.reduce((a,h)=>a+h.d.orders,0)}</td>
-          <td class="td-r">${driverHistory.reduce((a,h)=>a+h.d.hoursOnline,0).toFixed(1)}h</td>
-          <td class="td-r">${fmt(driverHistory.reduce((a,h)=>a+h.d.netEarnings,0))}</td>
+          <td class="td-r">${rows.reduce((a,h)=>a+h.d.orders,0)}</td>
+          <td class="td-r">${rows.reduce((a,h)=>a+h.d.hoursOnline,0).toFixed(1)}h</td>
+          <td class="td-r">${fmt(rows.reduce((a,h)=>a+h.d.netEarnings,0))}</td>
           <td class="td-r">—</td><td class="td-r">—</td>
-          <td class="td-r" style="color:var(--green)">${driverHistory.some(h=>sN(h.d.campaign)>0)?'+'+fmt(driverHistory.reduce((a,h)=>a+sN(h.d.campaign),0)):'—'}</td>
+          <td class="td-r" style="color:var(--green)">${rows.some(h=>sN(h.d.campaign)>0)?'+'+fmt(rows.reduce((a,h)=>a+sN(h.d.campaign),0)):'—'}</td>
         </tr>
       </tbody>
-    </table>` : ''}
+    </table>` : `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">No days for ${scopeLbl||'this period'}</div>`}
   `;
-  document.getElementById('modalOverlay').classList.add('open');
-  document.getElementById('modalPanel').classList.add('open');
 }
 function closeModal() {
   document.getElementById('modalOverlay').classList.remove('open');
   document.getElementById('modalPanel').classList.remove('open');
+  modalCtx = null;
 }
 function getDriverHistoryForMonth(driverId, name, pInfo) {
   if (!pInfo) return [];
