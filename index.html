@@ -2041,7 +2041,7 @@ function startVoiceSearch() {
   voiceRecog = new SpeechRec();
   voiceRecog.continuous      = false;
   voiceRecog.interimResults  = false;
-  voiceRecog.lang            = 'ar-SA'; // Arabic primary — also catches English words
+  voiceRecog.lang            = 'en-US'; // English handles both EN names and Arabic-origin names (habib, ahmed, etc.)
   voiceRecog.maxAlternatives = 5;
 
   m8SetOrb('listening');
@@ -2052,8 +2052,11 @@ function startVoiceSearch() {
     voiceRecog._stream=stream;
   }).catch(()=>{});
 
+  let _voiceGotResult = false;
   voiceRecog.onresult = e => {
+    _voiceGotResult = true;
     const alts = Array.from({length: e.results[0].length}, (_,i) => e.results[0][i].transcript.trim());
+    // Try each alternative; also try an en-US re-attempt by passing all alts
     let cmd = null;
     for (const alt of alts) {
       const c = parseVoiceCommand(alt);
@@ -2063,10 +2066,11 @@ function startVoiceSearch() {
     executeVoiceCommand(cmd);
   };
   voiceRecog.onerror = err => {
+    _voiceGotResult = true; // treat error as "handled"
     const msg =
-      err.error === 'no-speech'   ? `<span class="vt-err">No speech detected</span><div class="vt-hint">Tap the orb then speak</div>` :
+      err.error === 'no-speech'   ? `<span class="vt-err">No speech detected</span><div class="vt-hint">Tap the orb then speak clearly</div>` :
       err.error === 'not-allowed' ? `<span class="vt-err">Microphone blocked</span><div class="vt-hint">Allow mic in browser → reload</div>` :
-      err.error === 'network'     ? `<span class="vt-err">Network error</span><div class="vt-hint">Chrome needs internet for voice.<br>Try serving via local server:<br><code style="color:var(--cyan)">python -m http.server 8080</code></div>` :
+      err.error === 'network'     ? `<span class="vt-err">Network error</span><div class="vt-hint">Chrome needs internet for voice recognition</div>` :
       `<span class="vt-err">Error: ${err.error}</span><div class="vt-hint">Try again or check mic permissions</div>`;
     showVoicePanel(msg, false);
   };
@@ -2075,6 +2079,10 @@ function startVoiceSearch() {
     stopWaveform();
     voiceRecog = null;
     m8SetOrb('idle');
+    // If nothing was processed, clear the stuck listening animation
+    if (!_voiceGotResult) {
+      showVoicePanel(`<span class="vt-err">Nothing heard</span><div class="vt-hint">Tap M8 then speak — say a driver name or command</div>`);
+    }
   };
   voiceRecog.start();
 }
