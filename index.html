@@ -1168,6 +1168,8 @@ function confirmUpload() {
   document.getElementById('headerPeriod').textContent = period;
 
   saveToHistory(period, currentDrivers, pendingFilename, pInfo);
+  // Record Bolt transfer amounts from this CSV into the payment log
+  recordTransfersFromUpload(htmlDate, currentDrivers);
   // Include the newly uploaded day in the active period selection
   if (sumPeriodMode === 'all' || summarySelectedDays === null) {
     summarySelectedDays = new Set(getHistory().map(h => h.period));
@@ -1367,8 +1369,9 @@ function getMonthlyNet(driverId, driverName, month, year) {
 // All history rows for one driver, oldest→newest, since they first appear.
 // No periodInfo requirement — falls back to period-string ordering.
 function getDriverAllHistory(driverId, name) {
+  const nk = driverKey(name); // normalised key for case-insensitive, trim-safe matching
   return getHistory()
-    .map(h => ({ period:h.period, d:h.drivers.find(d=>d.driverId===driverId||d.name===name) }))
+    .map(h => ({ period:h.period, d:h.drivers.find(d=>(driverId&&d.driverId===driverId)||driverKey(d.name)===nk) }))
     .filter(x => x.d)
     .sort((a,b) => periodSortKey(a.period) - periodSortKey(b.period));
 }
@@ -1753,8 +1756,15 @@ function buildPagination(total, current) {
 let modalMonthFilter = 'all';   // 'all' | 'YYYY-MM' — driver detail modal month filter
 let modalCtx         = null;    // cached context so the month filter can re-render in place
 function openModal(id) {
-  const drivers = currentDrivers; if (!drivers) return;
-  const d = drivers.find(x => x.driverId===id || x.name===id); if (!d) return;
+  // Find the driver in currentDrivers first; if missing (e.g. they didn't work on
+  // the latest uploaded day), scan all history for the most recent entry for them.
+  let d = (currentDrivers||[]).find(x => x.driverId===id || driverKey(x.name)===driverKey(id));
+  if (!d) {
+    const hist = getDriverAllHistory('', id);
+    if (!hist.length) return;
+    d = hist[hist.length - 1].d; // most recent day's record
+  }
+  if (!d) return;
   const s      = loadSettings();
   const target = s.monthlyTarget;
   const pInfo  = currentPeriodInfo;
@@ -4804,7 +4814,7 @@ function clearAllData() {
 // don't see this exact string, your browser is serving a cached old HTML.
 // Force-refresh with Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac).
 // ═══════════════════════════════════════════
-const BUILD_VERSION = 'v3.0 — 2026-05-31 — feat: M8 AI engine, Star Map, Neural Orb, MOHM Fleet';
+const BUILD_VERSION = 'v3.1 — 2026-05-31 — feat: Payment Transfer Tracking (auto-status, backlog hint)';
 console.log('%cBolt Dashboard ' + BUILD_VERSION, 'color:#34d186;font-weight:bold');
 
 // ═══════════════════════════════════════════
@@ -5005,8 +5015,13 @@ async function syncToCloud() {
   // Write back: preserve ALL existing keys, slim khair_ fields only
   const updated = {
     ...record,
-    khair_history:     slimResult.slim,
-    khair_nameMapping: JSON.parse(localStorage.getItem('khair_name_mapping') || '[]'),
+    khair_history:          slimResult.slim,
+    khair_nameMapping:      JSON.parse(localStorage.getItem('khair_name_mapping') || '[]'),
+    khair_courier_profiles: JSON.parse(localStorage.getItem(COURIER_PROFILES_KEY)  || '{}'),
+    khair_courier_overrides:JSON.parse(localStorage.getItem(COURIER_OVERRIDES_KEY) || '{}'),
+    khair_cycle_receipts:   JSON.parse(localStorage.getItem(CYCLE_RECEIPTS_KEY)    || '{}'),
+    khair_transfer_log:     JSON.parse(localStorage.getItem(TRANSFER_LOG_KEY)      || '{}'),
+    khair_cycle_anchor:     localStorage.getItem(CYCLE_ANCHOR_KEY) || '',
     version: 2
   };
 
@@ -5050,6 +5065,31 @@ async function fetchFromCloud() {
   if (cloudMapping && Array.isArray(cloudMapping) && cloudMapping.length >= nameMapping.length) {
     nameMapping = cloudMapping;
     localStorage.setItem('khair_name_mapping', JSON.stringify(nameMapping));
+  }
+  // Restore finance data — merge so local manual edits win on conflict
+  const r = data.record || {};
+  if (r.khair_courier_profiles && Object.keys(r.khair_courier_profiles).length) {
+    const local = loadCourierProfiles();
+    const merged = { ...r.khair_courier_profiles, ...local }; // local wins
+    saveCourierProfiles(merged);
+  }
+  if (r.khair_courier_overrides && Object.keys(r.khair_courier_overrides).length) {
+    const local = loadOverrides();
+    const merged = { ...r.khair_courier_overrides, ...local };
+    saveOverrides(merged);
+  }
+  if (r.khair_cycle_receipts && Object.keys(r.khair_cycle_receipts).length) {
+    const local = loadCycleReceipts();
+    const merged = { ...r.khair_cycle_receipts, ...local };
+    saveCycleReceipts(merged);
+  }
+  if (r.khair_transfer_log && Object.keys(r.khair_transfer_log).length) {
+    const local = loadTransferLog();
+    const merged = { ...r.khair_transfer_log, ...local };
+    saveTransferLog(merged);
+  }
+  if (r.khair_cycle_anchor && !getCycleAnchor()) {
+    setCycleAnchor(r.khair_cycle_anchor);
   }
   setSyncStatus('synced', 'synced ✓');
   localStorage.setItem('khair_last_sync', new Date().toISOString());
@@ -5210,10 +5250,11 @@ function updateDiagnostics() {
       total += (localStorage.getItem(k)||'').length;
     }
     const hist = getHistory();
-    const profiles = Object.keys(loadCourierProfiles()).length;
+    const profiles  = Object.keys(loadCourierProfiles()).length;
     const overrides = Object.keys(loadOverrides()).length;
-    const receipts = Object.keys(loadCycleReceipts()).length;
-    s.textContent = 'Storage: ' + (total/1024).toFixed(1) + 'KB · History: ' + hist.length + ' day(s) · Profiles: ' + profiles + ' · Overrides: ' + overrides + ' · Cycles: ' + receipts;
+    const receipts  = Object.keys(loadCycleReceipts()).length;
+    const transfers = Object.keys(loadTransferLog()).length;
+    s.textContent = 'Storage: ' + (total/1024).toFixed(1) + 'KB · History: ' + hist.length + ' day(s) · Profiles: ' + profiles + ' · Overrides: ' + overrides + ' · Cycles: ' + receipts + ' · Transfer dates: ' + transfers;
   }
 }
 function showPayoutPopup(e, projected, actual, gap) {
@@ -5242,7 +5283,8 @@ const COURIER_PROFILES_KEY  = 'khair_courier_profiles';
 const COURIER_OVERRIDES_KEY = 'khair_courier_overrides';
 const CYCLE_RECEIPTS_KEY    = 'khair_cycle_receipts';
 const CYCLE_ANCHOR_KEY      = 'khair_cycle_anchor';
-let financeViewMode  = 'courier';
+const TRANSFER_LOG_KEY      = 'khair_transfer_log';
+let financeViewMode  = 'courier'; // 'courier' | 'model' | 'cycle' | 'transfers'
 let financeMonth     = '';
 let financeCycle     = '';
 let finShowAllCycles = false;
@@ -5306,6 +5348,68 @@ function saveCycleReceipts(o) { localStorage.setItem(CYCLE_RECEIPTS_KEY, JSON.st
 function getCycleReceipt(td) { return loadCycleReceipts()[td] || null; }
 function upsertCycleReceipt(r) { const a = loadCycleReceipts(); a[r.transferDate] = r; saveCycleReceipts(a); }
 function deleteCycleReceipt(td) { const a = loadCycleReceipts(); delete a[td]; saveCycleReceipts(a); }
+
+// ═══════════════════════════════════════════
+// PAYMENT TRANSFER LOG
+// ═══════════════════════════════════════════
+// Storage: { "YYYY-MM-DD": [{ name, amount, netEarnings }, ...], ... }
+// Called automatically on every CSV upload (confirmUpload).
+// Only records drivers where Bolt moved money (actualPayout ≠ 0).
+function loadTransferLog() { try { return JSON.parse(localStorage.getItem(TRANSFER_LOG_KEY) || '{}'); } catch(e) { return {}; } }
+function saveTransferLog(o) { localStorage.setItem(TRANSFER_LOG_KEY, JSON.stringify(o)); }
+
+function recordTransfersFromUpload(cycleDateYMD, drivers) {
+  if (!cycleDateYMD || !drivers || !drivers.length) return;
+  const entries = [];
+  drivers.forEach(d => {
+    const amount = d.actualPayout || 0;
+    if (amount === 0) return; // skip — no Bolt transfer for this driver this cycle
+    entries.push({
+      name:        d.name,
+      amount:      +amount.toFixed(2),
+      netEarnings: +(d.netEarnings || 0).toFixed(2)
+    });
+  });
+  if (!entries.length) return;
+  const log = loadTransferLog();
+  log[cycleDateYMD] = entries;
+  saveTransferLog(log);
+}
+
+// Status is computed dynamically (no manual input needed):
+//   REVERSED  — a negative entry for the same driver appears in ANY cycle within 3 days after
+//   CONFIRMED — today is ≥ 3 days after cycleDate and no reversal found
+//   PENDING   — less than 3 days have passed and no reversal found
+function computeTransferStatus(driverName, cycleDateYMD, log) {
+  const dk      = (driverName || '').trim().toLowerCase();
+  const cycleMs = parseLocalDate(cycleDateYMD).getTime();
+  const today   = new Date(); today.setHours(12, 0, 0, 0);
+  // Scan later entries for a reversal within 3 calendar days
+  for (const [otherDate, entries] of Object.entries(log)) {
+    const otherMs  = parseLocalDate(otherDate).getTime();
+    if (otherMs <= cycleMs) continue;                          // must be strictly after
+    const daysDiff = (otherMs - cycleMs) / 86400000;
+    if (daysDiff > 3) continue;                                // outside the 3-day window
+    const reversed = (entries || []).find(
+      e => (e.name || '').trim().toLowerCase() === dk && e.amount < 0
+    );
+    if (reversed) return 'REVERSED';
+  }
+  const daysSince = (today.getTime() - cycleMs) / 86400000;
+  return daysSince >= 3 ? 'CONFIRMED' : 'PENDING';
+}
+
+function transferStatusBadge(status) {
+  if (status === 'CONFIRMED') return '✅ Confirmed';
+  if (status === 'REVERSED')  return '🔴 Reversed by Bolt';
+  return '⏳ Pending';
+}
+function transferStatusStyle(status) {
+  if (status === 'CONFIRMED') return 'color:var(--green);font-weight:600';
+  if (status === 'REVERSED')  return 'color:var(--red);font-weight:600';
+  return 'color:var(--amber);font-weight:600';
+}
+
 // ── Local-date helpers (timezone-safe) ────────────────
 // Always parse date strings at noon so UTC offset never rolls the day backward
 function parseLocalDate(ymdStr) { return new Date(ymdStr + 'T12:00:00'); }
@@ -5627,6 +5731,7 @@ function renderFinanceTab() {
         <button class="view-toggle-btn ${financeViewMode==='courier'?'active':''}" onclick="setFinanceView('courier')">By Captain</button>
         <button class="view-toggle-btn ${financeViewMode==='model'?'active':''}" onclick="setFinanceView('model')">By Model</button>
         <button class="view-toggle-btn ${financeViewMode==='cycle'?'active':''}" onclick="setFinanceView('cycle')">Cycle Reconciliation</button>
+        <button class="view-toggle-btn ${financeViewMode==='transfers'?'active':''}" onclick="setFinanceView('transfers')" style="${Object.keys(loadTransferLog()).length>0?'color:var(--bolt-green)':''}">💸 Transfer Log</button>
       </div>
     </div>
     <div id="financeMainContent"></div>
@@ -5639,9 +5744,10 @@ function renderFinanceTab() {
     </div>
     ${buildFinanceModals()}
   `;
-  if (financeViewMode === 'courier')      renderFinanceCourierView();
-  else if (financeViewMode === 'model')   renderFinanceModelView();
-  else if (financeViewMode === 'cycle')   renderFinanceCycleView();
+  if (financeViewMode === 'courier')         renderFinanceCourierView();
+  else if (financeViewMode === 'model')      renderFinanceModelView();
+  else if (financeViewMode === 'cycle')      renderFinanceCycleView();
+  else if (financeViewMode === 'transfers')  renderFinanceTransferView();
   renderFinBonus();
 }
 
@@ -5865,6 +5971,142 @@ function deleteCycleReceiptConfirm(transferDate) {
   financeCycle = defaultCycle();
   renderFinanceTab();
   toast('Cycle receipt deleted');
+}
+
+// ═══════════════════════════════════════════
+// RENDER FINANCE — TRANSFER LOG VIEW
+// ═══════════════════════════════════════════
+function renderFinanceTransferView() {
+  const log = loadTransferLog();
+  const el  = document.getElementById('financeMainContent');
+  if (!el) return;
+  const cycleDates = Object.keys(log).sort().reverse(); // newest first
+
+  if (!cycleDates.length) {
+    el.innerHTML = `
+      <div class="finance-section">
+        <div class="finance-section-header">
+          <span class="finance-section-title">💸 Payment Transfer Log</span>
+        </div>
+        <div class="finance-empty" style="padding:40px 20px">
+          No transfer data yet.<br><br>
+          Upload any Bolt daily CSV — if it contains <strong>Actual payout</strong> amounts,<br>
+          they'll be recorded here automatically. No manual entry needed.
+        </div>
+      </div>`;
+    return;
+  }
+
+  // Prefer financeCycle if it's a logged date, else fall back to newest
+  const selectedCycle = log[financeCycle] ? financeCycle : cycleDates[0];
+  const entries       = log[selectedCycle] || [];
+
+  // Enrich with auto-computed status + backlog hint
+  const enriched = entries.map(e => {
+    const status = e.amount < 0 ? 'REVERSED' : computeTransferStatus(e.name, selectedCycle, log);
+    return { ...e, status, isBacklog: false };
+  });
+
+  // Fleet-level summary for this cycle
+  const totalTransferred = enriched.filter(e => e.amount > 0).reduce((s, e) => s + e.amount, 0);
+  const countConfirmed   = enriched.filter(e => e.status === 'CONFIRMED').length;
+  const countPending     = enriched.filter(e => e.status === 'PENDING').length;
+  const countReversed    = enriched.filter(e => e.status === 'REVERSED').length;
+
+  // Build cycle selector from all logged transfer dates
+  const cycleOpts = cycleDates.map(d => {
+    const dt  = parseLocalDate(d);
+    const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()];
+    const lbl = dow + ' ' + dt.getDate() + ' ' + MONTH_NAMES[dt.getMonth()] + ' ' + dt.getFullYear();
+    const n   = (log[d] || []).filter(e => e.amount !== 0).length;
+    return `<option value="${d}" ${d === selectedCycle ? 'selected' : ''}>${lbl}  (${n} driver${n!==1?'s':''})</option>`;
+  }).join('');
+
+  // Per-driver rows, sorted by absolute amount descending
+  const rows = [...enriched]
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+    .map(e => {
+      const foreign = lookupForeignName(e.name);
+      let note = '';
+      if (e.amount < 0) {
+        note = '<span style="color:var(--red);font-size:11px">⚠ Bolt reversed this transfer</span>';
+      } else if (e.isBacklog) {
+        note = '<span style="color:var(--text-muted);font-size:11px">📦 includes backlog from prior cycles</span>';
+      }
+      const amtColor  = e.amount < 0 ? 'var(--red)' : 'var(--text)';
+      const amtSign   = e.amount < 0 ? '−' : '+';
+      const netCell   = e.netEarnings > 0
+        ? `<span style="font-family:var(--mono);color:var(--text-muted)">${fmt(e.netEarnings)}</span>`
+        : `<span style="color:var(--text-dim)">—</span>`;
+      return `<tr>
+        <td>
+          <div style="font-weight:600">${e.name}</div>
+          ${foreign ? `<span class="d-foreign">${foreign}</span>` : ''}
+        </td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:${amtColor}">${amtSign}${fmt(Math.abs(e.amount))}</td>
+        <td style="text-align:right">${netCell}</td>
+        <td><span style="${transferStatusStyle(e.status)}">${transferStatusBadge(e.status)}</span></td>
+        <td style="font-size:11px">${note}</td>
+      </tr>`;
+    }).join('');
+
+  el.innerHTML = `
+    <div class="finance-section">
+      <div class="finance-section-header">
+        <span class="finance-section-title">💸 Payment Transfer Log</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:11px;color:var(--text-muted)">Transfer date:</span>
+          <select class="kpi-select" onchange="setFinanceCycle(this.value)" style="min-width:260px">${cycleOpts}</select>
+        </div>
+      </div>
+
+      <!-- Fleet summary for this cycle -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:16px 20px;background:var(--bg-card2);border-bottom:1px solid var(--border)">
+        <div>
+          <div class="finance-kpi-label">Total Transferred</div>
+          <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--green)">${fmt(totalTransferred)} <span style="font-size:13px">SAR</span></div>
+        </div>
+        <div>
+          <div class="finance-kpi-label">✅ Confirmed</div>
+          <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--green)">${countConfirmed}</div>
+          <div style="font-size:10px;color:var(--text-muted)">received &gt; 3 days ago</div>
+        </div>
+        <div>
+          <div class="finance-kpi-label">⏳ Pending</div>
+          <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--amber)">${countPending}</div>
+          <div style="font-size:10px;color:var(--text-muted)">within 3-day window</div>
+        </div>
+        <div>
+          <div class="finance-kpi-label">🔴 Reversed</div>
+          <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--red)">${countReversed}</div>
+          <div style="font-size:10px;color:var(--text-muted)">Bolt clawed back</div>
+        </div>
+      </div>
+
+      <!-- Status rule legend -->
+      <div style="padding:8px 20px;font-size:11px;color:var(--text-muted);background:var(--bg-card2);border-bottom:1px solid var(--border);line-height:1.6">
+        ⏳ <strong>Pending</strong> → auto-upgrades to ✅ <strong>Confirmed</strong> after 3 days with no reversal &nbsp;·&nbsp;
+        🔴 <strong>Reversed</strong> when Bolt posts a negative transfer within 3 days &nbsp;·&nbsp;
+        📦 large amount = includes backlog from prior cycles
+      </div>
+
+      <!-- Per-driver table -->
+      <div style="overflow-x:auto">
+        <table class="finance-table">
+          <thead><tr>
+            <th>Driver</th>
+            <th style="text-align:right">Transferred (SAR)</th>
+            <th style="text-align:right">Day's Net Earnings</th>
+            <th>Status</th>
+            <th>Note</th>
+          </tr></thead>
+          <tbody>
+            ${rows || '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">No transfers recorded for this date.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 function renderFinBonus() {
@@ -6379,24 +6621,21 @@ function renderAnalytics() {
   }).join('');
   const selectorHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px">${monthBtnHtml}</div>`;
 
+  // No data yet
   if (!history.length) {
-    el.innerHTML = selectorHtml + `<div style="text-align:center;padding:60px 0;color:var(--text-muted);font-size:14px">No data yet — upload a report to see analytics.</div>`;
+    el.innerHTML = selectorHtml + `<div class="empty-state"><div class="empty-icon">📈</div><div class="empty-title">No data yet</div><div class="empty-sub">Upload reports to see analytics</div></div>`;
     return;
   }
 
-  // Filter by selected month (periodInfo uses 0-indexed months)
-  const allSorted = [...history].sort((a, b) => periodSortKey(a.period) - periodSortKey(b.period));
-  function filterByMonth(hist) {
-    if (analyticsMonth === 'all') return hist;
+  const allSorted = [...history]
+    .filter(h => h.totalNet !== undefined)
+    .sort((a, b) => periodSortKey(a.period) - periodSortKey(b.period));
+
+  function filterByMonth(data) {
+    if (analyticsMonth === 'all') return data;
     const [y, m] = analyticsMonth.split('-').map(Number);
-    const targetMonth = m - 1; // 0-indexed to match periodInfo
-    return hist.filter(h => {
-      if (h.periodInfo) {
-        const { start, end } = h.periodInfo;
-        return (start.month === targetMonth && start.year === y) ||
-               (end.month === targetMonth && end.year === y);
-      }
-      // Fallback: parse from period string
+    const targetMonth = m - 1;
+    return data.filter(h => {
       const pk = periodMonthKey(h.period); // e.g. "May 2026"
       const pm = pk && pk.match(/(\w{3})\s(\d{4})/);
       return pm && MONTH_MAP[pm[1]] === targetMonth && parseInt(pm[2]) === y;
@@ -6439,7 +6678,7 @@ function renderAnalytics() {
     return `<div class="akpi-delta ${cls}">${sign} ${Math.abs(pct).toFixed(1)}% vs prev 7d</div>`;
   };
 
-  // Top captains from filtered data — fixed: no isActive gate, just skip missing names / zero earnings
+  // Top captains from filtered data
   const driverTotals = {};
   viewData.forEach(h => (h.drivers||[]).forEach(d => {
     if (!d.name) return;
