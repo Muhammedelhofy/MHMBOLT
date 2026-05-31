@@ -1858,6 +1858,41 @@ function showVoiceListening(hint) {
   t.classList.add('show');
 }
 
+// ── Arabic → Latin phonetic name table (for voice matching) ──
+const AR_NAME_LATIN = {
+  'حبيب':'habib','محمد':'mohammed','عبدالله':'abdullah','أحمد':'ahmed','احمد':'ahmed',
+  'علي':'ali','حسن':'hassan','حسين':'hussein','عمر':'omar','سعد':'saad',
+  'خالد':'khaled','فيصل':'faisal','سلطان':'sultan','عبدالرحمن':'abdulrahman',
+  'عبد الرحمن':'abdulrahman','يوسف':'yousef','إبراهيم':'ibrahim','ابراهيم':'ibrahim',
+  'مصطفى':'mustafa','طارق':'tarek','سامي':'sami','رامي':'rami',
+  'وليد':'walid','منصور':'mansour','فهد':'fahad','هاني':'hani',
+  'أيمن':'ayman','زياد':'ziad','إسماعيل':'ismail','اسماعيل':'ismail',
+  'صالح':'saleh','ناصر':'nasser','راشد':'rashed','شهاب':'shehab',
+  'بندر':'bandar','تركي':'turki','سعود':'saud','ياسر':'yasser',
+  'جمال':'jamal','حاتم':'hatem','عدنان':'adnan','زكريا':'zakaria',
+  'هيثم':'haitham','مازن':'mazen','أنس':'anas','انس':'anas',
+  'كريم':'karim','فارس':'fares','ماهر':'maher','بلال':'bilal',
+  'جاسر':'jasser','أسامة':'osama','قاسم':'qasim','أنور':'anwar',
+  'مشاري':'meshari','غازي':'ghazi','مهند':'mohannad','رفيق':'rafik',
+  'لقمان':'luqman','نجم':'najm','ربيع':'rabie','عاصم':'asim',
+  'عبدالعزيز':'abdulaziz','رياض':'riyad','ماجد':'majed','جلال':'jalal',
+  'وسيم':'waseem','باسل':'basel','أسامة':'osama','رشيد':'rashid',
+  'شريف':'sherif','كمال':'kamal','حمدي':'hamdi','شوقي':'shawky',
+  'مجدي':'magdy','إياد':'eyad','بشير':'bashir','جابر':'jaber',
+  'مراد':'murad','عصام':'essam','فتحي':'fathi','نادر':'nader',
+  'حمزة':'hamza','أمجد':'amjad','وائل':'wael','صادق':'sadiq',
+  'رعد':'raad','ثامر':'thamer','عزيز':'aziz','لطيف':'lateef',
+  'رضا':'rida','نور':'noor','زين':'zein','بهاء':'bahaa',
+  'سليم':'salim','جواد':'jawad','باسم':'basem','هشام':'hesham',
+  'عقيل':'aqeel','رياض':'riyad','سمير':'samir','خليل':'khalil',
+  'عبدالكريم':'abdulkarim','عبد الكريم':'abdulkarim',
+  'عبدالرحيم':'abdulrahim','ابو':'abu','محمود':'mahmoud',
+  'ممدوح':'mamdouh','نبيل':'nabil','تامر':'tamer','شادي':'shadi',
+};
+function arToLatin(arabicStr) {
+  return (arabicStr||'').split(/\s+/).map(t => AR_NAME_LATIN[t] || t).join(' ');
+}
+
 // ── Levenshtein distance for fuzzy name matching ──
 function levenshtein(a, b) {
   const m = a.length, n = b.length;
@@ -1871,14 +1906,16 @@ function scoreDriverMatch(spoken, driverName) {
   const s  = spoken.toLowerCase().replace(/[^a-zأ-ي0-9\s]/g,'').trim();
   const dn = driverName.toLowerCase();
   const fn = lookupForeignName(driverName).toLowerCase();
+  // Transliterate Arabic name tokens to Latin equivalents for voice matching
+  const dnLatin = arToLatin(dn);
   const words = s.split(/\s+/).filter(Boolean);
   if (!words.length) return 0;
 
-  // 1. Every spoken word substring-matches anywhere in the full name → strong match
-  const fullText = dn + ' ' + fn;
+  // 1. Exact substring match across all representations
+  const fullText = dn + ' ' + fn + ' ' + dnLatin;
   if (words.every(w => fullText.includes(w))) return 100;
 
-  // 2. Any spoken word fuzzy-matches any name token (Levenshtein ≤ 2)
+  // 2. Fuzzy match (Levenshtein) against all name tokens incl. transliterated
   const nameTokens = fullText.split(/\s+/).filter(Boolean);
   let bestScore = 0;
   for (const w of words) {
