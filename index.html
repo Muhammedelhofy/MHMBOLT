@@ -741,6 +741,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
       <button class="m8pick-btn" onclick="m8PickCmd('mode','single')">Single Day</button>
       <button class="m8pick-btn m8pick-btn-red" onclick="m8PickCmd('clear',null)">Clear All</button>
     </div>
+    <div id="m8PickResult" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(0,255,179,.15);font-size:11px;line-height:1.6;color:var(--text)"></div>
   </div>
 </div>
 <input type="file" id="fileInput" accept=".csv" onchange="handleFile(this.files[0])">
@@ -1897,136 +1898,150 @@ function showM8Picker() {
 function hideM8Picker() {
   const picker = document.getElementById('m8Picker');
   if (picker) picker.style.display = 'none';
+  const r = document.getElementById('m8PickResult');
+  if (r) { r.style.display = 'none'; r.innerHTML = ''; }
   m8WakeMode = false;
   // Stop any re-listen session
   if (voiceRecog) { try { voiceRecog.stop(); } catch(e){} voiceRecog = null; }
   m8SetOrb('idle');
 }
+// Show a result/confirmation INSIDE the picker (keeps the picker open for chaining)
+function m8PickShow(html) {
+  const r = document.getElementById('m8PickResult');
+  if (!r) { showVoicePanel(html, false); return; }
+  r.style.display = 'block';
+  r.innerHTML = html;
+  r.scrollIntoView({ block:'nearest' });
+}
+// Detailed "yesterday" report: on-track vs target, worked under 8h, inactive
+function m8YesterdayReport() {
+  const hist = getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
+  const y = hist[0]; // latest uploaded day = the most recent ("yesterday") report
+  if (!y) return `<span class="vt-err">No data loaded</span>`;
+  const s = loadSettings();
+  const dailyTarget = Math.round((s.monthlyTarget||6000)/30);
+  const drivers  = y.drivers || [];
+  const active   = drivers.filter(d=>d.isActive);
+  const inactive = drivers.filter(d=>!d.isActive);
+  const onTrack     = active.filter(d=>(d.netEarnings||0)>=dailyTarget);
+  const belowTarget = active.filter(d=>(d.netEarnings||0)<dailyTarget);
+  const below8h     = active.filter(d=>(d.hoursOnline||0)<8);
+  const totalNet    = active.reduce((a,d)=>a+(d.netEarnings||0),0);
+  const ln = n => lookupForeignName(n)||n;
+  const list = arr => arr.length ? arr.map(d=>ln(d.name)).join('<br>') : '—';
+  const listH = arr => arr.length ? arr.map(d=>`${ln(d.name)} <span style="color:var(--text-muted)">${(d.hoursOnline||0).toFixed(1)}h</span>`).join('<br>') : '—';
+  return `
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">📅 <b style="color:var(--bolt-green)">${y.period}</b> · target ${fmt(dailyTarget)} SAR/day · fleet net ${fmt(totalNet)} SAR · ${active.length}/${drivers.length} active</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      <div style="background:rgba(0,255,179,.06);border:1px solid rgba(0,255,179,.22);border-radius:3px;padding:6px 8px">
+        <div style="font-size:9px;color:var(--text-muted);letter-spacing:.06em">✅ ON TRACK (${onTrack.length})</div>
+        <div style="font-size:10px;color:var(--bolt-green);margin-top:3px;line-height:1.7">${list(onTrack)}</div>
+      </div>
+      <div style="background:rgba(255,176,32,.06);border:1px solid rgba(255,176,32,.22);border-radius:3px;padding:6px 8px">
+        <div style="font-size:9px;color:var(--text-muted);letter-spacing:.06em">⚠️ BELOW TARGET (${belowTarget.length})</div>
+        <div style="font-size:10px;color:var(--amber);margin-top:3px;line-height:1.7">${list(belowTarget)}</div>
+      </div>
+      <div style="background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.22);border-radius:3px;padding:6px 8px">
+        <div style="font-size:9px;color:var(--text-muted);letter-spacing:.06em">🕐 WORKED &lt; 8 HRS (${below8h.length})</div>
+        <div style="font-size:10px;color:var(--cyan);margin-top:3px;line-height:1.7">${listH(below8h)}</div>
+      </div>
+      <div style="background:rgba(255,68,102,.05);border:1px solid rgba(255,68,102,.22);border-radius:3px;padding:6px 8px">
+        <div style="font-size:9px;color:var(--text-muted);letter-spacing:.06em">🔴 INACTIVE (${inactive.length})</div>
+        <div style="font-size:10px;color:var(--red);margin-top:3px;line-height:1.7">${list(inactive)}</div>
+      </div>
+    </div>`;
+}
 function m8PickCmd(type, val) {
-  m8WakeMode = false;
-  hideM8Picker();
+  // The picker intentionally stays OPEN so commands can be chained
+  // (e.g. sort, then go to a different page). It only closes via ✕ or clicking outside.
   if (type === 'tab') {
     // Simulate a real tab click — fires the element's own onclick handler (showTab + render)
     const tabEl = document.querySelector(`[data-tab="${val}"]`);
     if (tabEl) tabEl.click();
     const label = {captains:'Captains',finance:'Finance',analytics:'Analytics',settings:'Settings'}[val]||val;
-    showVoicePanel(`<b>✓ ${label}</b>`);
+    m8PickShow(`<b>✓ ${label}</b> <span style="color:var(--text-muted)">— pick another command, or ✕ to close</span>`);
     return;
   }
   if (type === 'sort') {
-    // Switch to captains tab first if needed
+    // Force BOTH the Captains tab AND the "By Captain" sub-view so the sort is actually visible
+    captainView = 'captain';
     const tabEl = document.querySelector('[data-tab="captains"]');
-    if (tabEl && !tabEl.classList.contains('active')) tabEl.click();
-    // Map picker keys → sumCourierSortCol keys (captains table) and re-render
+    if (tabEl && !tabEl.classList.contains('active')) showTab('captains', tabEl);
+    // Map picker keys → courier-table sort keys, then re-render (header glows via th-sort-active)
     const colMap = {net:'net', orders:'rides', hours:'earnhr', accept:'accept', gross:'gross'};
     const col = colMap[val] || 'net';
     sumCourierSortCol = col; sumCourierSortAsc = false;
     renderCaptains();
-    const label = {net:'Earnings',orders:'Rides',hours:'Hours',accept:'Acceptance',gross:'Gross'}[val]||val;
-    showVoicePanel(`<b>✓ Sorted by ${label}</b>`);
+    const label = {net:'Earnings',orders:'Rides',hours:'Earn/hr',accept:'Acceptance',gross:'Gross'}[val]||val;
+    m8PickShow(`<b>✓ Sorted by ${label}</b> <span style="color:var(--text-muted)">— column header highlighted</span>`);
     return;
   }
   if (type === 'mode') {
-    // Set dailyMode BEFORE tab click so renderCaptains uses correct mode in one pass
-    dailyMode = val;
+    // The Captains tab is driven by captainView (NOT the legacy dailyMode) — set it directly
+    captainView = (val === 'compare') ? 'compare' : 'captain';
     const tabEl = document.querySelector('[data-tab="captains"]');
-    if (tabEl) {
-      if (tabEl.classList.contains('active')) renderCaptains();
-      else tabEl.click(); // showTab calls renderCaptains() which now uses the updated dailyMode
-    }
-    showVoicePanel(`<b>✓ ${val==='compare'?'Compare Days':'Single Day'} view</b>`);
+    if (tabEl && !tabEl.classList.contains('active')) showTab('captains', tabEl);
+    else renderCaptains();
+    m8PickShow(`<b>✓ ${val==='compare'?'Compare Days':'By Captain'} view</b>`);
     return;
   }
   if (type === 'clear') {
-    compareSearch = ''; comparePinnedNames.clear(); searchQuery = '';
+    compareSearch = ''; comparePinnedNames.clear(); searchQuery = ''; captainSearch = '';
     const tabEl = document.querySelector('[data-tab="captains"]');
-    if (tabEl) {
-      if (tabEl.classList.contains('active')) renderCaptains();
-      else tabEl.click();
-    }
-    showVoicePanel(`<b>✓ All filters cleared</b>`);
+    if (tabEl && !tabEl.classList.contains('active')) showTab('captains', tabEl);
+    else renderCaptains();
+    m8PickShow(`<b>✓ All filters cleared</b>`);
     return;
   }
   if (type === 'yesterday') {
-    const hist = getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
-    // hist[0]=today/latest, hist[1]=yesterday. Use hist[1] if available, else hist[0]
-    const yest = hist.length > 1 ? hist[1] : hist[0];
-    if (!yest) { showVoicePanel(`<span class="vt-err">No data loaded</span>`); return; }
-    // Show detailed yesterday report in the voice panel (no autohide)
-    const s = loadSettings();
-    const dailyTarget = Math.round((s.monthlyTarget||6000)/30);
-    const drivers = yest.drivers || [];
-    const active = drivers.filter(d=>d.isActive);
-    const inactive = drivers.filter(d=>!d.isActive);
-    const hitTarget = active.filter(d=>(d.netEarnings||0)>=dailyTarget);
-    const belowTarget = active.filter(d=>(d.netEarnings||0)<dailyTarget);
-    const totalNet = active.reduce((a,d)=>a+(d.netEarnings||0),0);
-    const top = [...active].sort((a,b)=>(b.netEarnings||0)-(a.netEarnings||0))[0];
-    const lookupFn = n => lookupForeignName(n)||n;
-    showVoicePanel(`
-      <b style="color:var(--bolt-green)">${yest.period}</b><br>
-      💰 Fleet Net: <b>${fmt(totalNet)} SAR</b> &nbsp;·&nbsp; Active: <b>${active.length}</b>/${drivers.length}<br>
-      🏆 Top: <b style="color:#FFD700">${top?lookupFn(top.name):'—'}</b>${top?` (${fmt(top.netEarnings||0)} SAR)`:''}<br>
-      <div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr;gap:4px">
-        <div style="background:rgba(0,255,179,.06);border:1px solid rgba(0,255,179,.2);border-radius:2px;padding:5px 8px">
-          <div style="font-size:9px;color:var(--text-muted);letter-spacing:.08em">✅ HIT TARGET (${hitTarget.length})</div>
-          <div style="font-size:10px;color:var(--bolt-green);margin-top:3px;line-height:1.6">${hitTarget.slice(0,5).map(d=>lookupFn(d.name)).join('<br>')||'—'}${hitTarget.length>5?`<br>+${hitTarget.length-5} more`:''}</div>
-        </div>
-        <div style="background:rgba(255,68,102,.05);border:1px solid rgba(255,68,102,.2);border-radius:2px;padding:5px 8px">
-          <div style="font-size:9px;color:var(--text-muted);letter-spacing:.08em">⚠️ BELOW TARGET (${belowTarget.length})</div>
-          <div style="font-size:10px;color:var(--amber);margin-top:3px;line-height:1.6">${belowTarget.slice(0,5).map(d=>lookupFn(d.name)).join('<br>')||'—'}${belowTarget.length>5?`<br>+${belowTarget.length-5} more`:''}</div>
-        </div>
-      </div>
-      ${inactive.length?`<div style="margin-top:5px;font-size:10px;color:var(--text-muted)">🔴 Didn't work (${inactive.length}): ${inactive.slice(0,4).map(d=>lookupFn(d.name)).join(', ')}${inactive.length>4?` +${inactive.length-4} more`:''}</div>`:'<div style="margin-top:5px;font-size:10px;color:var(--bolt-green)">✅ All drivers worked</div>'}
-    `, false); // false = no auto-hide, stays until dismissed
+    m8PickShow(m8YesterdayReport());
     return;
   }
 }
 function m8PickSearch() {
   const q = (document.getElementById('m8PickSearch')?.value || '').trim();
   if (!q) return;
-  m8WakeMode = false;
-  hideM8Picker();
   const scored = findDriverByVoice(q);
   if (!scored.length) {
-    showVoicePanel(`<span class="vt-err">No driver found: "<i>${q}</i>"</span><div class="vt-hint">Check spelling — Arabic names work too</div>`);
+    m8PickShow(`<span class="vt-err">No driver found: "<i>${q}</i>"</span><div class="vt-hint">Check spelling — Arabic names work too</div>`);
     return;
   }
-  // Pin the matched drivers and switch to compare view
-  dailyMode = 'compare';
-  if (typeof comparePinnedNames !== 'undefined') {
-    comparePinnedNames.clear();
-    scored.forEach(x => comparePinnedNames.add(x.n));
-  }
+  // Pin the matched drivers and switch the Captains tab to the Compare Days view
+  captainView = 'compare';
+  comparePinnedNames.clear();
+  scored.forEach(x => comparePinnedNames.add(x.n));
   compareSearch = '';
   const tabEl = document.querySelector('[data-tab="captains"]');
-  if (tabEl) showTab('captains', tabEl);
-  showVoicePanel(`<b>✓ Found:</b> ${scored.slice(0,3).map(x=>x.n).join(', ')}${scored.length>3?` +${scored.length-3} more`:''}`);
+  if (tabEl && !tabEl.classList.contains('active')) showTab('captains', tabEl);
+  else renderCaptains();
+  m8PickShow(`<b>✓ Found:</b> ${scored.slice(0,3).map(x=>lookupForeignName(x.n)||x.n).join(', ')}${scored.length>3?` +${scored.length-3} more`:''}`);
 }
 function m8PickIntel(type) {
-  m8WakeMode = false;
-  hideM8Picker();
   const history = getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
   const entry = history[0];
-  if (!entry) { showVoicePanel(`<span class="vt-err">No data loaded yet</span><div class="vt-hint">Upload a CSV report first</div>`); return; }
-  if (type==='daySummary') { showVoicePanel(m8DaySummary(entry)); return; }
+  if (!entry) { m8PickShow(`<span class="vt-err">No data loaded yet</span><div class="vt-hint">Upload a CSV report first</div>`); return; }
+  const ln = n => lookupForeignName(n)||n;
+  if (type==='daySummary') { m8PickShow(m8DaySummary(entry)); return; }
   if (type==='inactive') {
     const off = entry.drivers.filter(d=>!d.isActive);
-    if (!off.length) { showVoicePanel(`<b>✓ All drivers worked on ${entry.period}</b>`); return; }
-    showVoicePanel(`<b>${off.length} didn't work — ${entry.period}:</b><div class="vt-hint" style="margin-top:4px;line-height:1.9">${off.map(d=>d.name).join('<br>')}</div>`, false);
+    if (!off.length) { m8PickShow(`<b>✓ All drivers worked on ${entry.period}</b>`); return; }
+    m8PickShow(`<b>${off.length} didn't work — ${entry.period}:</b><div style="margin-top:4px;line-height:1.8;color:var(--text-muted)">${off.map(d=>ln(d.name)).join('<br>')}</div>`);
     return;
   }
   if (type==='topDriver') {
     const top = [...entry.drivers.filter(d=>d.isActive)].sort((a,b)=>(b.netEarnings||0)-(a.netEarnings||0))[0];
-    if (!top) { showVoicePanel(`<span class="vt-err">No active drivers found</span>`); return; }
-    showVoicePanel(`<b>🏆 Top — ${entry.period}</b><br><span style="color:#FFD700">${top.name}</span><br>Net: <b style="color:var(--bolt-green)">${fmt(top.netEarnings||0)} SAR</b> · Orders: ${top.orders||0}`);
+    if (!top) { m8PickShow(`<span class="vt-err">No active drivers found</span>`); return; }
+    m8PickShow(`<b>🏆 Top — ${entry.period}</b><br><span style="color:#FFD700">${ln(top.name)}</span><br>Net: <b style="color:var(--bolt-green)">${fmt(top.netEarnings||0)} SAR</b> · Orders: ${top.orders||0}`);
     return;
   }
   if (type==='belowTarget') {
-    setSort('target'); sortAsc = true;
+    // Show it live in the table: By Captain view, lowest net earnings first
+    captainView = 'captain';
+    sumCourierSortCol = 'net'; sumCourierSortAsc = true;
     const tabEl = document.querySelector('[data-tab="captains"]');
-    if (tabEl) showTab('captains', tabEl);
-    showVoicePanel(`<b>✓ Showing drivers below target</b>`);
+    if (tabEl && !tabEl.classList.contains('active')) showTab('captains', tabEl);
+    else renderCaptains();
+    m8PickShow(`<b>✓ Captains sorted lowest-earning first</b>`);
     return;
   }
 }
