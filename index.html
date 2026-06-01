@@ -2411,13 +2411,19 @@ function startWakeListener() {
       m8AlwaysOn = false; localStorage.setItem('m8_always_listen', '0');
       m8UpdateWakeToggleUI();
       toast('Mic permission needed for hands-free — allow it, then turn wake word back on');
+      return;
     }
+    // Transient errors (no-speech, aborted, network): let onend revive it.
   };
   rec.onend = () => {
     wakeRecog = null;
     if (m8AlwaysOn && !m8PickerOpen()) setTimeout(startWakeListener, 400); // keep alive
   };
-  try { rec.start(); } catch (e) { wakeRecog = null; }
+  // start() can throw "already started" if the command mic hasn't fully released
+  // yet — retry shortly instead of giving up (this is why "M8" sometimes never
+  // woke after closing the panel).
+  try { rec.start(); }
+  catch (e) { wakeRecog = null; if (m8AlwaysOn && !m8PickerOpen()) setTimeout(startWakeListener, 700); }
 }
 function stopWakeListener() {
   if (wakeRecog) { try { wakeRecog.stop(); } catch (e) {} wakeRecog = null; }
@@ -2606,6 +2612,7 @@ let voiceRecog   = null;
 let m8WakeMode   = false; // true = picker is open and we re-listen after each command
 let wakeRecog    = null;  // background wake-word recognizer (hands-free / always-listen)
 let m8AlwaysOn   = (localStorage.getItem('m8_always_listen') === '1'); // user toggle
+let m8LastHeard  = '';    // last raw transcript M8 captured (for feedback/debug)
 
 // ── Re-listen after wake: mic restarts, picker stays open ──
 function m8RestartListen() {
@@ -2621,10 +2628,11 @@ function m8RestartListen() {
   let lastErr = null;
   r.onresult = e => {
     const alts = Array.from({length:e.results[0].length},(_,i)=>e.results[0][i].transcript.trim());
-    let cmd = null;
-    for (const alt of alts) { const c=parseVoiceCommand(alt); if(c.type!=='unknown'){cmd=c;break;} }
-    if (!cmd) cmd = parseVoiceCommand(alts[0]);
-    m8HandleVoiceCmd(cmd);
+    let cmd = null, used = alts[0] || '';
+    for (const alt of alts) { const c=parseVoiceCommand(alt); if(c.type!=='unknown'){cmd=c; used=alt; break;} }
+    if (!cmd) cmd = parseVoiceCommand(alts[0] || '');
+    m8LastHeard = used;
+    m8HandleVoiceCmd(cmd, alts);
   };
   r.onerror = ev => { lastErr = ev && ev.error; };
   r.onend = () => {
@@ -2651,27 +2659,44 @@ function m8RestartListen() {
 
 // One place that turns a parsed voice command into an action. Returns nothing;
 // view/report commands keep the picker OPEN (so the re-listen loop continues),
-// while navigation-away commands (driver dossier, upload) close it.
-function m8HandleVoiceCmd(cmd) {
+// while navigation-away commands (driver dossier, upload) close it. `alts` is the
+// raw transcript list — used to show what M8 heard when nothing matched.
+function m8HandleVoiceCmd(cmd, alts) {
   switch (cmd.type) {
     case 'tab':         m8PickCmd('tab',  cmd.id);   break;
     case 'sort':        m8PickCmd('sort', cmd.col);  break;
     case 'mode':        if (cmd.mode === 'radar') { setCaptainView('radar'); m8WakeMode = false; hideM8Picker(); }
                         else m8PickCmd('mode', cmd.mode); break;
     case 'clear':       m8PickCmd('clear', null);    break;
-    case 'yesterday':
-    case 'daySummary':  m8PickCmd('yesterday', null); break;
+    case 'yesterday':   m8PickCmd('yesterday', null); break;
+    case 'periodReport':m8PickCmd('periodReport', cmd.period); break;
+    case 'briefing':    m8PickCmd('briefing', null); break;
+    case 'driverReport':m8PickCmd('driverReport', cmd.name); break;
+    case 'daySummary':  m8PickIntel('daySummary');   break;
     case 'inactive':    m8PickIntel('inactive');     break;
     case 'topDriver':   m8PickIntel('topDriver');    break;
     case 'belowTarget': m8PickIntel('belowTarget');  break;
     case 'driverPerf':  m8DriverPerf(cmd.name, cmd.scope); break;  // stay open for follow-ups
-    case 'upload':      m8WakeMode = false; hideM8Picker(); document.getElementById('fileInput')?.click(); break;
+    case 'driverDay':   m8DriverPerf(cmd.name, 'yesterday'); break;
     case 'driver':      m8DriverPerf((cmd.names||[])[0], 'yesterday'); break;  // name → perf card, stay open
+    case 'upload':      m8WakeMode = false; hideM8Picker(); document.getElementById('fileInput')?.click(); break;
+    case 'nodata':      m8PickShow(`<span class="vt-err">No data loaded yet</span><div class="vt-hint">Pull from cloud or upload a CSV</div>`); break;
     case 'help':        m8SmartCommand('help'); break;  // print the cheat-sheet, stay open
     case 'wake':        /* already open — keep listening */ break;
-    case 'unknown':     /* didn't catch — keep listening, no nag */ break;
+    case 'unknown':     m8VoiceMiss(alts); break;       // tell the user what was heard
     default:            m8WakeMode = false; hideM8Picker(); executeVoiceCommand(cmd);
   }
+}
+
+// Voice was captured but matched nothing. Show what M8 heard so the user (and
+// debugging) isn't staring at a silent panel — STT often mangles Arabic names,
+// and seeing "heard X" makes that obvious. Keeps the picker open + listening.
+function m8VoiceMiss(alts) {
+  const heard = (Array.isArray(alts) ? alts : [alts]).filter(Boolean);
+  const top = heard[0] ? heard[0].replace(/</g,'&lt;') : '(nothing)';
+  m8PickShow(`
+    <div style="color:var(--amber);font-size:11px">🎙 Heard "<i>${top}</i>" — no match.</div>
+    <div class="vt-hint" style="margin-top:4px">Try a captain's name, "finance", "top driver", "yesterday report". If a name keeps missing, tap it in the table or type it above.</div>`);
 }
 
 // Auto-detect: is the text Arabic script?
@@ -2776,7 +2801,7 @@ function findDriverByVoice(spoken) {
   const allNames = [...new Set(history.flatMap(h => h.drivers.map(d => d.name)))];
   const scored = allNames
     .map(n => ({ n, score: scoreDriverMatch(spoken, n) }))
-    .filter(x => x.score >= 60)
+    .filter(x => x.score >= 52)   // a touch looser — STT mangles Arabic/Saudi names
     .sort((a,b) => b.score - a.score);
   return scored;
 }
