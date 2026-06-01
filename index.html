@@ -908,7 +908,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
 </div>
 <div class="jarvis-orb-wrap">
   <canvas id="m8NeuralCanvas" width="220" height="220" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:-1"></canvas>
-  <button class="jarvis-orb" id="jarvisOrb" onclick="startVoiceSearch()" title="M8 — click to speak (EN/AR)">
+  <button class="jarvis-orb" id="jarvisOrb" onclick="toggleM8()" title="M8 — click to open · click again to close">
     <canvas id="m8WaveCanvas" width="44" height="28" style="display:none"></canvas>
     <span class="jarvis-orb-mic" id="m8OrbIcon">🎙</span>
     <span class="jarvis-orb-name">M8</span>
@@ -928,47 +928,22 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
   <div style="padding:10px 12px;max-height:420px;overflow-y:auto">
     <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;padding:5px 8px;background:rgba(0,255,179,.04);border-radius:2px;border-left:2px solid rgba(0,255,179,.3)">🎙 Mic is on — speak a command, or tap a button below</div>
     <div id="m8BriefCard"></div>
-    <div class="m8pick-section">🧭 NAVIGATE</div>
-    <div class="m8pick-row">
-      <button class="m8pick-btn" onclick="m8PickCmd('tab','captains')">Captains</button>
-      <button class="m8pick-btn" onclick="m8PickCmd('tab','finance')">Finance</button>
-      <button class="m8pick-btn" onclick="m8PickCmd('tab','analytics')">Analytics</button>
-      <button class="m8pick-btn" onclick="m8PickCmd('tab','settings')">Settings</button>
-    </div>
-    <div class="m8pick-section">📊 SORT DRIVERS</div>
-    <div class="m8pick-row">
-      <button class="m8pick-btn" onclick="m8PickCmd('sort','net')">By Earnings</button>
-      <button class="m8pick-btn" onclick="m8PickCmd('sort','orders')">By Rides</button>
-      <button class="m8pick-btn" onclick="m8PickCmd('sort','hours')">By Hours</button>
-      <button class="m8pick-btn" onclick="m8PickCmd('sort','accept')">By Acceptance</button>
-    </div>
-    <div class="m8pick-section">🔍 FIND DRIVER</div>
+    <div class="m8pick-section">⌨ ASK OR COMMAND</div>
     <div style="display:flex;gap:6px;margin-bottom:10px">
-      <input id="m8PickSearch" type="text" placeholder="Type driver name…" style="flex:1;background:rgba(0,255,179,.05);border:1px solid rgba(0,255,179,.25);color:var(--bolt-green);font-family:var(--mono);font-size:11px;padding:5px 8px;border-radius:3px;outline:none" onkeydown="if(event.key==='Enter')m8PickSearch()">
-      <button class="m8pick-btn" onclick="m8PickSearch()">Go</button>
+      <input id="m8Smart" type="text" autocomplete="off" placeholder="A name, &quot;compare&quot;, &quot;who's offline&quot;, &quot;finance&quot;…" style="flex:1;background:rgba(0,255,179,.05);border:1px solid rgba(0,255,179,.25);color:var(--bolt-green);font-family:var(--mono);font-size:11px;padding:6px 9px;border-radius:3px;outline:none" onkeydown="if(event.key==='Enter')m8SmartCommand()">
+      <button class="m8pick-btn" onclick="m8SmartCommand()">Go</button>
     </div>
-    <div class="m8pick-section">◈ CORTEX REPORTS</div>
     <div class="m8pick-row">
       <button class="m8pick-btn" style="color:var(--bolt-green);border-color:rgba(0,255,179,.4)" onclick="m8PickCmd('briefing',null)">⚡ Fleet Briefing</button>
-      <button class="m8pick-btn" onclick="m8PickCmd('periodReport','yesterday')">Yesterday Report</button>
+      <button class="m8pick-btn" onclick="m8PickIntel('topDriver')">🏆 Top Driver</button>
+      <button class="m8pick-btn" onclick="m8PickIntel('belowTarget')">⚠ Below Target</button>
     </div>
-    <div style="display:flex;gap:6px;margin-bottom:8px">
-      <input id="m8ReportDriver" type="text" placeholder="Captain name for dossier…" style="flex:1;background:rgba(0,255,179,.05);border:1px solid rgba(0,255,179,.25);color:var(--bolt-green);font-family:var(--mono);font-size:11px;padding:5px 8px;border-radius:3px;outline:none" onkeydown="if(event.key==='Enter')m8OpenDriverReport()">
-      <button class="m8pick-btn" onclick="m8OpenDriverReport()">Dossier</button>
+    <div style="font-size:9px;color:var(--text-muted);margin-top:9px;line-height:1.8;letter-spacing:.02em">
+      Try: a captain's name · <span style="color:var(--bolt-green)">compare</span> · <span style="color:var(--bolt-green)">who's offline</span> · <span style="color:var(--bolt-green)">sort by hours</span> · <span style="color:var(--bolt-green)">yesterday report</span> · <span style="color:var(--bolt-green)">finance</span> · <span style="color:var(--bolt-green)">radar</span>
     </div>
-    <div class="m8pick-section">⚡ FLEET INTEL</div>
-    <div class="m8pick-row">
-      <button class="m8pick-btn" onclick="m8PickIntel('daySummary')">Yesterday</button>
-      <button class="m8pick-btn" onclick="m8PickIntel('inactive')">Who's Offline</button>
-      <button class="m8pick-btn" onclick="m8PickIntel('topDriver')">Top Driver</button>
-      <button class="m8pick-btn" onclick="m8PickIntel('belowTarget')">Below Target</button>
-    </div>
-    <div class="m8pick-section">📅 VIEW</div>
-    <div class="m8pick-row">
-      <button class="m8pick-btn" onclick="m8PickCmd('yesterday',null)">Show Yesterday</button>
-      <button class="m8pick-btn" onclick="m8PickCmd('mode','compare')">Compare Days</button>
-      <button class="m8pick-btn" onclick="setCaptainView('radar');hideM8Picker()">◎ Radar</button>
-      <button class="m8pick-btn m8pick-btn-red" onclick="m8PickCmd('clear',null)">Clear All</button>
+    <div style="margin-top:9px;padding-top:8px;border-top:1px solid rgba(0,255,179,.12);display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <span style="font-size:9px;color:var(--text-muted);letter-spacing:.04em" title="When ON, M8 listens in the background — say &quot;M8&quot; to open it hands-free">🎙 HANDS-FREE — say &ldquo;M8&rdquo; to summon</span>
+      <button id="m8WakeToggle" class="m8pick-btn" onclick="m8ToggleAlwaysListen()" style="padding:3px 12px;font-size:10px">OFF</button>
     </div>
     <div id="m8PickResult" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(0,255,179,.15);font-size:11px;line-height:1.6;color:var(--text)"></div>
   </div>
@@ -1266,6 +1241,7 @@ let compareSortAsc      = false;
 let compareSortDayIndex = null; // null = sort by avg; number = sort by that day column
 let compareSearch       = '';
 let comparePinnedNames  = new Set(); // drivers pinned/selected in compare filter
+let comparePeriodMode   = '7';       // 'month' | '7' | '14' | 'all' — Compare Days span
 let dailySelectedMonth = 'all';
 let dailySelectedDay   = 'all';
 let dailySortCol2      = 'net';
@@ -1365,6 +1341,22 @@ function confirmUpload() {
   if (!htmlDate) { toast('Please select a date'); return; }
   const period = htmlDateToPeriod(htmlDate);
   const pInfo  = parsePeriodInfo(period);
+
+  // GUARD: a single day cannot have >24 online hours. If any driver exceeds that,
+  // the file is a MULTI-DAY / cumulative Bolt export (a date range), not one day.
+  // Saving it under a single date inflates that day's totals — this is the
+  // "9 May shows 137h / huge earnings" bug. Warn before saving.
+  const maxHrs = Math.max(0, ...pendingDrivers.map(d => +d.hoursOnline || 0));
+  if (maxHrs > 24) {
+    const ok = confirm(
+      `⚠️ This looks like a MULTI-DAY report, not a single day.\n\n` +
+      `A driver shows ${maxHrs.toFixed(1)} online hours — more than 24h in a day, so this file covers a date RANGE (a cumulative Bolt export), not one day.\n\n` +
+      `Saving it under "${period}" will make that one day show wildly inflated hours & earnings.\n\n` +
+      `Recommended: click Cancel, then in Bolt export ONE DAY at a time and upload that.\n\n` +
+      `Save anyway?`
+    );
+    if (!ok) { toast('Upload cancelled — export a single day from Bolt'); return; }
+  }
 
   // GUARD: if a day with this exact period already exists, confirm before overwriting.
   // This is the bug Muhammad kept hitting — if the date dropdown defaulted to today
@@ -2246,6 +2238,10 @@ function renderDailyView() {
 
 function setDailyMode(mode) { dailyMode=mode; renderCaptains(); }
 function setCompareKPI(kpi) { compareKPI=kpi; compareSortDayIndex=null; compareSortAsc=false; comparePinnedNames.clear(); compareSearch=''; renderCaptains(); }
+// Compare Days span controls. 'month' respects the month dropdown; '7'/'14'/'all'
+// take the most recent N days across the WHOLE history, ignoring the month.
+function setComparePeriod(mode) { comparePeriodMode = mode; compareSortDayIndex = null; renderCaptains(); }
+function setCompareMonth(m) { sumMonthFilter = m; comparePeriodMode = 'month'; compareSortDayIndex = null; renderCaptains(); }
 function setCompareColSort(idx) {
   if (compareSortDayIndex === idx) { compareSortAsc = !compareSortAsc; }
   else { compareSortDayIndex = idx; compareSortAsc = false; }
@@ -2302,12 +2298,16 @@ function showM8Picker() {
   if (!picker) return;
   picker.style.display = 'block';
   m8WakeMode = true;
+  stopWakeListener();        // command session owns the mic while the panel is open
   m8UpdateBriefCard();
+  m8UpdateWakeToggleUI();
   // Clear the voice toast so it doesn't overlap
   const t = document.getElementById('voiceToast');
   if (t) t.classList.remove('show');
-  // Auto-restart mic so user can speak right away
-  setTimeout(m8RestartListen, 200);
+  // Auto-restart mic so user can speak right away — but hold off while a spoken
+  // greeting is still playing (otherwise the mic transcribes M8's own voice).
+  // m8Greet() resumes listening via its utterance onend.
+  setTimeout(() => { if (!(window.speechSynthesis && window.speechSynthesis.speaking)) m8RestartListen(); }, 200);
 }
 function hideM8Picker() {
   const picker = document.getElementById('m8Picker');
@@ -2317,7 +2317,111 @@ function hideM8Picker() {
   m8WakeMode = false;
   // Stop any re-listen session
   if (voiceRecog) { try { voiceRecog.stop(); } catch(e){} voiceRecog = null; }
+  try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch(e){}
   m8SetOrb('idle');
+  // Resume hands-free background listening if the user has it on
+  if (m8AlwaysOn) setTimeout(startWakeListener, 500);
+}
+
+// Orb click = toggle the command center. First click greets (spoken, time-aware)
+// and opens it; clicking the orb again closes it.
+function toggleM8() {
+  const picker = document.getElementById('m8Picker');
+  const isOpen = picker && picker.style.display === 'block';
+  if (isOpen) { hideM8Picker(); return; }   // second click → turn off
+  m8Greet();
+  showM8Picker();
+}
+
+// Time-aware spoken greeting via the Web Speech API. No-op if unsupported.
+function m8Greet() {
+  try {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    synth.cancel(); // clear anything queued
+    const h = new Date().getHours();
+    const part = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+    const u = new SpeechSynthesisUtterance(`${part}, Hofy. How can I help?`);
+    u.lang = 'en-US'; u.rate = 1; u.pitch = 1; u.volume = 1;
+    const vs = synth.getVoices() || [];
+    const voice = vs.find(v => /en[-_]?(GB|US)/i.test(v.lang) && /(samantha|aria|zira|jenny|google.*english|natural|female)/i.test(v.name))
+               || vs.find(v => /^en/i.test(v.lang));
+    if (voice) u.voice = voice;
+    // Resume listening only after the greeting finishes (prevents the mic from
+    // hearing M8's own voice and firing a bogus command).
+    u.onend = () => { if (m8WakeMode) m8RestartListen(); };
+    synth.speak(u);
+  } catch (e) {}
+}
+
+// ── Hands-free wake word ("M8" / "mate") — optional, user-toggled ───────────
+// A background recognizer that listens only while the picker is CLOSED. On a
+// wake hit it stops itself and opens M8 (so the command recognizer can take the
+// mic). It auto-restarts on end to stay alive, and pauses whenever the picker
+// is open. Off by default; toggled via m8ToggleAlwaysListen (persisted).
+function m8WakeWordHit(text) {
+  return /\b(m8|m\s?8|m\s?eight|mate|matey|mato|hey m8|hey mate|ماتي|إم\s*8)\b/i.test(text || '');
+}
+function m8PickerOpen() { return document.getElementById('m8Picker')?.style.display === 'block'; }
+
+function startWakeListener() {
+  if (!m8AlwaysOn || wakeRecog || m8PickerOpen()) return;
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) return;
+  let rec; try { rec = new SpeechRec(); } catch (e) { return; }
+  wakeRecog = rec;
+  rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 3;
+  rec.onresult = e => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      for (let j = 0; j < r.length; j++) {
+        if (m8WakeWordHit(r[j].transcript)) {
+          try { rec.stop(); } catch (_) {}
+          if (!m8PickerOpen()) { m8Greet(); showM8Picker(); }
+          return;
+        }
+      }
+    }
+  };
+  rec.onerror = err => {
+    if (err.error === 'not-allowed' || err.error === 'service-not-allowed') {
+      m8AlwaysOn = false; localStorage.setItem('m8_always_listen', '0');
+      m8UpdateWakeToggleUI();
+      toast('Mic permission needed for hands-free — allow it, then turn wake word back on');
+    }
+  };
+  rec.onend = () => {
+    wakeRecog = null;
+    if (m8AlwaysOn && !m8PickerOpen()) setTimeout(startWakeListener, 400); // keep alive
+  };
+  try { rec.start(); } catch (e) { wakeRecog = null; }
+}
+function stopWakeListener() {
+  if (wakeRecog) { try { wakeRecog.stop(); } catch (e) {} wakeRecog = null; }
+}
+function m8ToggleAlwaysListen() {
+  m8AlwaysOn = !m8AlwaysOn;
+  localStorage.setItem('m8_always_listen', m8AlwaysOn ? '1' : '0');
+  m8UpdateWakeToggleUI();
+  if (m8AlwaysOn) {
+    toast('Hands-free ON — say "M8" to summon me (starts when this panel closes)');
+    if (!m8PickerOpen()) startWakeListener();
+  } else {
+    stopWakeListener();
+    toast('Hands-free OFF — click the orb to open M8');
+  }
+}
+function m8UpdateWakeToggleUI() {
+  const b = document.getElementById('m8WakeToggle');
+  if (!b) return;
+  b.textContent = m8AlwaysOn ? 'ON' : 'OFF';
+  b.style.color = m8AlwaysOn ? 'var(--bolt-green)' : 'var(--text-muted)';
+  b.style.borderColor = m8AlwaysOn ? 'rgba(0,255,179,.5)' : 'rgba(0,255,179,.2)';
+}
+function m8InitWake() {
+  m8AlwaysOn = (localStorage.getItem('m8_always_listen') === '1');
+  m8UpdateWakeToggleUI();
+  if (m8AlwaysOn) startWakeListener(); // resumes if mic permission already granted
 }
 // Show a result/confirmation INSIDE the picker (keeps the picker open for chaining)
 function m8PickShow(html) {
@@ -2472,6 +2576,8 @@ document.addEventListener('click', e=>{
 // ════════════════════════════════════════════
 let voiceRecog   = null;
 let m8WakeMode   = false; // true = picker is open and we re-listen after each command
+let wakeRecog    = null;  // background wake-word recognizer (hands-free / always-listen)
+let m8AlwaysOn   = (localStorage.getItem('m8_always_listen') === '1'); // user toggle
 
 // ── Re-listen after wake: mic restarts, picker stays open ──
 function m8RestartListen() {
@@ -4062,9 +4168,12 @@ function m8DaySummary(entry) {
     ${low?`<div class="vt-hint" style="margin-top:4px">Inactive: ${low}${inactive.length>3?` +${inactive.length-3} more`:''}</div>`:''}`;
 }
 
-// Extend parseVoiceCommand with data queries
+// Extend parseVoiceCommand with data queries.
+// Binding REASSIGNMENT (not a duplicate `function` declaration) — a duplicate
+// declaration hoists over the original, making _origParse capture this very fn
+// and recurse forever. This bug previously killed all M8 voice/command routing.
 const _origParse = parseVoiceCommand;
-function parseVoiceCommand(txt) {
+parseVoiceCommand = function(txt) {
   const t=txt.trim(), l=t.toLowerCase();
   const history=getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
 
@@ -4131,18 +4240,18 @@ function parseVoiceCommand(txt) {
   }
   // Fall through to original parser
   return _origParse(txt);
-}
+};
 
-// Extend executeVoiceCommand with data query responses
+// Extend executeVoiceCommand with data query responses (binding reassignment — see note above)
 const _origExec = executeVoiceCommand;
-function executeVoiceCommand(cmd) {
+executeVoiceCommand = function(cmd) {
   m8SetOrb('thinking');
   setTimeout(()=>{
     _execWithDelay(cmd);
     m8SetOrb('responding');
     setTimeout(()=>m8SetOrb('idle'),1200);
   },400);
-}
+};
 function _execWithDelay(cmd) {
   switch(cmd.type) {
     case 'wake':
@@ -4673,6 +4782,14 @@ function renderCaptains() {
   const allSorted = [...history].sort((a,b) => periodSortKey(a.period) - periodSortKey(b.period));
   const pool = filterSumByMonth(allSorted);
 
+  // Compare Days has its own span: 'month' follows the month dropdown, while
+  // '7'/'14'/'all' take the most recent N days across all history (any month).
+  const comparePool =
+      comparePeriodMode === '7'   ? allSorted.slice(-7)
+    : comparePeriodMode === '14'  ? allSorted.slice(-14)
+    : comparePeriodMode === 'all' ? allSorted
+    :                               filterSumByMonth(allSorted); // 'month'
+
   // Period selection state (for captain/day views)
   if (captainView !== 'compare') {
     if (summarySelectedDays === null || sumPeriodMode === 'all') {
@@ -4727,7 +4844,23 @@ function renderCaptains() {
   ` : '';
 
   // ── Compare KPI bar ──
+  const cmpDays = comparePool.length;
   const compareBar = captainView === 'compare' ? `
+    <div class="ctrl-group">
+      <span class="ctrl-group-label">Date</span>
+      <select class="kpi-select" onchange="setCompareMonth(this.value)" title="Pick a month to compare its days"${comparePeriodMode!=='month'?' style="opacity:.4"':''}>
+        <option value="all" ${sumMonthFilter==='all'?'selected':''}>All months</option>
+        ${months.map(m=>`<option value="${m}" ${sumMonthFilter===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <span class="ctrl-group-label">Span</span>
+      <button class="sort-btn ${comparePeriodMode==='7' ?'active':''}" onclick="setComparePeriod('7')"  title="Most recent 7 days (any month)">Last 7</button>
+      <button class="sort-btn ${comparePeriodMode==='14'?'active':''}" onclick="setComparePeriod('14')" title="Most recent 14 days (any month)">Last 14</button>
+      <button class="sort-btn ${comparePeriodMode==='month'?'active':''}" onclick="setComparePeriod('month')" title="All days in the selected month">By month</button>
+      <button class="sort-btn ${comparePeriodMode==='all'?'active':''}" onclick="setComparePeriod('all')" title="Every day on record">All</button>
+      <span style="font-size:10px;color:var(--text-muted);font-family:var(--mono)">${cmpDays}d</span>
+    </div>
     <span class="compare-kpi-label">KPI:</span>
     <select class="kpi-select" onchange="setCompareKPI(this.value)">
       <option value="netEarnings"   ${compareKPI==='netEarnings'  ?'selected':''}>Net Earnings</option>
@@ -4801,7 +4934,7 @@ function renderCaptains() {
     ${kpiCardsHtml ? `<div class="summary-grid" style="margin-bottom:16px">${kpiCardsHtml}</div>` : ''}
     <div id="captainsInner">${innerHtml}</div>`;
 
-  if (captainView === 'compare') renderCompareView(pool);
+  if (captainView === 'compare') renderCompareView(comparePool);
   if (captainView === 'radar')   renderRadarView(selected);
 
   if (captainSearch) {
@@ -5230,7 +5363,40 @@ function buildCourierSummaryTable(entries, searchFilter) {
 // ═══════════════════════════════════════════
 // HISTORY TAB
 // ═══════════════════════════════════════════
-function getHistory() { return JSON.parse(localStorage.getItem('khair_perf_history')||'[]'); }
+// Local history retention. Stored COMPRESSED (same 'c1' codec as cloud) so the
+// browser can hold ~3-4× more days in the same localStorage budget. getHistory
+// transparently decompresses; legacy uncompressed arrays are still read and get
+// re-saved compressed on the next write.
+const LOCAL_MAX_DAYS = 400;  // ~13 months of daily uploads (was a hard 120)
+
+function getHistory() {
+  const raw = localStorage.getItem('khair_perf_history');
+  if (!raw) return [];
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch(_) { return []; }
+  if (Array.isArray(parsed)) return parsed;                 // legacy uncompressed
+  if (parsed && parsed.fmt === CLOUD_FMT && Array.isArray(parsed.h)) return parsed.h.map(unpackEntry);
+  return [];
+}
+
+// Saves history compressed + capped to LOCAL_MAX_DAYS. If localStorage is full
+// (QuotaExceededError), drops the oldest days and retries instead of throwing
+// (which would silently lose the whole upload). Returns the day count kept.
+function saveHistory(arr) {
+  let days = Math.min(arr.length, LOCAL_MAX_DAYS);
+  while (days > 0) {
+    try {
+      const packed = arr.slice(0, days).map(packEntry);
+      localStorage.setItem('khair_perf_history', JSON.stringify({ fmt: CLOUD_FMT, h: packed }));
+      if (days < arr.length) console.warn(`Local history capped to ${days}/${arr.length} days (storage limit).`);
+      return days;
+    } catch (e) {
+      if (e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message||''))) { days -= 10; continue; }
+      throw e;
+    }
+  }
+  return 0;
+}
 
 function saveToHistory(period, drivers, filename, pInfo) {
   const history  = getHistory().filter(h=>h.period!==period);
@@ -5244,7 +5410,7 @@ function saveToHistory(period, drivers, filename, pInfo) {
     avgAcceptance: active.length ? active.reduce((a,d)=>a+(d.acceptance||0),0)/active.length : 0,
     drivers,
   });
-  localStorage.setItem('khair_perf_history', JSON.stringify(history.slice(0,120)));
+  saveHistory(history);
 }
 
 function setHistSort(col) {
@@ -5306,7 +5472,10 @@ function renderHistory() {
             <td class="td-r td-bold">${fmt(h.totalNet)}</td>
             <td class="td-r">${(h.avgAcceptance||0).toFixed(0)}%</td>
             <td class="td-r td-muted">${new Date(h.uploadedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</td>
-            <td><span class="td-link" onclick="loadFromHistory('${h.period}')">View</span></td>
+            <td style="white-space:nowrap">
+              <span class="td-link" onclick="loadFromHistory('${h.period.replace(/'/g,"\\'")}')">View</span>
+              <span class="td-link" style="color:var(--red,#ef4444);margin-left:10px" onclick="deleteHistoryEntry('${h.period.replace(/'/g,"\\'")}')">Delete</span>
+            </td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -5328,6 +5497,38 @@ function loadFromHistory(period) {
   document.querySelector('[data-tab="captains"]').classList.add('active');
   renderCaptains();
   toast(`Viewing: ${h.period}`);
+}
+
+// Delete one day's entry. Removes it locally AND purges it from the cloud bin,
+// otherwise the next sync's local↔cloud merge would resurrect it. Use this to
+// remove a bad entry (e.g. a multi-day report mistakenly saved as a single day).
+async function deleteHistoryEntry(period) {
+  if (!confirm(`Delete the entry for "${period}"?\n\nThis removes it from this browser and from the cloud/shared link.`)) return;
+
+  // 1) Local
+  saveHistory(getHistory().filter(h => h.period !== period));
+  invalidateAlertCache();
+  renderHistory();
+  if (document.querySelector('.panel.active')?.id === 'captains') renderCaptains();
+
+  // 2) Cloud purge (so it can't come back on next sync)
+  const binId = getBinId();
+  if (binId && !IS_FILE_ORIGIN) {
+    setSyncStatus('syncing', 'deleting…');
+    const fetched = await jbFetch(`${JSONBIN_BASE}/b/${binId}/latest`, { headers: { 'X-Master-Key': JSONBIN_KEY } });
+    if (fetched) {
+      const record    = fetched.record || {};
+      const cloudHist = readCloudHistory(record).filter(h => h.period !== period);
+      const updated   = { ...record, khair_history: cloudHist.map(packEntry), khair_fmt: CLOUD_FMT };
+      const ok = await jbFetch(`${JSONBIN_BASE}/b/${binId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
+        body: JSON.stringify(updated)
+      });
+      setSyncStatus(ok ? 'synced' : 'error', ok ? 'synced ✓' : 'delete failed');
+    }
+  }
+  toast(`Deleted ${period}`);
 }
 
 // ═══════════════════════════════════════════
@@ -5455,88 +5656,103 @@ async function createBin() {
   return binId;
 }
 
-// Strip heavy/unused fields before cloud push.
+// ── Cloud compression codec (format 'c1') ──────────────────────────────────
 // JSONBin Free tier hard-caps writes at ~100KB per bin — exceeding it returns
-// HTTP 400 and the day silently fails to sync. So: keep ONLY fields used by
-// Summary, Daily, Compare, and History views. Per-driver detail modal falls
-// back to local storage when opened from a shared link.
-const CLOUD_MAX_BYTES   = 90 * 1024;   // safety budget (10KB headroom vs JSONBin 100KB cap)
-const CLOUD_DEFAULT_DAYS = 30;          // target retention if size allows
+// HTTP 400 and the day silently fails to sync. The OLD format stored ~40 fields
+// per driver with full field names (e.g. "commissionDiscountInApp" repeated for
+// every driver, every day) — so a single day was huge and only ~9-10 days fit,
+// which is why shared links showed only the last week or so of history.
+//
+// This codec packs each driver into an object with 1-3 char keys, OMITS any
+// zero/empty field (inactive drivers are mostly zeros), and rounds numbers to
+// 2 decimals. That shrinks the payload ~3-4×, so a full month+ now fits in the
+// same 100KB. It is LOSSLESS for every field any view reads — unpackDriver
+// restores the full shape with proper defaults. Reads auto-detect old vs new
+// format, so existing bins keep working.
+const CLOUD_MAX_BYTES    = 90 * 1024;   // safety budget (10KB headroom vs JSONBin 100KB cap)
+const CLOUD_DEFAULT_DAYS = 60;          // target retention if size allows (was 30)
+const CLOUD_FMT          = 'c1';        // marker written alongside khair_history
 
-function slimDriver(d) {
-  // Slim tier (drops Arabic nameAr — saves ~30B/driver).
-  // Keeps every field used by ANY view (Summary, Daily, Compare, History,
-  // and the per-driver detail modal). The auto-cap in slimForCloud below
-  // handles total payload size, so we don't sacrifice modal completeness.
+const _r2 = v => Math.round((v || 0) * 100) / 100;  // round to 2 decimals
+
+function packDriver(d) {
+  const o = {};
+  const putS = (k, v) => { if (v) o[k] = v; };                 // omit '' / null
+  const putN = (k, v) => { const r = _r2(v); if (r) o[k] = r; }; // omit 0
+  putS('n', d.name); putS('i', d.driverId); putS('ph', d.phone);
+  putN('o', d.orders); putN('h', d.hoursOnline); putN('ne', d.netEarnings); putN('ge', d.grossEarnings);
+  putN('ac', d.acceptance); putN('ra', d.rating); putN('sc', d.score); putN('dt', d.distanceTotal); putN('da', d.distanceAvg);
+  putN('cg', d.cashGap); putN('pg', d.payoutGap); putN('pp', d.projectedPayout); putN('ap', d.actualPayout);
+  putN('tp', d.tips); putN('cm', d.campaign); putN('co', d.commission); putN('nph', d.netPerHour); putN('ut', d.utilization);
+  putN('fr', d.finishRate);
+  if (d.fleetCut     != null) o.fc = _r2(d.fleetCut);      // 0 is meaningful here → keep
+  if (d.driverPayout != null) o.dp = _r2(d.driverPayout);
+  putS('cat', d.activeCategories);
+  if (d.isActive) o.a = 1;
+  putN('gia', d.grossInApp); putN('act', d.acceptanceTotal); putN('ce', d.cashEarnings); putN('cf', d.cancellationFees);
+  putN('tf', d.tollFees); putN('er', d.expenseReimbursements); putN('bf', d.bookingFees); putN('rr', d.refundsToRiders);
+  putN('cdi', d.commissionDiscountInApp); putN('cdc', d.commissionDiscountCash);
+  const lvl = d.tier?.level ?? -1; if (lvl !== -1) o.tl = lvl;
+  const tnm = d.tier?.englishName || ''; if (tnm) o.tn = tnm;
+  return o;
+}
+
+function unpackDriver(o) {
   return {
-    name:            d.name,
-    driverId:        d.driverId,
-    phone:           d.phone,
-    tier:            { level: d.tier?.level ?? -1, englishName: d.tier?.englishName || '' },
-    orders:          d.orders          || 0,
-    hoursOnline:     d.hoursOnline     || 0,
-    netEarnings:     d.netEarnings     || 0,
-    grossEarnings:   d.grossEarnings   || 0,
-    acceptance:      d.acceptance      || 0,
-    rating:          d.rating          || 0,
-    score:           d.score           || 0,
-    distanceTotal:   d.distanceTotal   || 0,
-    distanceAvg:     d.distanceAvg     || 0,
-    cashGap:         d.cashGap         || 0,
-    payoutGap:       d.payoutGap       || 0,
-    projectedPayout: d.projectedPayout || 0,
-    actualPayout:    d.actualPayout    || 0,
-    tips:            d.tips            || 0,
-    campaign:        d.campaign        || 0,
-    commission:      d.commission      || 0,
-    netPerHour:      d.netPerHour      || 0,
-    utilization:     d.utilization     || 0,
-    finishRate:      d.finishRate      || 0,
-    fleetCut:        d.fleetCut        ?? null,
-    driverPayout:    d.driverPayout    ?? null,
-    activeCategories: d.activeCategories || '',
-    isActive:        !!d.isActive,
-    // New insight fields
-    grossInApp:              d.grossInApp              || 0,
-    acceptanceTotal:         d.acceptanceTotal         || 0,
-    cashEarnings:            d.cashEarnings            || 0,
-    cancellationFees:        d.cancellationFees        || 0,
-    tollFees:                d.tollFees                || 0,
-    expenseReimbursements:   d.expenseReimbursements   || 0,
-    bookingFees:             d.bookingFees             || 0,
-    refundsToRiders:         d.refundsToRiders         || 0,
-    commissionDiscountInApp: d.commissionDiscountInApp || 0,
-    commissionDiscountCash:  d.commissionDiscountCash  || 0,
+    name: o.n || '', driverId: o.i || '', phone: o.ph || '',
+    tier: { level: o.tl ?? -1, englishName: o.tn || '' },
+    orders: o.o || 0, hoursOnline: o.h || 0, netEarnings: o.ne || 0, grossEarnings: o.ge || 0,
+    acceptance: o.ac || 0, rating: o.ra || 0, score: o.sc || 0, distanceTotal: o.dt || 0, distanceAvg: o.da || 0,
+    cashGap: o.cg || 0, payoutGap: o.pg || 0, projectedPayout: o.pp || 0, actualPayout: o.ap || 0,
+    tips: o.tp || 0, campaign: o.cm || 0, commission: o.co || 0, netPerHour: o.nph || 0, utilization: o.ut || 0,
+    finishRate: o.fr || 0,
+    fleetCut: o.fc ?? null, driverPayout: o.dp ?? null,
+    activeCategories: o.cat || '', isActive: !!o.a,
+    grossInApp: o.gia || 0, acceptanceTotal: o.act || 0, cashEarnings: o.ce || 0, cancellationFees: o.cf || 0,
+    tollFees: o.tf || 0, expenseReimbursements: o.er || 0, bookingFees: o.bf || 0, refundsToRiders: o.rr || 0,
+    commissionDiscountInApp: o.cdi || 0, commissionDiscountCash: o.cdc || 0,
   };
 }
 
-function slimEntry(h) {
+function packEntry(h) {
   return {
-    period:        h.period,
-    filename:      h.filename,
-    uploadedAt:    h.uploadedAt,
-    periodInfo:    h.periodInfo,
-    driverCount:   h.driverCount,
-    activeCount:   h.activeCount,
-    totalOrders:   h.totalOrders,
-    totalGross:    h.totalGross,
-    totalNet:      h.totalNet,
-    avgAcceptance: h.avgAcceptance,
-    drivers:       (h.drivers || []).map(slimDriver),
+    p: h.period, f: h.filename, u: h.uploadedAt, pi: h.periodInfo,
+    dc: h.driverCount, ac: h.activeCount, to: h.totalOrders,
+    tg: _r2(h.totalGross), tn: _r2(h.totalNet), aa: _r2(h.avgAcceptance),
+    d: (h.drivers || []).map(packDriver),
   };
 }
 
-// Returns slimmed history that fits under CLOUD_MAX_BYTES.
+function unpackEntry(c) {
+  return {
+    period: c.p, filename: c.f, uploadedAt: c.u, periodInfo: c.pi,
+    driverCount: c.dc, activeCount: c.ac, totalOrders: c.to,
+    totalGross: c.tg || 0, totalNet: c.tn || 0, avgAcceptance: c.aa || 0,
+    drivers: (c.d || []).map(unpackDriver),
+  };
+}
+
+// Reads khair_history from a cloud record in EITHER format. Detects compressed
+// 'c1' entries (which carry `.p`/`.d` short keys) vs legacy full-key entries
+// (which carry `.period`/`.drivers`). Returns the full uncompressed shape.
+function readCloudHistory(record) {
+  const raw = record?.khair_history || [];
+  if (!Array.isArray(raw) || !raw.length) return [];
+  const isPacked = record?.khair_fmt === CLOUD_FMT || (raw[0] && raw[0].p !== undefined && raw[0].period === undefined);
+  return isPacked ? raw.map(unpackEntry) : raw;
+}
+
+// Returns compressed history that fits under CLOUD_MAX_BYTES.
 // Tries CLOUD_DEFAULT_DAYS first; if too big, drops oldest days until it fits.
 // Logs how many days were dropped so we surface it to the user (not silent).
 function slimForCloud(history, limit = CLOUD_DEFAULT_DAYS) {
   let days = Math.min(limit, history.length);
   while (days > 0) {
-    const slim = history.slice(0, days).map(slimEntry);
+    const slim = history.slice(0, days).map(packEntry);
     const size = new Blob([JSON.stringify(slim)]).size;
     if (size <= CLOUD_MAX_BYTES) {
       if (days < history.length) {
-        console.warn(`Cloud capped to ${days}/${history.length} days (~${(size/1024).toFixed(0)}KB). Older days remain in local browser only.`);
+        console.warn(`Cloud capped to ${days}/${history.length} days (~${(size/1024).toFixed(0)}KB compressed). Older days remain in local browser only.`);
       }
       return { slim, days, sizeKB: Math.round(size/1024), capped: days < history.length };
     }
@@ -5558,9 +5774,9 @@ async function syncToCloud() {
   if (!fetchData) return;
 
   const record = fetchData.record || {};
-  const cloudKhairHistory = record.khair_history || [];
+  const cloudKhairHistory = readCloudHistory(record);
   const merged = mergeHistories(getHistory(), cloudKhairHistory);
-  localStorage.setItem('khair_perf_history', JSON.stringify(merged)); // full local
+  saveHistory(merged); // full local (compressed, capped to LOCAL_MAX_DAYS)
   invalidateAlertCache();
 
   // Slim with size guard. Returns {slim, days, sizeKB, capped}.
@@ -5570,6 +5786,7 @@ async function syncToCloud() {
   const updated = {
     ...record,
     khair_history:          slimResult.slim,
+    khair_fmt:              CLOUD_FMT,
     khair_nameMapping:      JSON.parse(localStorage.getItem('khair_name_mapping') || '[]'),
     khair_courier_profiles: JSON.parse(localStorage.getItem(COURIER_PROFILES_KEY)  || '{}'),
     khair_courier_overrides:JSON.parse(localStorage.getItem(COURIER_OVERRIDES_KEY) || '{}'),
@@ -5591,7 +5808,7 @@ async function syncToCloud() {
     localStorage.setItem('khair_last_sync_ok', '1');
     if (slimResult.capped) {
       setSyncStatus('synced', `synced ✓ — cloud capped to ${slimResult.days} days (${slimResult.sizeKB}KB)`);
-      toast(`Cloud holds last ${slimResult.days} days (size limit). Local browser has all ${merged.length} days.`);
+      toast(`Cloud (shared link) holds the latest ${slimResult.days} days — JSONBin 100KB limit. This browser keeps all ${merged.length} days.`);
     } else {
       setSyncStatus('synced', `synced ✓ — ${slimResult.days} days (${slimResult.sizeKB}KB)`);
     }
@@ -5610,10 +5827,10 @@ async function fetchFromCloud() {
     headers: { 'X-Master-Key': JSONBIN_KEY }
   });
   if (!data) return;
-  const khairHistory = data.record?.khair_history;
+  const khairHistory = readCloudHistory(data.record);
   if (khairHistory && khairHistory.length) {
     const merged = mergeHistories(getHistory(), khairHistory);
-    localStorage.setItem('khair_perf_history', JSON.stringify(merged));
+    saveHistory(merged);
   }
   const cloudMapping = data.record?.khair_nameMapping;
   if (cloudMapping && Array.isArray(cloudMapping) && cloudMapping.length >= nameMapping.length) {
@@ -7518,6 +7735,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   initMissionClock();
   m8UpdateIdleOrb();
+  m8InitWake();
 });
 
 // ═══════════════════════════════════════════
@@ -7916,9 +8134,12 @@ function generateDriverReport(name) {
 // M8 ENHANCED — SMARTER COMMANDS + REPORTS
 // ═══════════════════════════════════════════
 
-// Override m8PickCmd to handle new commands
+// Override m8PickCmd to handle new commands.
+// NOTE: must use binding REASSIGNMENT (m8PickCmd = function…), NOT a second
+// `function m8PickCmd(){}` declaration — a duplicate declaration hoists over the
+// original, so `_origM8PickCmd` would capture the patched fn and recurse forever.
 const _origM8PickCmd = m8PickCmd;
-function m8PickCmd(type, val) {
+m8PickCmd = function(type, val) {
   if (type === 'briefing') {
     const html = generateFleetBriefing();
     openCortexReport('◈ CORTEX BRIEFING — FLEET STATUS', html);
@@ -7946,11 +8167,11 @@ function m8PickCmd(type, val) {
     return;
   }
   _origM8PickCmd(type, val);
-}
+};
 
-// Override parseVoiceCommand to handle new patterns
+// Override parseVoiceCommand to handle new patterns (binding reassignment — see note above)
 const _origParseVC = parseVoiceCommand;
-function parseVoiceCommand(txt) {
+parseVoiceCommand = function(txt) {
   const l = txt.trim().toLowerCase();
 
   // ── Fleet briefing ──
@@ -7974,11 +8195,11 @@ function parseVoiceCommand(txt) {
     return { type:'mode', mode:'radar', label:'Tactical Radar' };
 
   return _origParseVC(txt);
-}
+};
 
-// Patch executeVoiceCommand for new types
+// Patch executeVoiceCommand for new types (binding reassignment — see note above)
 const _origExecVC = executeVoiceCommand;
-function executeVoiceCommand(cmd) {
+executeVoiceCommand = function(cmd) {
   if (cmd.type === 'briefing')    { m8PickCmd('briefing', null); return; }
   if (cmd.type === 'periodReport'){ m8PickCmd('periodReport', cmd.period); return; }
   if (cmd.type === 'driverReport'){ m8PickCmd('driverReport', cmd.name); return; }
@@ -7989,13 +8210,59 @@ function executeVoiceCommand(cmd) {
     return;
   }
   _origExecVC(cmd);
-}
+};
 
-// Patch m8PickIntel to add briefing button
+// Patch m8PickIntel to add briefing (binding reassignment — see note above)
 const _origM8PickIntel = m8PickIntel;
-function m8PickIntel(type) {
+m8PickIntel = function(type) {
   if (type === 'briefing') { m8PickCmd('briefing', null); return; }
   _origM8PickIntel(type);
+};
+
+// ── Unified smart command box ──────────────────────────────────────────────
+// One input replaces the old Navigate/Sort/Find/Dossier/Intel/View button grid.
+// Routes free text (typed or spoken) through the full intent engine, then maps
+// each intent to the matching picker handler so results render inline and the
+// picker stays open for chaining. Understands names (EN + AR, fuzzy), tabs,
+// sorts, view modes, fleet intel, briefings and dossiers.
+function m8SmartCommand(arg) {
+  const box  = document.getElementById('m8Smart');
+  const text = (arg != null ? arg : (box ? box.value : '')).trim();
+  if (!text) return;
+  if (box) box.value = '';
+
+  const cmd = parseVoiceCommand(text);
+  switch (cmd.type) {
+    case 'tab':          m8PickCmd('tab', cmd.id); break;
+    case 'mode':         if (cmd.mode === 'radar') { setCaptainView('radar'); hideM8Picker(); }
+                         else m8PickCmd('mode', cmd.mode); break;
+    case 'sort':         m8PickCmd('sort', cmd.col); break;
+    case 'clear':        m8PickCmd('clear', null); break;
+    case 'upload':       hideM8Picker(); document.getElementById('fileInput')?.click(); break;
+    case 'briefing':     m8PickCmd('briefing', null); break;
+    case 'periodReport': m8PickCmd('periodReport', cmd.period); break;
+    case 'driverReport': m8PickCmd('driverReport', cmd.name); break;
+    // Data-query intents from the analytics layer:
+    case 'daySummary':   m8PickIntel('daySummary'); break;
+    case 'inactive':     m8PickIntel('inactive'); break;
+    case 'topDriver':    m8PickIntel('topDriver'); break;
+    case 'belowTarget':  m8PickIntel('belowTarget'); break;
+    case 'driverDay':    m8PickCmd('driverReport', cmd.name); break;     // open full dossier
+    case 'driver':       m8PickCmd('driverReport', (cmd.names||[])[0]); break;
+    case 'nodata':       m8PickShow(`<span class="vt-err">No data loaded yet</span><div class="vt-hint">Upload a CSV report first</div>`); break;
+    case 'help':
+    case 'wake':         m8PickShow(`<div style="color:var(--text-muted);line-height:1.8">Type or say:<br>• a captain's name → dossier<br>• <span style="color:var(--bolt-green)">compare</span> / <span style="color:var(--bolt-green)">radar</span> → views<br>• <span style="color:var(--bolt-green)">who's offline</span> · <span style="color:var(--bolt-green)">top driver</span> · <span style="color:var(--bolt-green)">below target</span><br>• <span style="color:var(--bolt-green)">sort by hours/earnings/orders</span><br>• <span style="color:var(--bolt-green)">finance</span> · <span style="color:var(--bolt-green)">analytics</span> · <span style="color:var(--bolt-green)">settings</span><br>• <span style="color:var(--bolt-green)">yesterday report</span> · <span style="color:var(--bolt-green)">briefing</span></div>`); break;
+    default: {
+      // Tolerant fallbacks for phrasings the strict parser misses (e.g. plurals).
+      const l = text.toLowerCase();
+      if      (/\bhour/.test(l))                m8PickCmd('sort', 'hours');
+      else if (/\bgross/.test(l))               m8PickCmd('sort', 'gross');
+      else if (/\bearn|\bnet|\bsar/.test(l))    m8PickCmd('sort', 'net');
+      else if (/\border|\bride|\btrip/.test(l)) m8PickCmd('sort', 'orders');
+      else if (/\baccept/.test(l))              m8PickCmd('sort', 'accept');
+      else m8PickShow(`<span class="vt-err">Didn't catch "<i>${text.replace(/</g,'&lt;')}</i>"</span><div class="vt-hint">Try a captain's name · "compare" · "who's offline" · "top driver" · "below target" · "finance"</div>`);
+    }
+  }
 }
 </script>
 </body>
