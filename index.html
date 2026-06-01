@@ -5881,16 +5881,19 @@ function _entryRichness(h) {
 }
 function mergeHistories(local, cloud) {
   const map = new Map();
-  // Process local first, then cloud — cloud overwrites local when equal richness
-  // (cloud always carries the latest upload timestamp from the uploader)
+  // For a given day, the MOST RECENTLY UPLOADED snapshot wins. Each Bolt upload
+  // is a complete snapshot of that day, so the latest upload is the source of
+  // truth — this lets a correction / re-upload overwrite a stale or WRONG entry
+  // (e.g. a bad multi-day report saved over a real day). Richness (driver count
+  // + orders) is only a fallback tiebreaker when upload timestamps are equal or
+  // missing — never the primary rule, or a bogus high-order entry sticks forever.
   [...(local||[]), ...(cloud||[])].forEach(h => {
     if (!h || !h.period) return;
     const existing = map.get(h.period);
-    const rNew = _entryRichness(h), rEx = _entryRichness(existing);
-    const newer = (h?.uploadedAt || '') > (existing?.uploadedAt || '');
-    if (!existing || rNew > rEx || (rNew === rEx && newer)) {
-      map.set(h.period, h);
-    }
+    if (!existing) { map.set(h.period, h); return; }
+    const tNew = h.uploadedAt || '', tEx = existing.uploadedAt || '';
+    const take = (tNew !== tEx) ? (tNew > tEx) : (_entryRichness(h) >= _entryRichness(existing));
+    if (take) map.set(h.period, h);
   });
   return [...map.values()].sort((a,b) => periodSortKey(b.period) - periodSortKey(a.period));
 }
