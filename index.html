@@ -945,6 +945,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
       <span style="font-size:9px;color:var(--text-muted);letter-spacing:.04em" title="When ON, M8 listens in the background — say &quot;Hofy&quot; or &quot;M8&quot; to open it hands-free">🎙 HANDS-FREE — say &ldquo;Hofy&rdquo; to summon</span>
       <button id="m8WakeToggle" class="m8pick-btn" onclick="m8ToggleAlwaysListen()" style="padding:3px 12px;font-size:10px">OFF</button>
     </div>
+    <div id="m8MicDbg" style="margin-top:7px;font-family:var(--mono);font-size:9px;color:var(--text-muted);line-height:1.5;white-space:pre-wrap;word-break:break-word;min-height:13px" title="Live mic diagnostics — tell support what this shows">mic: idle</div>
     <div id="m8PickResult" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(0,255,179,.15);font-size:11px;line-height:1.6;color:var(--text)"></div>
   </div>
 </div>
@@ -2394,11 +2395,15 @@ function startWakeListener() {
   let rec; try { rec = new SpeechRec(); } catch (e) { return; }
   wakeRecog = rec;
   rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 3;
+  rec.onstart      = () => m8Dbg('wake: listening for "Hofy"/"M8"…', 'wake');
+  rec.onaudiostart = () => m8Dbg('wake: mic live', 'wake');
   rec.onresult = e => {
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const r = e.results[i];
       for (let j = 0; j < r.length; j++) {
-        if (m8WakeWordHit(r[j].transcript)) {
+        const tx = r[j].transcript;
+        if (r[j] === r[0]) m8Dbg('wake heard: "' + tx.trim() + '"', 'wake');
+        if (m8WakeWordHit(tx)) {
           try { rec.stop(); } catch (_) {}
           if (!m8PickerOpen()) { m8Greet(); showM8Picker(); }
           return;
@@ -2411,8 +2416,10 @@ function startWakeListener() {
       m8AlwaysOn = false; localStorage.setItem('m8_always_listen', '0');
       m8UpdateWakeToggleUI();
       toast('Mic permission needed for hands-free — allow it, then turn wake word back on');
+      m8Dbg('wake: blocked — allow mic', 'wake');
       return;
     }
+    m8Dbg('wake: ' + (err && err.error), 'wake');
     // Transient errors (no-speech, aborted, network): let onend revive it.
   };
   rec.onend = () => {
@@ -2614,6 +2621,31 @@ let wakeRecog    = null;  // background wake-word recognizer (hands-free / alway
 let m8AlwaysOn   = (localStorage.getItem('m8_always_listen') === '1'); // user toggle
 let m8LastHeard  = '';    // last raw transcript M8 captured (for feedback/debug)
 
+// ── Live mic diagnostics ─────────────────────────────────────────────────────
+// Writes to the #m8MicDbg line in the panel AND the console ([M8] prefix), so a
+// "no voice" report becomes debuggable: you can see start/audio/speech/result/
+// error/end events and exact error codes without DevTools.
+function m8Dbg(msg, tag) {
+  const line = `mic: ${msg}`;
+  try { console.log('[M8] ' + (tag ? tag + ' — ' : '') + msg); } catch (_) {}
+  const el = document.getElementById('m8MicDbg');
+  if (el) el.textContent = line;
+}
+// Browser capability probe — call from console: m8MicCheck()
+function m8MicCheck() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const info = {
+    secureContext: window.isSecureContext,
+    origin: location.origin,
+    hasSpeechRecognition: !!SR,
+    hasSpeechSynthesis: !!window.speechSynthesis,
+    voices: (window.speechSynthesis?.getVoices()||[]).length,
+    mediaDevices: !!navigator.mediaDevices
+  };
+  m8Dbg('check: ' + JSON.stringify(info));
+  return info;
+}
+
 // ── Re-listen after wake: mic restarts, picker stays open ──
 function m8RestartListen() {
   if (!m8WakeMode) return;
@@ -2625,22 +2657,31 @@ function m8RestartListen() {
   m8SetOrb('listening');
   const r = new SpeechRec();
   r.lang = 'en-US'; r.continuous = false; r.interimResults = false; r.maxAlternatives = 5;
-  let lastErr = null;
+  let lastErr = null, gotAudio = false, gotResult = false;
+  r.onaudiostart  = () => { gotAudio = true; m8Dbg('listening (mic live)…'); };
+  r.onspeechstart = () => m8Dbg('hearing speech…');
   r.onresult = e => {
+    gotResult = true;
     const alts = Array.from({length:e.results[0].length},(_,i)=>e.results[0][i].transcript.trim());
-    let cmd = null, used = alts[0] || '';
-    for (const alt of alts) { const c=parseVoiceCommand(alt); if(c.type!=='unknown'){cmd=c; used=alt; break;} }
-    if (!cmd) cmd = parseVoiceCommand(alts[0] || '');
-    m8LastHeard = used;
-    m8HandleVoiceCmd(cmd, alts);
+    try {
+      let cmd = null, used = alts[0] || '';
+      for (const alt of alts) { const c=parseVoiceCommand(alt); if(c.type!=='unknown'){cmd=c; used=alt; break;} }
+      if (!cmd) cmd = parseVoiceCommand(alts[0] || '');
+      m8LastHeard = used;
+      m8Dbg(`heard "${used}" → ${cmd.type}`);
+      m8HandleVoiceCmd(cmd, alts);
+    } catch (err) {
+      m8Dbg('parse/dispatch error: ' + err.message);
+    }
   };
-  r.onerror = ev => { lastErr = ev && ev.error; };
+  r.onerror = ev => { lastErr = ev && ev.error; m8Dbg('error: ' + lastErr); };
   r.onend = () => {
     voiceRecog = null;
     m8SetOrb('idle');
     if (hdr) hdr.innerHTML = '● M8 COMMAND CENTER';
+    if (!gotResult && !lastErr) m8Dbg(gotAudio ? 'no speech detected — try again' : 'mic gave no audio — check device/permission');
     // Mic blocked → stop, don't spin.
-    if (lastErr === 'not-allowed' || lastErr === 'service-not-allowed') return;
+    if (lastErr === 'not-allowed' || lastErr === 'service-not-allowed') { m8Dbg('blocked — allow mic, then reopen'); return; }
     // CONTINUOUS conversation: while the panel is open, keep listening so the
     // user can chain commands (e.g. open Finance, then ask for another tab).
     // Pause only while M8 is speaking, so it never transcribes its own voice.
@@ -2654,7 +2695,8 @@ function m8RestartListen() {
     }
   };
   voiceRecog = r;
-  try { r.start(); } catch(e) { voiceRecog = null; }
+  r.onstart = () => m8Dbg('starting…');
+  try { r.start(); m8Dbg('start requested'); } catch(e) { voiceRecog = null; m8Dbg('start failed: ' + e.message); }
 }
 
 // One place that turns a parsed voice command into an action. Returns nothing;
@@ -2797,13 +2839,19 @@ function scoreDriverMatch(spoken, driverName) {
 }
 
 function findDriverByVoice(spoken) {
-  const history = getHistory();
-  const allNames = [...new Set(history.flatMap(h => h.drivers.map(d => d.name)))];
-  const scored = allNames
-    .map(n => ({ n, score: scoreDriverMatch(spoken, n) }))
-    .filter(x => x.score >= 52)   // a touch looser — STT mangles Arabic/Saudi names
-    .sort((a,b) => b.score - a.score);
-  return scored;
+  try {
+    const history = getHistory();
+    // Guard each entry: a cloud-pulled day with no `drivers` array would otherwise
+    // throw here and break the ENTIRE voice pipeline (every utterance hits this).
+    const allNames = [...new Set(history.flatMap(h => (h && Array.isArray(h.drivers) ? h.drivers : []).map(d => d && d.name).filter(Boolean)))];
+    return allNames
+      .map(n => ({ n, score: scoreDriverMatch(spoken, n) }))
+      .filter(x => x.score >= 52)   // a touch looser — STT mangles Arabic/Saudi names
+      .sort((a,b) => b.score - a.score);
+  } catch (e) {
+    try { console.warn('[M8] findDriverByVoice failed:', e.message); } catch(_) {}
+    return [];
+  }
 }
 
 // ── Command parser ──
