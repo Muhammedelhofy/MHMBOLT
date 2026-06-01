@@ -2389,7 +2389,9 @@ function m8WakeWordHit(text) {
 function m8PickerOpen() { return document.getElementById('m8Picker')?.style.display === 'block'; }
 
 function startWakeListener() {
-  if (!m8AlwaysOn || wakeRecog || m8PickerOpen()) return;
+  // Never run the wake recognizer while the command recognizer owns the mic
+  // (picker open / wake mode / a live voiceRecog) — two recognizers abort each other.
+  if (!m8AlwaysOn || wakeRecog || voiceRecog || m8WakeMode || m8PickerOpen()) return;
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec) return;
   let rec; try { rec = new SpeechRec(); } catch (e) { return; }
@@ -2646,23 +2648,31 @@ function m8MicCheck() {
   return info;
 }
 
-// ── Re-listen after wake: mic restarts, picker stays open ──
+// ── Command listening while the picker is open ──
+// continuous=true so ONE recognition stays open and fires onresult per phrase —
+// no start/stop churn (that churn, plus the wake recognizer running at the same
+// time, caused the endless "aborted" loop where nothing was ever captured).
 function m8RestartListen() {
   if (!m8WakeMode) return;
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec || voiceRecog) return; // already listening
-  // Show subtle "listening" pulse in picker header
+  // HARD mutual exclusion: the background wake recognizer must be dead before the
+  // command recognizer touches the mic — two recognizers abort each other.
+  stopWakeListener();
   const hdr = document.querySelector('#m8Picker [data-m8hdr]');
   if (hdr) hdr.innerHTML = '<span style="animation:pulse 1s infinite;color:var(--bolt-green)">🎙</span> Listening…';
   m8SetOrb('listening');
   const r = new SpeechRec();
-  r.lang = 'en-US'; r.continuous = false; r.interimResults = false; r.maxAlternatives = 5;
-  let lastErr = null, gotAudio = false, gotResult = false;
-  r.onaudiostart  = () => { gotAudio = true; m8Dbg('listening (mic live)…'); };
+  r.lang = 'en-US'; r.continuous = true; r.interimResults = false; r.maxAlternatives = 5;
+  let lastErr = null, gotAudio = false, abortBackoff = false;
+  r.onstart       = () => m8Dbg('starting…');
+  r.onaudiostart  = () => { gotAudio = true; m8Dbg('listening (mic live) — speak now'); };
   r.onspeechstart = () => m8Dbg('hearing speech…');
   r.onresult = e => {
-    gotResult = true;
-    const alts = Array.from({length:e.results[0].length},(_,i)=>e.results[0][i].transcript.trim());
+    // Only act on the latest FINAL result.
+    const res = e.results[e.results.length - 1];
+    if (!res || !res.isFinal) return;
+    const alts = Array.from({length:res.length},(_,i)=>res[i].transcript.trim());
     try {
       let cmd = null, used = alts[0] || '';
       for (const alt of alts) { const c=parseVoiceCommand(alt); if(c.type!=='unknown'){cmd=c; used=alt; break;} }
@@ -2674,28 +2684,29 @@ function m8RestartListen() {
       m8Dbg('parse/dispatch error: ' + err.message);
     }
   };
-  r.onerror = ev => { lastErr = ev && ev.error; m8Dbg('error: ' + lastErr); };
+  r.onerror = ev => {
+    lastErr = ev && ev.error;
+    if (lastErr === 'aborted') abortBackoff = true;   // mic was contended — back off
+    else m8Dbg('error: ' + lastErr);
+  };
   r.onend = () => {
     voiceRecog = null;
     m8SetOrb('idle');
     if (hdr) hdr.innerHTML = '● M8 COMMAND CENTER';
-    if (!gotResult && !lastErr) m8Dbg(gotAudio ? 'no speech detected — try again' : 'mic gave no audio — check device/permission');
-    // Mic blocked → stop, don't spin.
     if (lastErr === 'not-allowed' || lastErr === 'service-not-allowed') { m8Dbg('blocked — allow mic, then reopen'); return; }
-    // CONTINUOUS conversation: while the panel is open, keep listening so the
-    // user can chain commands (e.g. open Finance, then ask for another tab).
-    // Pause only while M8 is speaking, so it never transcribes its own voice.
+    // Keep listening while the panel is open. Longer pause after an abort so the
+    // mic fully releases (prevents the tight abort loop), normal pause otherwise.
     if (m8WakeMode && m8PickerOpen()) {
+      const delay = abortBackoff ? 1000 : 350;
       setTimeout(() => {
-        if (m8WakeMode && m8PickerOpen() && !voiceRecog &&
+        if (m8WakeMode && m8PickerOpen() && !voiceRecog && !wakeRecog &&
             !(window.speechSynthesis && window.speechSynthesis.speaking)) {
           m8RestartListen();
         }
-      }, 450);
+      }, delay);
     }
   };
   voiceRecog = r;
-  r.onstart = () => m8Dbg('starting…');
   try { r.start(); m8Dbg('start requested'); } catch(e) { voiceRecog = null; m8Dbg('start failed: ' + e.message); }
 }
 
