@@ -158,6 +158,42 @@ body::after {
 .payout-popup-note  { font-size:11px; color:var(--text-muted); margin-top:10px; line-height:1.5; border-top:1px solid rgba(0,212,255,.07); padding-top:8px; }
 .payout-gap-btn { cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px; }
 
+/* ── Owes detail popup ── */
+.owes-detail-popup { position:fixed; background:#030D18; border:1px solid rgba(255,68,102,.35); border-radius:4px; padding:14px 16px; box-shadow:0 0 24px rgba(255,68,102,.15),0 8px 32px rgba(0,0,0,.9); z-index:600; min-width:240px; max-width:300px; display:none; font-family:var(--mono); }
+.owes-detail-popup.open { display:block; }
+.odp-title  { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:var(--red); margin-bottom:8px; }
+.odp-note   { font-size:10px; color:var(--text-muted); line-height:1.5; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid rgba(255,68,102,.12); }
+.odp-row    { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid rgba(255,68,102,.07); font-size:12px; }
+.odp-row:last-of-type { border-bottom:none; }
+.odp-period { color:var(--text-muted); }
+.odp-amount { color:var(--red); font-weight:700; }
+.odp-total  { display:flex; justify-content:space-between; font-size:12px; font-weight:700; color:var(--red); margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,68,102,.2); }
+
+/* ── EKG boot trace ── */
+#m8EkgBar { position:fixed; top:0; left:0; right:0; height:2px; z-index:9999; pointer-events:none; overflow:hidden; }
+#m8EkgBar::after { content:''; position:absolute; top:0; left:-60%; width:60%; height:100%; background:linear-gradient(90deg,transparent,rgba(0,255,179,.8),rgba(0,255,179,1),rgba(0,255,179,.8),transparent); animation:ekg-sweep 1.4s cubic-bezier(.4,0,.2,1) forwards; }
+@keyframes ekg-sweep { 0%{left:-60%;opacity:1} 70%{opacity:1} 100%{left:100%;opacity:0} }
+
+/* ── Driver-row hover scan ── */
+.driver-row { position:relative; overflow:hidden; }
+.driver-row::after { content:''; position:absolute; top:0; left:-120%; width:60%; height:100%; background:linear-gradient(90deg,transparent,rgba(0,255,179,.06),rgba(0,255,179,.1),rgba(0,255,179,.06),transparent); pointer-events:none; transition:none; }
+.driver-row:hover::after { animation:row-scan .55s ease forwards; }
+@keyframes row-scan { from{left:-60%} to{left:120%} }
+
+/* ── M8 neural idle shimmer (orb ring when no data) ── */
+.jarvis-orb.m8-idle::before { animation:neural-idle 3s ease-in-out infinite !important; border-color:rgba(0,255,179,.08) !important; }
+.jarvis-orb.m8-idle::after  { animation:neural-idle 3s ease-in-out infinite .9s !important; border-color:rgba(0,255,179,.04) !important; }
+@keyframes neural-idle { 0%,100%{opacity:.15;transform:scale(1)} 50%{opacity:.55;transform:scale(1.06)} }
+
+/* ── Acceptance-drop badge ── */
+.acc-drop-badge { display:inline-block; font-size:9px; font-weight:700; color:#f59e0b; background:rgba(245,158,11,.1); border:1px solid rgba(245,158,11,.3); border-radius:2px; padding:1px 4px; margin-left:4px; vertical-align:middle; letter-spacing:.03em; cursor:default; }
+
+/* ── M8 picker briefing card ── */
+#m8BriefCard { font-size:10px; line-height:1.7; padding:7px 10px; margin-bottom:8px; background:rgba(0,255,179,.04); border:1px solid rgba(0,255,179,.12); border-radius:3px; color:var(--text-muted); display:none; }
+#m8BriefCard b { color:var(--bolt-green); }
+#m8BriefCard .m8bc-warn { color:#f59e0b; }
+#m8BriefCard .m8bc-alert { color:var(--red); }
+
 /* ── Empty state ── */
 .empty-state { text-align:center; padding:60px 20px; color:var(--text-muted); }
 .empty-icon  { font-size:38px; margin-bottom:12px; opacity:.5; }
@@ -340,6 +376,40 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 
 /* ── Name mapping ── */
 .d-foreign { color:var(--bolt-green); font-size:11px; margin-left:4px; text-shadow:0 0 8px rgba(0,255,179,.45); }
+
+/* ── Cash % badge + owes alert (Captain tab) ── */
+.cash-badge { display:inline-flex; align-items:center; font-size:9px; font-weight:700; padding:2px 6px; border-radius:2px; letter-spacing:.04em; margin-top:3px; }
+.cash-low  { background:rgba(0,255,179,.08);  border:1px solid rgba(0,255,179,.25);  color:var(--bolt-green); }
+.cash-mid  { background:rgba(255,170,0,.1);   border:1px solid rgba(255,170,0,.3);   color:var(--amber); }
+.cash-high { background:rgba(255,68,102,.1);  border:1px solid rgba(255,68,102,.3);  color:var(--red); }
+.owes-badge { display:inline-flex; align-items:center; font-size:9px; font-weight:700; padding:2px 6px; border-radius:2px; letter-spacing:.04em; margin-top:3px; margin-right:4px; background:rgba(255,68,102,.12); border:1px solid rgba(255,68,102,.4); color:var(--red); animation:glow-pulse 2s infinite; }
+
+/* ── Model badges (Captain tab) ── */
+.model-badge { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:2px; font-family:var(--mono); font-size:9px; font-weight:700; flex-shrink:0; letter-spacing:0; margin-left:5px; vertical-align:middle; }
+.model-A { background:rgba(124,58,237,.12); border:1px solid rgba(124,58,237,.35); color:#A78BFA; }
+.model-B { background:rgba(6,182,212,.1);   border:1px solid rgba(6,182,212,.35);  color:#22D3EE; }
+.model-C { background:rgba(0,255,179,.08);  border:1px solid rgba(0,255,179,.3);   color:var(--bolt-green); }
+.model-D { background:rgba(255,170,0,.1);   border:1px solid rgba(255,170,0,.3);   color:var(--amber); }
+.model-E { background:rgba(255,68,102,.08); border:1px solid rgba(255,68,102,.28); color:var(--red); }
+.model-X { background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1); color:var(--text-muted); }
+
+/* ── Compare Days — sticky Driver column header (same as td) ── */
+.compare-table th.col-driver { position:sticky; left:0; z-index:3; background:var(--bg-card2); }
+
+/* ── Finance table — sticky first column ── */
+.finance-table td:first-child, .finance-table th:first-child { position:sticky; left:0; z-index:2; background:var(--bg-card2); border-right:1px solid rgba(0,212,255,.08); }
+.finance-table tbody td:first-child { background:var(--bg-card); }
+.finance-table tbody tr:hover td:first-child { background:rgba(0,28,48,.95); }
+
+/* ── Driver table header alignment: right-aligned cols use flex so text edge lines up with data ── */
+.driver-table th.td-r { display:table-cell; text-align:right; }
+.driver-table th.td-r .th-inner { display:flex; width:100%; align-items:center; justify-content:flex-end; gap:3px; }
+.driver-table th.td-r .th-inner .th-arrow { opacity:.25; font-size:9px; }
+.driver-table th.td-r .th-inner.sort-on .th-arrow { opacity:1; color:var(--bolt-green); }
+/* Control bar groups */
+.ctrl-group { display:inline-flex; align-items:center; gap:5px; padding:0 10px; border-left:1px solid rgba(0,212,255,.1); }
+.ctrl-group:first-child { border-left:none; padding-left:0; }
+.ctrl-group-label { font-size:9px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.1em; white-space:nowrap; }
 
 /* ── M8 Command Picker ── */
 .m8pick-section { font-size:9px; color:var(--text-muted); letter-spacing:.1em; text-transform:uppercase; margin:8px 0 5px; }
@@ -579,16 +649,62 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 .sm-zoom-btn { width:28px; height:28px; border-radius:2px; border:1px solid rgba(0,212,255,.2); background:rgba(0,0,0,.6); color:var(--text-muted); font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; backdrop-filter:blur(4px); }
 .sm-zoom-btn:hover { border-color:rgba(0,212,255,.5); color:var(--cyan); }
 
-/* ── Glitch on upload ── */
-@keyframes glitch-shift { 0%{clip-path:inset(0 0 95% 0)} 20%{clip-path:inset(30% 0 50% 0)} 40%{clip-path:inset(60% 0 20% 0)} 60%{clip-path:inset(10% 0 75% 0)} 80%{clip-path:inset(80% 0 5% 0)} 100%{clip-path:inset(0 0 0 0)} }
-@keyframes rgb-split-r { 0%,100%{transform:translateX(0)} 25%{transform:translateX(4px)} 75%{transform:translateX(-3px)} }
-@keyframes rgb-split-b { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(3px)} }
-.glitch-overlay-r,.glitch-overlay-b { position:fixed;inset:0;pointer-events:none;z-index:9998;mix-blend-mode:screen;opacity:0;transition:opacity .1s; }
-.glitch-overlay-r { background:rgba(255,0,60,.06); }
-.glitch-overlay-b { background:rgba(0,200,255,.06); }
-body.glitching .glitch-overlay-r { opacity:1;animation:rgb-split-r .15s ease infinite; }
-body.glitching .glitch-overlay-b { opacity:1;animation:rgb-split-b .15s ease infinite; }
-body.glitching { animation:glitch-shift .08s steps(1) infinite; }
+/* ── Data Ingestion overlay (replaces old page-glitch) ── */
+@keyframes di-fade-in  { from{opacity:0} to{opacity:1} }
+@keyframes di-fade-out { from{opacity:1} to{opacity:0} }
+@keyframes di-scan     { from{top:0} to{top:100%} }
+@keyframes di-char     { 0%{opacity:0} 50%{opacity:1} 100%{opacity:.3} }
+@keyframes di-ring     { 0%{transform:translate(-50%,-50%) scale(.6);opacity:.9} 100%{transform:translate(-50%,-50%) scale(2.4);opacity:0} }
+@keyframes di-status   { 0%{opacity:0;transform:translateY(6px)} 30%{opacity:1;transform:translateY(0)} 80%{opacity:1} 100%{opacity:0} }
+
+#dataIngestionOverlay {
+  position:fixed; inset:0; z-index:9997; pointer-events:none;
+  background:rgba(4,8,15,.72); display:none; backdrop-filter:blur(2px);
+}
+#dataIngestionOverlay.active { display:block; animation:di-fade-in .15s ease forwards; }
+#dataIngestionOverlay.dying  { animation:di-fade-out .4s ease forwards; }
+
+#di-scan-line {
+  position:absolute; left:0; right:0; height:2px; top:0;
+  background:linear-gradient(90deg,transparent 0%,rgba(0,255,179,.0) 10%,rgba(0,255,179,.9) 50%,rgba(0,212,255,.9) 70%,transparent 100%);
+  box-shadow:0 0 18px 4px rgba(0,255,179,.35);
+  animation:di-scan 1s linear forwards;
+}
+#di-hex-canvas { position:absolute; inset:0; opacity:.55; }
+#di-center-ring {
+  position:absolute; top:50%; left:50%;
+  width:160px; height:160px; border-radius:50%;
+  border:1px solid rgba(0,255,179,.6);
+  box-shadow:0 0 30px rgba(0,255,179,.2),inset 0 0 20px rgba(0,255,179,.08);
+  animation:di-ring 1s ease-out forwards;
+}
+#di-center-ring2 {
+  position:absolute; top:50%; left:50%;
+  width:100px; height:100px; border-radius:50%;
+  border:1px solid rgba(0,212,255,.4);
+  animation:di-ring 1s .12s ease-out forwards;
+}
+#di-status-label {
+  position:absolute; bottom:15%; left:50%; transform:translateX(-50%);
+  font-family:var(--mono); font-size:13px; letter-spacing:.25em; color:var(--bolt-green);
+  text-shadow:0 0 12px rgba(0,255,179,.8); white-space:nowrap;
+  animation:di-status 1.4s ease forwards;
+}
+#di-corner-tl,#di-corner-tr,#di-corner-bl,#di-corner-br {
+  position:absolute; width:40px; height:40px;
+  border-color:rgba(0,255,179,.5); border-style:solid;
+}
+#di-corner-tl { top:18px; left:18px; border-width:2px 0 0 2px; }
+#di-corner-tr { top:18px; right:18px; border-width:2px 2px 0 0; }
+#di-corner-bl { bottom:18px; left:18px; border-width:0 0 2px 2px; }
+#di-corner-br { bottom:18px; right:18px; border-width:0 2px 2px 0; }
+
+/* ── Signal bars (header) ── */
+.signal-bars { display:flex; align-items:flex-end; gap:2px; height:16px; padding: 0 2px; }
+.signal-bar  { width:3px; border-radius:1px; background:var(--bolt-green); opacity:.25; }
+.signal-bar.lit { opacity:1; box-shadow:0 0 6px rgba(0,255,179,.6); }
+@keyframes sb-pulse { 0%,100%{opacity:.9} 50%{opacity:.4} }
+.signal-bar.lit { animation:sb-pulse 1.8s ease infinite; }
 
 /* ── M8 orb states ── */
 .jarvis-orb.thinking { animation:orb-think .6s linear infinite !important; }
@@ -699,6 +815,76 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
   box-shadow:0 0 14px rgba(0,255,179,.12);
 }
 .modal-filter-banner b { color:var(--bolt-green); }
+
+/* ══════════════════════════════════════════
+   SCI-FI FEATURES
+   ══════════════════════════════════════════ */
+
+/* ── Mission Clock ── */
+.mission-clock { font-family:var(--mono); font-size:11px; color:var(--bolt-green); letter-spacing:.06em; text-align:right; line-height:1.4; text-shadow:0 0 10px rgba(0,255,179,.45); border-left:1px solid rgba(0,212,255,.15); padding-left:12px; }
+.mission-clock .mc-time { font-size:14px; font-weight:700; }
+.mission-clock .mc-sub  { font-size:9px; color:var(--text-muted); letter-spacing:.08em; }
+
+/* ── Warp Upload Animation ── */
+@keyframes warp-streak { 0%{transform:scaleX(0);opacity:1} 60%{opacity:.8} 100%{transform:scaleX(1);opacity:0} }
+@keyframes warp-fade   { 0%{opacity:0} 10%{opacity:1} 80%{opacity:1} 100%{opacity:0} }
+#warpOverlay { position:fixed; inset:0; z-index:9998; pointer-events:none; display:none; background:radial-gradient(ellipse at 50% 50%, rgba(0,255,179,.06) 0%, transparent 70%); animation:warp-fade .8s ease forwards; }
+#warpOverlay.active { display:block; }
+.warp-streak { position:absolute; height:1px; background:linear-gradient(90deg,transparent,rgba(0,255,179,.9),transparent); transform-origin:center; animation:warp-streak .6s ease-out forwards; }
+
+/* ── Biometric Scan ── */
+@keyframes scan-sweep { 0%{top:0;opacity:1} 100%{top:100%;opacity:.3} }
+#bioScanOverlay { position:fixed; inset:0; z-index:9997; pointer-events:none; display:none; }
+#bioScanOverlay.active { display:block; }
+.bio-scan-box { position:absolute; background:rgba(0,255,179,.04); border:1px solid rgba(0,255,179,.4); border-radius:3px; overflow:hidden; }
+.bio-scan-line { position:absolute; left:0; right:0; height:2px; background:linear-gradient(90deg,transparent,rgba(0,255,179,.9) 40%,var(--bolt-green),rgba(0,255,179,.9) 60%,transparent); box-shadow:0 0 12px rgba(0,255,179,.8); animation:scan-sweep .45s linear forwards; }
+.bio-scan-label { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-family:var(--mono); font-size:9px; color:var(--bolt-green); letter-spacing:.15em; text-transform:uppercase; opacity:.7; }
+
+/* ── CORTEX Alerts ── */
+@keyframes cortex-slide-in { from{transform:translateX(110%);opacity:0} to{transform:translateX(0);opacity:1} }
+@keyframes cortex-slide-out{ from{transform:translateX(0);opacity:1} to{transform:translateX(110%);opacity:0} }
+#cortexAlertContainer { position:fixed; bottom:24px; right:24px; z-index:9990; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+.cortex-alert { background:#030D18; border:1px solid; border-radius:4px; padding:14px 16px; min-width:320px; max-width:380px; pointer-events:all; animation:cortex-slide-in .4s cubic-bezier(.22,1,.36,1) forwards; box-shadow:0 8px 32px rgba(0,0,0,.8); }
+.cortex-alert.dismissing { animation:cortex-slide-out .3s ease forwards; }
+.cortex-alert-header { font-family:var(--mono); font-size:9px; letter-spacing:.15em; text-transform:uppercase; margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; }
+.cortex-alert-body   { font-size:12px; color:var(--text); line-height:1.6; font-family:var(--mono); }
+.cortex-alert-dismiss{ cursor:pointer; font-size:14px; padding:0 4px; opacity:.5; transition:opacity .15s; }
+.cortex-alert-dismiss:hover { opacity:1; }
+.cortex-warn  { border-color:rgba(255,170,0,.5);  }
+.cortex-warn  .cortex-alert-header { color:var(--amber); }
+.cortex-danger{ border-color:rgba(255,68,102,.5); }
+.cortex-danger .cortex-alert-header{ color:var(--red); }
+.cortex-info  { border-color:rgba(0,212,255,.4); }
+.cortex-info  .cortex-alert-header { color:var(--cyan); }
+
+/* ── Tactical Radar ── */
+.radar-wrap { position:relative; display:flex; justify-content:center; align-items:center; padding:10px 0; }
+#radarCanvas { cursor:crosshair; border-radius:50%; }
+.radar-legend { position:absolute; bottom:18px; left:50%; transform:translateX(-50%); display:flex; gap:14px; font-family:var(--mono); font-size:9px; letter-spacing:.07em; text-transform:uppercase; }
+.radar-legend-item { display:flex; align-items:center; gap:5px; }
+.radar-legend-dot  { width:8px; height:8px; border-radius:50%; }
+
+/* ── CORTEX Report Panel ── */
+@keyframes report-in { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+#cortexReportPanel { position:fixed; inset:0; z-index:9995; background:rgba(0,0,0,.82); display:none; align-items:center; justify-content:center; }
+#cortexReportPanel.open { display:flex; }
+.crp-box { background:#030D18; border:1px solid rgba(0,255,179,.2); border-radius:6px; width:680px; max-width:96vw; max-height:88vh; overflow:hidden; display:flex; flex-direction:column; animation:report-in .35s ease; box-shadow:0 0 80px rgba(0,255,179,.07),0 24px 60px rgba(0,0,0,.9); }
+.crp-header { display:flex; align-items:center; gap:12px; padding:16px 20px; border-bottom:1px solid rgba(0,255,179,.12); background:rgba(0,255,179,.03); flex-shrink:0; }
+.crp-title  { font-family:var(--mono); font-size:13px; color:var(--bolt-green); letter-spacing:.08em; text-transform:uppercase; text-shadow:var(--glow-green); flex:1; }
+.crp-close  { cursor:pointer; font-size:18px; color:var(--text-muted); transition:color .15s; }
+.crp-close:hover { color:var(--red); }
+.crp-body   { flex:1; overflow-y:auto; padding:20px; font-family:var(--mono); font-size:12px; color:var(--text); line-height:1.8; }
+.crp-section{ margin-bottom:18px; }
+.crp-section-title { font-size:9px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:8px; border-bottom:1px solid rgba(0,212,255,.08); padding-bottom:4px; }
+.crp-line   { padding:3px 0; border-bottom:1px solid rgba(0,212,255,.04); display:flex; justify-content:space-between; }
+.crp-key    { color:var(--text-muted); }
+.crp-val    { color:var(--cyan); font-weight:700; }
+.crp-val.green { color:var(--bolt-green); }
+.crp-val.red   { color:var(--red); }
+.crp-val.amber { color:var(--amber); }
+.crp-typewriter::after { content:'█'; animation:pulse .8s infinite; margin-left:2px; }
+.crp-alert-row { background:rgba(255,68,102,.07); border:1px solid rgba(255,68,102,.2); border-radius:3px; padding:6px 10px; margin:4px 0; font-size:11px; color:var(--text); }
+.crp-good-row  { background:rgba(0,255,179,.05); border:1px solid rgba(0,255,179,.15); border-radius:3px; padding:6px 10px; margin:4px 0; font-size:11px; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -707,10 +893,19 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
+<div id="m8EkgBar"></div>
 <div class="ambient-orb ambient-orb-1"></div>
 <div class="ambient-orb ambient-orb-2"></div>
-<div class="glitch-overlay-r"></div>
-<div class="glitch-overlay-b"></div>
+<!-- Data Ingestion Overlay -->
+<div id="dataIngestionOverlay">
+  <div id="di-corner-tl"></div><div id="di-corner-tr"></div>
+  <div id="di-corner-bl"></div><div id="di-corner-br"></div>
+  <canvas id="di-hex-canvas"></canvas>
+  <div id="di-scan-line"></div>
+  <div id="di-center-ring"></div>
+  <div id="di-center-ring2"></div>
+  <div id="di-status-label">SIGNAL ACQUIRED — INDEXING</div>
+</div>
 <div class="jarvis-orb-wrap">
   <canvas id="m8NeuralCanvas" width="220" height="220" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:-1"></canvas>
   <button class="jarvis-orb" id="jarvisOrb" onclick="startVoiceSearch()" title="M8 — click to speak (EN/AR)">
@@ -732,6 +927,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
   </div>
   <div style="padding:10px 12px;max-height:420px;overflow-y:auto">
     <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;padding:5px 8px;background:rgba(0,255,179,.04);border-radius:2px;border-left:2px solid rgba(0,255,179,.3)">🎙 Mic is on — speak a command, or tap a button below</div>
+    <div id="m8BriefCard"></div>
     <div class="m8pick-section">🧭 NAVIGATE</div>
     <div class="m8pick-row">
       <button class="m8pick-btn" onclick="m8PickCmd('tab','captains')">Captains</button>
@@ -751,6 +947,15 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
       <input id="m8PickSearch" type="text" placeholder="Type driver name…" style="flex:1;background:rgba(0,255,179,.05);border:1px solid rgba(0,255,179,.25);color:var(--bolt-green);font-family:var(--mono);font-size:11px;padding:5px 8px;border-radius:3px;outline:none" onkeydown="if(event.key==='Enter')m8PickSearch()">
       <button class="m8pick-btn" onclick="m8PickSearch()">Go</button>
     </div>
+    <div class="m8pick-section">◈ CORTEX REPORTS</div>
+    <div class="m8pick-row">
+      <button class="m8pick-btn" style="color:var(--bolt-green);border-color:rgba(0,255,179,.4)" onclick="m8PickCmd('briefing',null)">⚡ Fleet Briefing</button>
+      <button class="m8pick-btn" onclick="m8PickCmd('periodReport','yesterday')">Yesterday Report</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <input id="m8ReportDriver" type="text" placeholder="Captain name for dossier…" style="flex:1;background:rgba(0,255,179,.05);border:1px solid rgba(0,255,179,.25);color:var(--bolt-green);font-family:var(--mono);font-size:11px;padding:5px 8px;border-radius:3px;outline:none" onkeydown="if(event.key==='Enter')m8OpenDriverReport()">
+      <button class="m8pick-btn" onclick="m8OpenDriverReport()">Dossier</button>
+    </div>
     <div class="m8pick-section">⚡ FLEET INTEL</div>
     <div class="m8pick-row">
       <button class="m8pick-btn" onclick="m8PickIntel('daySummary')">Yesterday</button>
@@ -762,7 +967,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
     <div class="m8pick-row">
       <button class="m8pick-btn" onclick="m8PickCmd('yesterday',null)">Show Yesterday</button>
       <button class="m8pick-btn" onclick="m8PickCmd('mode','compare')">Compare Days</button>
-      <button class="m8pick-btn" onclick="m8PickCmd('mode','single')">Single Day</button>
+      <button class="m8pick-btn" onclick="setCaptainView('radar');hideM8Picker()">◎ Radar</button>
       <button class="m8pick-btn m8pick-btn-red" onclick="m8PickCmd('clear',null)">Clear All</button>
     </div>
     <div id="m8PickResult" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(0,255,179,.15);font-size:11px;line-height:1.6;color:var(--text)"></div>
@@ -797,17 +1002,39 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
   <div class="modal-body"  id="modalBody"></div>
 </div>
 
+<!-- Sci-Fi Overlays -->
+<div id="warpOverlay"></div>
+<div id="bioScanOverlay"><div class="bio-scan-box" id="bioScanBox"><div class="bio-scan-line"></div><div class="bio-scan-label">SCANNING</div></div></div>
+<div id="cortexAlertContainer"></div>
+<div id="cortexReportPanel" onclick="if(event.target===this)closeCortexReport()">
+  <div class="crp-box">
+    <div class="crp-header">
+      <span id="crpTitleText" class="crp-title">◈ CORTEX BRIEFING</span>
+      <span class="crp-close" onclick="closeCortexReport()">✕</span>
+    </div>
+    <div class="crp-body" id="crpBody"></div>
+  </div>
+</div>
+
 <!-- Header -->
 <div class="header">
   <div class="header-logo">MOHM FLEET</div>
   <div class="header-sep"></div>
   <div class="header-title">Fleet Intelligence System</div>
   <div class="header-right">
+    <div class="mission-clock" id="missionClock" title="Mission Clock"><div class="mc-time" id="mcTime">--:--:--</div><div class="mc-sub" id="mcSub">INIT</div></div>
     <div class="sync-dot offline" id="syncDot" title="Cloud sync status"></div>
     <div class="sync-label" id="syncLabel">not synced</div>
-    <button id="pullBtn" class="upload-btn-header" onclick="manualPull()" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25)">↓ Pull Updates</button>
-    <div class="header-period" id="headerPeriod">No data loaded</div>
-    <button class="upload-btn-header" onclick="document.getElementById('fileInput').click()">↑ Upload Report</button>
+    <button id="pullBtn" class="upload-btn-header" onclick="manualPull()" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25)">↓ Pull</button>
+    <div class="header-period" id="headerPeriod">No data</div>
+    <div class="signal-bars" id="signalBars" title="System signal">
+      <div class="signal-bar lit" style="height:4px;animation-delay:0s"></div>
+      <div class="signal-bar lit" style="height:7px;animation-delay:.3s"></div>
+      <div class="signal-bar lit" style="height:10px;animation-delay:.6s"></div>
+      <div class="signal-bar lit" style="height:13px;animation-delay:.9s"></div>
+      <div class="signal-bar"     style="height:16px"></div>
+    </div>
+    <button class="upload-btn-header" onclick="document.getElementById('fileInput').click()">↑ Upload</button>
   </div>
 </div>
 
@@ -1178,8 +1405,11 @@ function confirmUpload() {
     summarySelectedDays = new Set(pool.slice(0, parseInt(sumPeriodMode)).map(h => h.period));
   }
   triggerGlitch();
+  triggerWarp();
+  invalidateAlertCache();
   renderCaptains();
   renderHistory();
+  checkCortexAlerts(currentDrivers, period);
   toast(`${currentDrivers.length} drivers saved for ${period}`);
   syncToCloud(); // auto-sync to cloud — manager sees it instantly
 }
@@ -1321,12 +1551,21 @@ function mapDriver(row) {
     projectedPayout:  projected,
     actualPayout:     actual,
     payoutGap:        +(projected - actual).toFixed(2),
-    activeCategories: col(row,'Active categories'),
-    cashEnabled:      col(row,'Cash rides enabled'),
-    fleetCut:         cut,
-    driverPayout:     cut !== null ? Math.max(0, net - cut) : null,
+    activeCategories:        col(row,'Active categories'),
+    cashEnabled:             col(row,'Cash rides enabled'),
+    grossInApp:              n(col(row,'Gross earnings (in-app payment)')),
+    cancellationFees:        n(col(row,'Cancellation fees')),
+    tollFees:                n(col(row,'Toll fees')),
+    expenseReimbursements:   n(col(row,'Expense reimbursements')),
+    bookingFees:             n(col(row,'Booking fees')),
+    totalFees:               n(col(row,'Total fees')),
+    refundsToRiders:         n(col(row,'Refunds to riders')),
+    commissionDiscountInApp: n(col(row,'Commission discount (in-app)')),
+    commissionDiscountCash:  n(col(row,'Commission discount (cash)')),
+    fleetCut:                cut,
+    driverPayout:            cut !== null ? Math.max(0, net - cut) : null,
     tier,
-    isActive:         orders > 0,
+    isActive:                orders > 0,
   };
 }
 function parseTier(raw) {
@@ -1380,7 +1619,12 @@ function getDriverAllHistory(driverId, name) {
 function aggregateDriverRows(rows) {
   const a = { days:0, activeDays:0, orders:0, hours:0, net:0, gross:0, tips:0,
     campaign:0, commission:0, distance:0,
-    _accSum:0, _accN:0, _ratSum:0, _ratN:0, _scoreSum:0, _scoreN:0,
+    grossInApp:0, cashEarnings:0, cashGap:0,
+    cancellationFees:0, tollFees:0, expenseReimbursements:0,
+    bookingFees:0, refundsToRiders:0,
+    commissionDiscountInApp:0, commissionDiscountCash:0,
+    _accSum:0, _accN:0, _accTotSum:0, _accTotN:0,
+    _ratSum:0, _ratN:0, _scoreSum:0, _scoreN:0,
     _finSum:0, _finN:0, _utilSum:0, _utilN:0 };
   rows.forEach(({d}) => {
     a.days++;
@@ -1393,14 +1637,26 @@ function aggregateDriverRows(rows) {
     a.campaign   += sN(d.campaign);
     a.commission += sN(d.commission);
     a.distance   += sN(d.distanceTotal);
-    if (d.isActive && sN(d.acceptance) > 0) { a._accSum += sN(d.acceptance); a._accN++; }
+    a.grossInApp              += sN(d.grossInApp);
+    a.cashEarnings            += sN(d.cashEarnings);
+    a.cashGap                 += sN(d.cashGap);
+    a.cancellationFees        += sN(d.cancellationFees);
+    a.tollFees                += sN(d.tollFees);
+    a.expenseReimbursements   += sN(d.expenseReimbursements);
+    a.bookingFees             += sN(d.bookingFees);
+    a.refundsToRiders         += sN(d.refundsToRiders);
+    a.commissionDiscountInApp += sN(d.commissionDiscountInApp);
+    a.commissionDiscountCash  += sN(d.commissionDiscountCash);
+    if (d.isActive && sN(d.acceptance) > 0)      { a._accSum    += sN(d.acceptance);      a._accN++; }
+    if (d.isActive && sN(d.acceptanceTotal) > 0) { a._accTotSum += sN(d.acceptanceTotal); a._accTotN++; }
     if (sN(d.rating)      > 0) { a._ratSum   += sN(d.rating);      a._ratN++; }
     if (sN(d.score)       > 0) { a._scoreSum += sN(d.score);       a._scoreN++; }
     if (sN(d.finishRate)  > 0) { a._finSum   += sN(d.finishRate);  a._finN++; }
     if (sN(d.utilization) > 0) { a._utilSum  += sN(d.utilization); a._utilN++; }
   });
-  a.acceptance  = a._accN   ? a._accSum   / a._accN   : 0;
-  a.rating      = a._ratN   ? a._ratSum   / a._ratN   : 0;
+  a.acceptance      = a._accN    ? a._accSum    / a._accN    : 0;
+  a.acceptanceTotal = a._accTotN ? a._accTotSum / a._accTotN : 0;
+  a.rating          = a._ratN    ? a._ratSum    / a._ratN    : 0;
   a.score       = a._scoreN ? Math.round(a._scoreSum / a._scoreN) : 0;
   a.finishRate  = a._finN   ? Math.round(a._finSum   / a._finN)   : 0;
   a.utilization = a._utilN  ? Math.round(a._utilSum  / a._utilN)  : 0;
@@ -1859,7 +2115,11 @@ function renderModalBody() {
     <div class="kpi-grid-modal">
       <div class="kpi-card"><div class="kpi-card-label">Hours Online</div><div class="kpi-card-value">${agg.hours>0?agg.hours.toFixed(1):'0'}<span class="kpi-card-unit"> h</span></div></div>
       <div class="kpi-card"><div class="kpi-card-label">Orders Done</div><div class="kpi-card-value">${agg.orders}</div></div>
-      <div class="kpi-card ${agg.acceptance>0&&agg.acceptance<s.flagAccRed?'flag-red':agg.acceptance>0&&agg.acceptance<s.flagAccAmber?'flag-amber':agg.acceptance>0?'flag-green':''}"><div class="kpi-card-label">Acceptance <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.acceptance>0?Math.round(agg.acceptance)+'%':'—'}</div></div>
+      <div class="kpi-card ${agg.acceptance>0&&agg.acceptance<s.flagAccRed?'flag-red':agg.acceptance>0&&agg.acceptance<s.flagAccAmber?'flag-amber':agg.acceptance>0?'flag-green':''}">
+        <div class="kpi-card-label">Acceptance <span style="opacity:.6">eff. avg</span></div>
+        <div class="kpi-card-value">${agg.acceptance>0?Math.round(agg.acceptance)+'%':'—'}</div>
+        ${agg.acceptanceTotal>0?`<div style="font-size:10px;color:var(--text-muted);margin-top:2px">Total: ${Math.round(agg.acceptanceTotal)}%${agg.acceptanceTotal>0&&agg.acceptance>0&&(agg.acceptanceTotal-agg.acceptance)>15?` <span style="color:var(--amber)" title="Large gap — driver may be going offline to avoid ride assignments">⚠ ${Math.round(agg.acceptanceTotal-agg.acceptance)}pp gap</span>`:''}</div>`:''}
+      </div>
       <div class="kpi-card ${agg.rating>0&&agg.rating<s.flagRatRed?'flag-red':agg.rating>0&&agg.rating<s.flagRatAmber?'flag-amber':agg.rating>0?'flag-green':''}"><div class="kpi-card-label">Rating <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.rating>0?agg.rating.toFixed(2)+'★':'—'}</div></div>
       <div class="kpi-card"><div class="kpi-card-label">Driver Score <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.score>0?agg.score+'%':'—'}</div></div>
       <div class="kpi-card"><div class="kpi-card-label">Finish Rate <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.finishRate>0?agg.finishRate+'%':'—'}</div></div>
@@ -1878,6 +2138,29 @@ function renderModalBody() {
       <div class="kpi-card"><div class="kpi-card-label">Net / Hour <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.netPerHour>0?agg.netPerHour.toFixed(1)+' SAR/h':'—'}</div></div>
       ${d.fleetCut!==null?`<div class="kpi-card"><div class="kpi-card-label">Fleet Cut</div><div class="kpi-card-value">${fmt(d.fleetCut)} SAR</div></div><div class="kpi-card"><div class="kpi-card-label">Driver Payout</div><div class="kpi-card-value">${fmt(d.driverPayout)} SAR</div></div>`:''}
     </div>
+
+    ${(()=>{
+      // Fee & extras breakdown — only render rows with non-zero values
+      const cashPct = agg.gross > 0 ? (agg.cashEarnings / agg.gross * 100) : 0;
+      const feeRows = [
+        { label:'In-App Gross',          v: agg.grossInApp,              color:'var(--cyan)' },
+        { label:'Cash Gross',            v: agg.cashEarnings,            color:'var(--amber)' },
+        { label:'Cash Not Collected',    v: agg.cashGap,                 color: agg.cashGap>0?'var(--red)':'var(--text-muted)' },
+        { label:'Cancellation Fees',     v: agg.cancellationFees,        color:'var(--text)' },
+        { label:'Toll Fees',             v: agg.tollFees,                color:'var(--text)' },
+        { label:'Expense Reimbursements',v: agg.expenseReimbursements,   color:'var(--green)' },
+        { label:'Refunds to Riders',     v: agg.refundsToRiders,         color: agg.refundsToRiders>0?'var(--red)':'var(--text-muted)' },
+        { label:'Commission Discount',   v: agg.commissionDiscountInApp + agg.commissionDiscountCash, color:'var(--green)' },
+      ].filter(r => r.v !== 0);
+      if (!feeRows.length) return '';
+      return `<div class="section-label">Fee &amp; Extras Breakdown <span style="font-size:11px;color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">— ${earnScope}${cashPct>0?' · '+Math.round(cashPct)+'% cash':''}</span></div>
+      <div style="background:var(--bg-card2);border:1px solid rgba(0,212,255,.08);border-radius:3px;padding:10px 14px;margin-bottom:12px">
+        ${feeRows.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(0,212,255,.05);font-size:12px">
+          <span style="color:var(--text-muted)">${r.label}</span>
+          <span style="font-family:var(--mono);font-weight:600;color:${r.color}">${fmt(r.v)} SAR</span>
+        </div>`).join('')}
+      </div>`;
+    })()}
 
     <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
       <span>Day-by-Day <span style="font-size:11px;color:${filterActive?'var(--bolt-green)':'var(--text-muted)'};font-weight:400;text-transform:none;letter-spacing:0">— ${filterActive?scopeLbl:'full history'} (${rows.length} day${rows.length!==1?'s':''})</span></span>
@@ -2019,6 +2302,7 @@ function showM8Picker() {
   if (!picker) return;
   picker.style.display = 'block';
   m8WakeMode = true;
+  m8UpdateBriefCard();
   // Clear the voice toast so it doesn't overlap
   const t = document.getElementById('voiceToast');
   if (t) t.classList.remove('show');
@@ -2533,9 +2817,53 @@ function startVoiceSearch() {
 // ════════════════════════════════════════════
 // GLITCH SEQUENCE
 // ════════════════════════════════════════════
-function triggerGlitch() {
-  document.body.classList.add('glitching');
-  setTimeout(() => document.body.classList.remove('glitching'), 1400);
+function triggerGlitch() { triggerDataIngestion(); } // legacy alias
+
+function triggerDataIngestion() {
+  const ov = document.getElementById('dataIngestionOverlay');
+  if (!ov) return;
+  ov.classList.remove('dying');
+  ov.classList.add('active');
+
+  // Reset scan line animation
+  const sl = document.getElementById('di-scan-line');
+  if (sl) { sl.style.animation='none'; void sl.offsetWidth; sl.style.animation=''; }
+
+  // Reset rings
+  ['di-center-ring','di-center-ring2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.style.animation='none'; void el.offsetWidth; el.style.animation=''; }
+  });
+
+  // Hex rain on canvas
+  const cv = document.getElementById('di-hex-canvas');
+  if (cv) {
+    cv.width = window.innerWidth; cv.height = window.innerHeight;
+    const ctx2d = cv.getContext('2d');
+    const cols = Math.floor(cv.width / 18);
+    const drops = Array.from({length: cols}, () => Math.random() * cv.height / 14 | 0);
+    const HEX = '0123456789ABCDEF';
+    let frame = 0;
+    const rain = setInterval(() => {
+      ctx2d.fillStyle = 'rgba(4,8,15,.18)';
+      ctx2d.fillRect(0, 0, cv.width, cv.height);
+      ctx2d.font = '13px "Share Tech Mono",monospace';
+      drops.forEach((y, i) => {
+        const bright = Math.random() > .85;
+        ctx2d.fillStyle = bright ? 'rgba(0,255,179,.95)' : 'rgba(0,212,255,.5)';
+        ctx2d.fillText(HEX[Math.random()*16|0], i*18, y*14);
+        if (y*14 > cv.height && Math.random() > .92) drops[i] = 0;
+        else drops[i]++;
+      });
+      if (++frame > 70) clearInterval(rain);
+    }, 30);
+  }
+
+  // Fade out
+  setTimeout(() => {
+    ov.classList.add('dying');
+    setTimeout(() => { ov.classList.remove('active','dying'); }, 420);
+  }, 1050);
 }
 
 // ════════════════════════════════════════════
@@ -4268,6 +4596,7 @@ let captainSearch       = '';
 let summarySelectedDays = null;      // Set of selected period strings; null = all
 let sumPeriodMode       = 'all';     // 'all' | '7' | '14' | 'month' | 'custom'
 let sumMonthFilter      = 'all';     // 'all' or 'YYYY-MM' — unified month filter
+let sumModelFilter      = 'all';     // 'all' | 'A' | 'B' | 'C' | 'D' | 'E' | 'none'
 let sumFleetSortCol     = 'date';    // sort column for By Day table
 let sumFleetSortAsc     = true;
 let sumCourierSortCol   = 'gross';   // sort column for By Captain table
@@ -4322,6 +4651,14 @@ function setCaptainSearch(q) {
   const inp = document.getElementById('captainSearchInput');
   if (inp) { inp.value = captainSearch; inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
 }
+function setSumModelFilter(m) { sumModelFilter = m; renderCaptains(); }
+function m8OpenDriverReport() {
+  const q = (document.getElementById('m8ReportDriver')?.value || '').trim();
+  if (!q) return;
+  const scored = findDriverByVoice(q);
+  if (!scored.length) { m8PickShow(`<span class="vt-err">No captain found: "${q}"</span>`); return; }
+  m8PickCmd('driverReport', scored[0].n);
+}
 
 function renderCaptains() {
   const el = document.getElementById('captainsContent');
@@ -4349,13 +4686,6 @@ function renderCaptains() {
     ? pool.filter(h => summarySelectedDays.has(h.period))
     : pool;
 
-  // ── Month dropdown ──
-  const months = getAvailableMonths();
-  const monthDrop = `<select class="kpi-select" onchange="setSumMonth(this.value)" title="Month filter">
-    <option value="all" ${sumMonthFilter==='all'?'selected':''}>All months</option>
-    ${months.map(m=>`<option value="${m}" ${sumMonthFilter===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
-  </select>`;
-
   // ── Period bar (captain / day views) ──
   const allOn     = summarySelectedDays && summarySelectedDays.size >= n && sumPeriodMode === 'all';
   const is7       = sumPeriodMode === '7';
@@ -4364,17 +4694,36 @@ function renderCaptains() {
   const descPool  = [...pool].reverse();
   const singleSel = summarySelectedDays?.size === 1 ? [...summarySelectedDays][0] : '';
 
-  const periodBar = captainView !== 'compare' ? `
-    <span class="ctrl-label">Period:</span>
-    <button class="sort-btn ${allOn?'active':''}" onclick="setSumPeriod('all')">All (${n})</button>
-    ${n>=7  ? `<button class="sort-btn ${is7 ?'active':''}" onclick="setSumPeriod('7')">Last 7</button>`  : ''}
-    ${n>=14 ? `<button class="sort-btn ${is14?'active':''}" onclick="setSumPeriod('14')">Last 14</button>` : ''}
-    <button class="sort-btn ${isMon?'active':''}" onclick="setSumPeriod('month')">This month</button>
+  // ── Day dropdown (must be before monthDrop which embeds it) ──
+  const dayDrop = captainView !== 'compare' ? `
     <select class="kpi-select" onchange="setSumDay(this.value)" title="Single day">
-      <option value="">— day —</option>
+      <option value="">All days</option>
       ${descPool.map(h=>`<option value="${h.period}" ${singleSel===h.period?'selected':''}>${h.period}</option>`).join('')}
     </select>
-    <span style="font-size:11px;color:var(--text-muted)">${selected.length}d</span>
+  ` : '';
+
+  // ── Month + Day dropdowns (grouped together) ──
+  const months = getAvailableMonths();
+  const monthDrop = captainView !== 'compare' ? `
+    <div class="ctrl-group">
+      <span class="ctrl-group-label">Date</span>
+      <select class="kpi-select" onchange="setSumMonth(this.value)" title="Month filter">
+        <option value="all" ${sumMonthFilter==='all'?'selected':''}>All months</option>
+        ${months.map(m=>`<option value="${m}" ${sumMonthFilter===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
+      </select>
+      ${dayDrop}
+    </div>
+  ` : '';
+
+  const periodBar = captainView !== 'compare' ? `
+    <div class="ctrl-group">
+      <span class="ctrl-group-label">Period</span>
+      <button class="sort-btn ${allOn?'active':''}" onclick="setSumPeriod('all')">All (${n})</button>
+      ${n>=7  ? `<button class="sort-btn ${is7 ?'active':''}" onclick="setSumPeriod('7')">Last 7</button>`  : ''}
+      ${n>=14 ? `<button class="sort-btn ${is14?'active':''}" onclick="setSumPeriod('14')">Last 14</button>` : ''}
+      <button class="sort-btn ${isMon?'active':''}" onclick="setSumPeriod('month')">This month</button>
+      <span style="font-size:10px;color:var(--text-muted);font-family:var(--mono)">${selected.length}d</span>
+    </div>
   ` : '';
 
   // ── Compare KPI bar ──
@@ -4392,7 +4741,14 @@ function renderCaptains() {
     <span class="compare-note" style="font-size:11px;color:var(--text-muted)">🟢 Best &nbsp;🟡 Avg &nbsp;🔴 Worst — per driver · Click column to sort</span>
   ` : '';
 
-  // ── Search bar (captain view only) ──
+  // ── Search bar + model filter (captain view only) ──
+  const modelFilterBar = captainView === 'captain' ? `
+    <div class="ctrl-group">
+      <span class="ctrl-group-label">Model</span>
+      <button class="sort-btn ${sumModelFilter==='all'?'active':''}" onclick="setSumModelFilter('all')" style="font-size:10px;padding:4px 9px">All</button>
+      ${['A','B','C','D','E'].map(m=>`<button class="sort-btn model-badge model-${m} ${sumModelFilter===m?'active':''}" onclick="setSumModelFilter('${m}')" style="width:26px;height:26px;padding:0;font-family:var(--mono);font-size:10px;font-weight:700;border-radius:2px" title="Filter Model ${m}">${m}</button>`).join('')}
+    </div>
+  ` : '';
   const searchBar = captainView === 'captain' ? `
     <input class="search-input" type="text" dir="ltr" placeholder="🔍 Search captain…"
       value="${captainSearch.replace(/"/g,'&quot;')}" oninput="setCaptainSearch(this.value)"
@@ -4402,29 +4758,43 @@ function renderCaptains() {
   // ── KPI cards ──
   const kpis = captainView !== 'compare' ? sumKPIs(selected) : null;
   const kpiCardsHtml = kpis ? [
-    { label:'Total Earnings',  value:`${fmt(kpis.totalGross)} SAR`, sub:`Net ${fmt(kpis.totalNet)} SAR` },
-    { label:'Earn / hr',       value:earnHrOrDash(kpis.earnHr),    sub:`fleet gross ÷ online hrs` },
-    { label:'Avg Acceptance',  value:pctOrDash(kpis.avgAccept),    sub:`active drivers only` },
-    { label:'Avg Utilisation', value:pctOrDash(kpis.avgUtil),      sub:`of online time` },
-    { label:'Avg Finish Rate', value:pctOrDash(kpis.avgFinish),    sub:`accepted → finished` },
-    { label:'Total Rides',     value:`${fmt(kpis.totalRides)}`,    sub:`${Math.round(kpis.totalDist).toLocaleString('en-US')} km` },
-  ].map(c=>`<div class="summary-card"><div class="s-label">${c.label}</div><div class="s-value">${c.value}</div><div class="s-sub">${c.sub}</div></div>`).join('') : '';
+    { label:'Total Earnings',  value:`${fmt(kpis.totalGross)} SAR`, sub:`Net ${fmt(kpis.totalNet)} SAR`, cls:'' },
+    { label:'Earn / hr',       value:earnHrOrDash(kpis.earnHr),    sub:`fleet gross ÷ online hrs`,       cls:'' },
+    { label:'Avg Acceptance',  value:pctOrDash(kpis.avgAccept),    sub:`active drivers only`,            cls:'' },
+    { label:'Avg Utilisation', value:pctOrDash(kpis.avgUtil),      sub:`of online time`,                 cls:'' },
+    { label:'Avg Finish Rate', value:pctOrDash(kpis.avgFinish),    sub:`accepted → finished`,            cls:'' },
+    { label:'Total Rides',     value:`${fmt(kpis.totalRides)}`,    sub:`${Math.round(kpis.totalDist).toLocaleString('en-US')} km`, cls:'' },
+    { label:'Cash Gap ⚠',      value:`${fmt(kpis.totalCashGap)} SAR`,
+      sub: kpis.totalCashGap > 0 ? 'uncollected cash' : 'all cash collected',
+      cls: kpis.totalCashGap > 0 ? 's-red' : '' },
+  ].map(c=>`<div class="summary-card ${c.cls}"><div class="s-label">${c.label}</div><div class="s-value">${c.value}</div><div class="s-sub">${c.sub}</div></div>`).join('') : '';
 
   // ── Table content (compare view fills captainsInner after render) ──
   let innerHtml = '';
   if (captainView === 'captain') innerHtml = buildCourierSummaryTable(selected, captainSearch);
   else if (captainView === 'day') innerHtml = buildFleetDayTable(selected);
+  else if (captainView === 'radar') innerHtml = `<div class="radar-wrap"><canvas id="radarCanvas" width="560" height="560"></canvas></div>
+    <div class="radar-legend">
+      <div class="radar-legend-item"><div class="radar-legend-dot" style="background:var(--bolt-green)"></div><span style="color:var(--text-muted)">On track</span></div>
+      <div class="radar-legend-item"><div class="radar-legend-dot" style="background:var(--amber)"></div><span style="color:var(--text-muted)">Behind</span></div>
+      <div class="radar-legend-item"><div class="radar-legend-dot" style="background:var(--red)"></div><span style="color:var(--text-muted)">At risk</span></div>
+      <div class="radar-legend-item"><div class="radar-legend-dot" style="background:var(--cyan);opacity:.5"></div><span style="color:var(--text-muted)">Inactive</span></div>
+    </div>
+    <div style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:4px;font-family:var(--mono);letter-spacing:.06em">RADIUS = NET EARNINGS · ANGLE = ACCEPTANCE% · CLICK BLIP TO OPEN CAPTAIN</div>`;
 
   el.innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
-      <div class="view-toggle">
-        <button class="view-toggle-btn ${captainView==='captain'?'active':''}" onclick="setCaptainView('captain')">By Captain</button>
-        <button class="view-toggle-btn ${captainView==='day'    ?'active':''}" onclick="setCaptainView('day')">By Day</button>
-        <button class="view-toggle-btn ${captainView==='compare'?'active':''}" onclick="setCaptainView('compare')">Compare Days</button>
+    <div style="display:flex;align-items:center;gap:0;margin-bottom:14px;flex-wrap:wrap;row-gap:8px;">
+      <div class="ctrl-group" style="border-left:none;padding-left:0;padding-right:12px">
+        <div class="view-toggle">
+          <button class="view-toggle-btn ${captainView==='captain'?'active':''}" onclick="setCaptainView('captain')">By Captain</button>
+          <button class="view-toggle-btn ${captainView==='day'    ?'active':''}" onclick="setCaptainView('day')">By Day</button>
+          <button class="view-toggle-btn ${captainView==='compare'?'active':''}" onclick="setCaptainView('compare')">Compare Days</button>
+          <button class="view-toggle-btn ${captainView==='radar'  ?'active':''}" onclick="setCaptainView('radar')" style="color:var(--bolt-green);letter-spacing:.06em">◎ RADAR</button>
+        </div>
       </div>
-      <span class="ctrl-label">Month:</span>
       ${monthDrop}
       ${periodBar}
+      ${modelFilterBar}
       ${compareBar}
       ${searchBar}
     </div>
@@ -4432,6 +4802,7 @@ function renderCaptains() {
     <div id="captainsInner">${innerHtml}</div>`;
 
   if (captainView === 'compare') renderCompareView(pool);
+  if (captainView === 'radar')   renderRadarView(selected);
 
   if (captainSearch) {
     const inp = document.getElementById('captainSearchInput');
@@ -4450,20 +4821,23 @@ function earnHrOrDash(v)     { return v > 0 ? fmt(v) + '/h' : '—'; }
 function sumKPIs(entries) {
   // Only include active drivers (orders > 0) — excludes drivers who didn't work that day
   const active = entries.flatMap(h => h.drivers.filter(d => d.isActive));
-  if (!active.length) return { totalGross:0, totalNet:0, totalRides:0, totalDist:0, earnHr:0, avgAccept:0, avgUtil:0, avgFinish:0 };
+  if (!active.length) return { totalGross:0, totalNet:0, totalRides:0, totalDist:0, earnHr:0, avgAccept:0, avgUtil:0, avgFinish:0, totalCashGap:0 };
   const totalHrs   = active.reduce((a,d)=>a+sN(d.hoursOnline),0);
   const totalGross = active.reduce((a,d)=>a+sN(d.grossEarnings),0);
   // Only average rates from drivers where at least acceptance or utilisation is available
   const withRates  = active.filter(d => accVal(d) > 0 || sN(d.utilization) > 0);
+  // Cash gap = cash earned but not yet handed to fleet (negative actualPayout drivers too)
+  const allDrivers = entries.flatMap(h => h.drivers); // include inactive for cash-gap tracking
   return {
     totalGross,
-    totalNet:   active.reduce((a,d)=>a+sN(d.netEarnings),0),
-    totalRides: active.reduce((a,d)=>a+sN(d.orders),0),
-    totalDist:  active.reduce((a,d)=>a+sN(d.distanceTotal),0),
-    earnHr:     totalHrs > 0 ? totalGross / totalHrs : 0,
-    avgAccept:  withRates.length ? withRates.reduce((a,d)=>a+accVal(d),0)         / withRates.length : 0,
-    avgUtil:    withRates.length ? withRates.reduce((a,d)=>a+sN(d.utilization),0) / withRates.length : 0,
-    avgFinish:  withRates.length ? withRates.reduce((a,d)=>a+sN(d.finishRate),0)  / withRates.length : 0,
+    totalNet:      active.reduce((a,d)=>a+sN(d.netEarnings),0),
+    totalRides:    active.reduce((a,d)=>a+sN(d.orders),0),
+    totalDist:     active.reduce((a,d)=>a+sN(d.distanceTotal),0),
+    earnHr:        totalHrs > 0 ? totalGross / totalHrs : 0,
+    avgAccept:     withRates.length ? withRates.reduce((a,d)=>a+accVal(d),0)         / withRates.length : 0,
+    avgUtil:       withRates.length ? withRates.reduce((a,d)=>a+sN(d.utilization),0) / withRates.length : 0,
+    avgFinish:     withRates.length ? withRates.reduce((a,d)=>a+sN(d.finishRate),0)  / withRates.length : 0,
+    totalCashGap:  allDrivers.reduce((a,d)=>a+sN(d.cashGap),0),
   };
 }
 
@@ -4563,6 +4937,117 @@ function buildFleetDayTable(entries) {
   </table></div>`;
 }
 
+// ─── Alert cache (computed once on data load, O(1) lookups in render) ────────
+let _alertCache = null;
+function buildAlertCache() {
+  const history = getHistory();
+  const perDriver = {};
+  history.forEach(h => {
+    (h.drivers || []).forEach(d => {
+      if (!d.name) return;
+      const key = driverKey(d.name);
+      if (!perDriver[key]) perDriver[key] = { name: d.name, days: [] };
+      perDriver[key].days.push({
+        period: h.period,
+        acceptance: accVal(d),
+        actualPayout: d.actualPayout || 0
+      });
+    });
+  });
+  const cache = {};
+  Object.entries(perDriver).forEach(([key, info]) => {
+    const days = info.days.sort((a, b) => periodSortKey(b.period) - periodSortKey(a.period));
+    // Acceptance drop: last 3 active days vs preceding 7
+    const recent = days.slice(0, 3).map(d => d.acceptance).filter(v => v > 0);
+    const prior  = days.slice(3, 10).map(d => d.acceptance).filter(v => v > 0);
+    let acceptanceDrop = null;
+    if (recent.length >= 1 && prior.length >= 2) {
+      const rAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+      const pAvg = prior.reduce((a, b) => a + b, 0) / prior.length;
+      if (pAvg > 0 && (pAvg - rAvg) > 15) acceptanceDrop = Math.round(pAvg - rAvg);
+    }
+    // Owes: periods where actualPayout was negative
+    const owesHistory = days
+      .filter(d => d.actualPayout < 0)
+      .map(d => ({ period: d.period, amount: Math.abs(d.actualPayout) }));
+    cache[key] = { name: info.name, acceptanceDrop, owesHistory };
+  });
+  _alertCache = cache;
+  m8UpdateIdleOrb();
+}
+function getAlertCache() { if (!_alertCache) buildAlertCache(); return _alertCache; }
+function invalidateAlertCache() { _alertCache = null; }
+
+// Owes popup — shows per-period breakdown when clicking the ⚠ owes badge
+function showOwesPopup(e, driverName) {
+  e.stopPropagation();
+  const cache = getAlertCache();
+  const info  = cache[driverKey(driverName)];
+  if (!info || !info.owesHistory.length) return;
+  let popup = document.querySelector('.owes-detail-popup');
+  if (!popup) { popup = document.createElement('div'); popup.className = 'owes-detail-popup'; document.body.appendChild(popup); }
+  const displayName = lookupForeignName(driverName) || driverName;
+  const total = info.owesHistory.reduce((s, r) => s + r.amount, 0);
+  popup.innerHTML =
+    `<div class="odp-title">⚠ CASH DEFICIT — ${displayName}</div>` +
+    `<div class="odp-note">Driver collected more cash than digital payout. Bolt deducts from next transfer.</div>` +
+    info.owesHistory.map(r =>
+      `<div class="odp-row"><span class="odp-period">${r.period}</span><span class="odp-amount">${fmt(r.amount)} SAR</span></div>`
+    ).join('') +
+    (info.owesHistory.length > 1
+      ? `<div class="odp-total"><span>Total owed</span><span>${fmt(total)} SAR</span></div>`
+      : '');
+  popup.style.top  = Math.min(e.clientY + 10, window.innerHeight - 220) + 'px';
+  popup.style.left = Math.min(e.clientX - 10, window.innerWidth  - 310) + 'px';
+  popup.classList.add('open');
+  setTimeout(() => {
+    const close = ev => { if (!popup.contains(ev.target)) { popup.classList.remove('open'); document.removeEventListener('click', close); } };
+    document.addEventListener('click', close);
+  }, 50);
+}
+
+// M8 orb idle shimmer — on when no data loaded
+function m8UpdateIdleOrb() {
+  const orb = document.getElementById('jarvisOrb');
+  if (!orb) return;
+  const hasData = getHistory().length > 0;
+  orb.classList.toggle('m8-idle', !hasData);
+}
+
+// M8 picker briefing card — populated when picker opens
+function m8UpdateBriefCard() {
+  const card = document.getElementById('m8BriefCard');
+  if (!card) return;
+  const history = getHistory();
+  if (!history.length) { card.style.display = 'none'; return; }
+  const cache = getAlertCache();
+  const entries = Object.values(cache);
+  const dropCount  = entries.filter(e => e.acceptanceDrop !== null).length;
+  const owesCount  = entries.filter(e => e.owesHistory.length > 0).length;
+  const s = loadSettings();
+  const target = s.monthlyTarget || 0;
+  const summaryEntries = (() => {
+    if (!summarySelectedDays || !summarySelectedDays.size) return history;
+    return history.filter(h => summarySelectedDays.has(h.period));
+  })();
+  // Count captains currently below monthly target
+  const driverMap = {};
+  summaryEntries.forEach(h => (h.drivers || []).forEach(d => {
+    if (!d.isActive || !d.name) return;
+    const k = driverKey(d.name);
+    if (!driverMap[k]) driverMap[k] = 0;
+    driverMap[k] += sN(d.netEarnings);
+  }));
+  const belowTarget = target > 0 ? Object.values(driverMap).filter(v => v < target).length : 0;
+  const lines = [];
+  if (belowTarget > 0) lines.push(`<span class="m8bc-warn">▼ ${belowTarget} captain${belowTarget>1?'s':''} below target</span>`);
+  if (dropCount > 0)   lines.push(`<span class="m8bc-warn">↘ ${dropCount} acceptance drop${dropCount>1?'s':''}</span>`);
+  if (owesCount > 0)   lines.push(`<span class="m8bc-alert">⚠ ${owesCount} captain${owesCount>1?'s':''} owe Bolt</span>`);
+  if (!lines.length)   lines.push(`<b>◈ All captains nominal</b>`);
+  card.innerHTML = lines.join(' &nbsp;·&nbsp; ');
+  card.style.display = 'block';
+}
+
 function buildCourierSummaryTable(entries, searchFilter) {
   if (!entries.length) return `<div class="empty-state" style="padding:30px"><div class="empty-title">No days selected</div></div>`;
   const s = loadSettings();
@@ -4571,10 +5056,12 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const map = {};
   entries.forEach(h => {
     h.drivers.filter(d => d.isActive).forEach(d => {
-      if (!map[d.name]) map[d.name] = { name:d.name, days:0, gross:0, net:0, campaign:0, rides:0, dist:0, hrs:0, frSum:0, acSum:0, utSum:0, rDays:0 };
+      if (!map[d.name]) map[d.name] = { name:d.name, days:0, gross:0, net:0, campaign:0, rides:0, dist:0, hrs:0, frSum:0, acSum:0, utSum:0, rDays:0, cashEarnings:0, cashGap:0, minActualPayout:Infinity };
       const m = map[d.name];
       m.days++; m.gross+=sN(d.grossEarnings); m.net+=sN(d.netEarnings); m.campaign+=sN(d.campaign);
       m.rides+=sN(d.orders); m.dist+=sN(d.distanceTotal); m.hrs+=sN(d.hoursOnline);
+      m.cashEarnings+=sN(d.cashEarnings); m.cashGap+=sN(d.cashGap);
+      if (sN(d.actualPayout) < m.minActualPayout) m.minActualPayout = sN(d.actualPayout);
       if (accVal(d) > 0 || sN(d.utilization) > 0) {
         m.frSum+=sN(d.finishRate); m.acSum+=accVal(d);
         m.utSum+=sN(d.utilization); m.rDays++;
@@ -4620,21 +5107,59 @@ function buildCourierSummaryTable(entries, searchFilter) {
 
   if (!couriers.length) return `<div class="empty-state" style="padding:30px"><div class="empty-title">No captains match "${searchFilter}"</div></div>`;
 
-  const cth = (label, col, cls='') =>
-    `<th class="${cls} ${col===sumCourierSortCol?'th-sort-active':''}" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setSumCourierSort('${col}')">${label}${sortArrow(col,sumCourierSortCol,sumCourierSortAsc)}</th>`;
+  // Right-aligned header: arrow goes BEFORE label so the label text right-edge
+  // aligns with right-aligned cell data (not pushed left by the arrow).
+  const cth = (label, col, cls='') => {
+    const isActive = col === sumCourierSortCol;
+    const asc      = sumCourierSortAsc;
+    const arrowChar = !isActive ? '⇅' : asc ? '▲' : '▼';
+    const isRight   = cls.includes('td-r');
+    const inner = isRight
+      ? `<span class="th-inner${isActive?' sort-on':''}"><span class="th-arrow">${arrowChar}</span>${label}</span>`
+      : `${label}<span style="opacity:${isActive?1:.25};font-size:9px;margin-left:3px;color:${isActive?'var(--bolt-green)':'inherit'}">${arrowChar}</span>`;
+    return `<th class="${cls} ${isActive?'th-sort-active':''}" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setSumCourierSort('${col}')">${inner}</th>`;
+  };
+
+  // Model filter — get each courier's model from their profile
+  const getModel = name => {
+    const p = getCourierProfile(name);
+    return p.model === 'Custom' ? (p.modelCustom || 'X') : (p.model || 'none');
+  };
+  const modelBadge = name => {
+    const m = getModel(name);
+    const cls = ['A','B','C','D','E'].includes(m) ? `model-${m}` : 'model-X';
+    return `<span class="model-badge ${cls}" title="Model ${m}">${m}</span>`;
+  };
+
+  // Apply model filter
+  let filtered = couriers;
+  if (sumModelFilter !== 'all') {
+    filtered = couriers.filter(c => {
+      const m = getModel(c.name);
+      return sumModelFilter === 'none' ? !['A','B','C','D','E'].includes(m) : m === sumModelFilter;
+    });
+  }
+  if (!filtered.length && sumModelFilter !== 'all') {
+    filtered = couriers; // graceful fallback if nobody matches
+  }
 
   const singlePeriod = summarySelectedDays?.size === 1 ? [...summarySelectedDays][0] : null;
   const esc = s => (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 
-  const rows = couriers.map(c => {
+  const rows = filtered.map(c => {
     const foreign = lookupForeignName(c.name);
     const displayName = foreign || c.name;
+    const badge = modelBadge(c.name);
     const nameHTML = foreign
-      ? `<div class="d-name">${c.name}</div><div class="d-foreign">${foreign}</div>`
-      : `<div class="d-name">${c.name}</div>`;
+      ? `<div class="d-name">${c.name}${badge}</div><div class="d-foreign">${foreign}</div>`
+      : `<div class="d-name">${c.name}${badge}</div>`;
     const clickFn = singlePeriod
-      ? `openModalForEntry('${esc(c.name)}','${esc(singlePeriod)}')`
-      : `openModal('${esc(c.name)}')`;
+      ? `bioScanThenOpen('${esc(c.name)}',this)`
+      : `bioScanThenOpen('${esc(c.name)}',this)`;
+    // bio scan wrapper handles openModal; for single-period we still need openModalForEntry
+    const clickAttr = singlePeriod
+      ? `onclick="(function(el){bioScanThenOpen('${esc(c.name)}',el);setTimeout(()=>openModalForEntry('${esc(c.name)}','${esc(singlePeriod)}'),0);})(this)"`
+      : `onclick="bioScanThenOpen('${esc(c.name)}',this)"`;
 
     // Target progress (c.net already includes campaign since Bolt's net = gross - fees, gross includes campaign)
     const pct     = target > 0 ? Math.min(100, Math.round(c.net / target * 100)) : 100;
@@ -4645,18 +5170,35 @@ function buildCourierSummaryTable(entries, searchFilter) {
       ? (gap <= 0 ? `+${fmt(Math.abs(gap))} ahead` : `${fmt(Math.ceil(gap))} behind`)
       : '';
 
+    // Cash % badge
+    const cashPct = c.gross > 0 ? c.cashEarnings / c.gross * 100 : 0;
+    const cashBadgeHtml = cashPct > 0
+      ? `<span class="cash-badge ${cashPct>60?'cash-high':cashPct>30?'cash-mid':'cash-low'}" title="${cashPct.toFixed(0)}% of gross earned in cash">${Math.round(cashPct)}% cash</span>`
+      : '';
+
+    // Negative payout alert — clickable badge shows per-period breakdown
+    const owesBadge = c.minActualPayout < 0
+      ? `<span class="owes-badge" style="cursor:pointer" title="Click to see breakdown" onclick="showOwesPopup(event,'${esc(c.name)}')">⚠ owes</span>`
+      : '';
+
+    // Acceptance-drop badge (from alert cache — O(1) lookup)
+    const accAlert = getAlertCache()[driverKey(c.name)];
+    const accDropBadge = accAlert?.acceptanceDrop
+      ? `<span class="acc-drop-badge" title="Acceptance dropped ~${accAlert.acceptanceDrop}pp vs prior week">↘${accAlert.acceptanceDrop}pp</span>`
+      : '';
+
     // Net earnings cell: show campaign bonus as informational badge (already included in c.net)
     const earningsHtml = c.campaign > 0
       ? `${fmt(c.net)} <span style="font-size:10px;color:var(--green);font-weight:600" title="Net includes ${fmt(c.campaign)} SAR Bolt bonus">★${fmt(c.campaign)}</span>`
       : `${fmt(c.net)}`;
 
-    return `<tr class="driver-row" style="cursor:pointer" onclick="${clickFn}">
-      <td><div class="driver-cell"><div class="avatar">${displayName.charAt(0).toUpperCase()}</div><div>${nameHTML}</div></div></td>
+    return `<tr class="driver-row" style="cursor:pointer" ${clickAttr}>
+      <td><div class="driver-cell"><div class="avatar">${displayName.charAt(0).toUpperCase()}</div><div>${nameHTML}${owesBadge}${cashBadgeHtml}</div></div></td>
       <td class="td-r" style="color:var(--text-muted)">${c.days}d</td>
       <td class="td-r">${earningsHtml} <span style="font-size:11px;color:var(--text-muted)">/ ${fmt(c.gross)} gross</span></td>
       <td class="td-r">${earnHrOrDash(c.earnHr)}</td>
       <td class="td-r ${c.finish>0?pctCol(c.finish,80,70):''}">${pctOrDash(c.finish)}</td>
-      <td class="td-r ${c.accept>0?pctCol(c.accept,80,70):''}">${pctOrDash(c.accept)}</td>
+      <td class="td-r ${c.accept>0?pctCol(c.accept,80,70):''}">${pctOrDash(c.accept)}${accDropBadge}</td>
       <td class="td-r ${c.util>0?pctCol(c.util,70,55):''}">${pctOrDash(c.util)}</td>
       <td class="td-r">${c.rides}</td>
       <td class="td-r">${Math.round(c.dist).toLocaleString('en-US')} km</td>
@@ -4679,7 +5221,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
       ${cth('Util','util','td-r')}
       ${cth('Rides','rides','td-r')}
       ${cth('Distance','dist','td-r')}
-      <th class="td-r" style="min-width:160px">Monthly Target</th>
+      <th class="td-r" style="min-width:160px"><span class="th-inner">Monthly Target</span></th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
@@ -4801,7 +5343,7 @@ function clearAllData() {
   if (!confirm('Clear all history? Cannot be undone.')) return;
   localStorage.removeItem('khair_perf_history');
   currentDrivers=null; currentPeriod=''; currentPeriodInfo=null;
-  summarySelectedDays=null; captainSearch=''; sumPeriodMode='all'; sumMonthFilter='all';
+  summarySelectedDays=null; captainSearch=''; sumPeriodMode='all'; sumMonthFilter='all'; sumModelFilter='all';
   document.getElementById('headerPeriod').textContent='No data loaded';
   renderCaptains();
   renderHistory();
@@ -4954,6 +5496,17 @@ function slimDriver(d) {
     driverPayout:    d.driverPayout    ?? null,
     activeCategories: d.activeCategories || '',
     isActive:        !!d.isActive,
+    // New insight fields
+    grossInApp:              d.grossInApp              || 0,
+    acceptanceTotal:         d.acceptanceTotal         || 0,
+    cashEarnings:            d.cashEarnings            || 0,
+    cancellationFees:        d.cancellationFees        || 0,
+    tollFees:                d.tollFees                || 0,
+    expenseReimbursements:   d.expenseReimbursements   || 0,
+    bookingFees:             d.bookingFees             || 0,
+    refundsToRiders:         d.refundsToRiders         || 0,
+    commissionDiscountInApp: d.commissionDiscountInApp || 0,
+    commissionDiscountCash:  d.commissionDiscountCash  || 0,
   };
 }
 
@@ -5008,6 +5561,7 @@ async function syncToCloud() {
   const cloudKhairHistory = record.khair_history || [];
   const merged = mergeHistories(getHistory(), cloudKhairHistory);
   localStorage.setItem('khair_perf_history', JSON.stringify(merged)); // full local
+  invalidateAlertCache();
 
   // Slim with size guard. Returns {slim, days, sizeKB, capped}.
   const slimResult = slimForCloud(merged);
@@ -6740,7 +7294,28 @@ function renderAnalytics() {
         ? `<div class="chart-canvas-wrap" style="height:${Math.max(topDrivers.length * 44 + 20, 120)}px"><canvas id="chartTopDrivers"></canvas></div>`
         : `<div style="padding:24px 0;text-align:center;color:var(--text-muted);font-size:13px">No captain earnings data for this period.</div>`
       }
-    </div>`;
+    </div>
+
+    ${(()=>{
+      // Cash vs In-App split per driver — only show drivers with any cash earnings
+      const cashMap = {};
+      viewData.forEach(h => (h.drivers||[]).forEach(d => {
+        if (!d.name || !(d.grossInApp > 0 || d.cashEarnings > 0)) return;
+        if (!cashMap[d.name]) cashMap[d.name] = { inApp:0, cash:0 };
+        cashMap[d.name].inApp += sN(d.grossInApp);
+        cashMap[d.name].cash  += sN(d.cashEarnings);
+      }));
+      const cashDrivers = Object.entries(cashMap)
+        .filter(([,v]) => v.inApp + v.cash > 0)
+        .sort((a,b) => (b[1].inApp+b[1].cash) - (a[1].inApp+a[1].cash))
+        .slice(0, 12);
+      if (!cashDrivers.length) return '';
+      return `<div class="chart-card" style="margin-bottom:16px">
+        <div class="chart-card-title">Cash vs In-App Split — ${periodLabel} (gross SAR)</div>
+        <div class="chart-canvas-wrap" style="height:${Math.max(cashDrivers.length*44+20,120)}px"><canvas id="chartCashSplit"></canvas></div>
+      </div>`;
+    })()}
+  `;
 
   const base = {
     responsive: true, maintainAspectRatio: false,
@@ -6781,6 +7356,93 @@ function renderAnalytics() {
       plugins: { ...base.plugins, tooltip: { callbacks: { label: ctx => ' ' + ctx.raw + '%' } } }
     }
   });
+
+  // Cash vs In-App split chart
+  const cashMap2 = {};
+  viewData.forEach(h => (h.drivers||[]).forEach(d => {
+    if (!d.name || !(d.grossInApp > 0 || d.cashEarnings > 0)) return;
+    if (!cashMap2[d.name]) cashMap2[d.name] = { inApp:0, cash:0 };
+    cashMap2[d.name].inApp += sN(d.grossInApp);
+    cashMap2[d.name].cash  += sN(d.cashEarnings);
+  }));
+  const cashDrivers2 = Object.entries(cashMap2)
+    .filter(([,v]) => v.inApp + v.cash > 0)
+    .sort((a,b) => (b[1].inApp+b[1].cash) - (a[1].inApp+a[1].cash))
+    .slice(0, 12);
+  if (cashDrivers2.length && document.getElementById('chartCashSplit')) {
+    destroyChart('cashSplit');
+
+    // Pre-compute raw amounts and percentages once
+    const _rawInApp = cashDrivers2.map(([,v]) => +v.inApp.toFixed(0));
+    const _rawCash  = cashDrivers2.map(([,v]) => +v.cash.toFixed(0));
+    const _totals   = cashDrivers2.map(([,v]) => v.inApp + v.cash);
+    const _pctInApp = cashDrivers2.map(([,v], i) => _totals[i] > 0 ? +(_rawInApp[i] / _totals[i] * 100).toFixed(1) : 0);
+    const _pctCash  = cashDrivers2.map(([,v], i) => _totals[i] > 0 ? +(_rawCash[i]  / _totals[i] * 100).toFixed(1) : 0);
+
+    // Helpers to switch between % mode (both) and raw mode (cash-only)
+    function _applyPctMode(chart) {
+      chart.data.datasets[0].data = _pctInApp;
+      chart.data.datasets[1].data = _pctCash;
+      chart.options.scales.x.max = 100;
+      chart.options.scales.x.ticks.callback = v => v + '%';
+      chart.options.plugins.tooltip.callbacks.label = ctx => {
+        const raw = ctx.datasetIndex === 0 ? _rawInApp[ctx.dataIndex] : _rawCash[ctx.dataIndex];
+        return ` ${ctx.dataset.label}: ${ctx.raw}%  (${fmt(raw)} SAR)`;
+      };
+      chart.update('none');
+    }
+    function _applyRawMode(chart) {
+      chart.data.datasets[0].data = _rawInApp;
+      chart.data.datasets[1].data = _rawCash;
+      chart.options.scales.x.max = undefined;
+      chart.options.scales.x.ticks.callback = v => v >= 1000 ? (v/1000).toFixed(0)+'k' : v;
+      chart.options.plugins.tooltip.callbacks.label = ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw)} SAR`;
+      chart.update('none');
+    }
+
+    _charts.cashSplit = new Chart(document.getElementById('chartCashSplit'), {
+      type: 'bar',
+      data: {
+        labels: cashDrivers2.map(([n]) => lookupForeignName(n) || n),
+        datasets: [
+          { label:'In-App', data: _pctInApp, backgroundColor:'rgba(0,212,255,.75)', borderRadius:3, borderSkipped:false },
+          { label:'Cash',   data: _pctCash,  backgroundColor:'rgba(255,170,0,.8)',  borderRadius:3, borderSkipped:false },
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false, indexAxis:'y',
+        plugins: {
+          legend: {
+            display:true, position:'top',
+            labels:{ color:'#9ca3af', font:{ size:11, family:'Inter,system-ui' }, boxWidth:12 },
+            onClick(e, legendItem, legend) {
+              // Default toggle
+              Chart.defaults.plugins.legend.onClick.call(this, e, legendItem, legend);
+              const chart = legend.chart;
+              const inAppVis = chart.isDatasetVisible(0);
+              const cashVis  = chart.isDatasetVisible(1);
+              // Both visible → % mode; cash only → raw SAR mode
+              if (inAppVis && cashVis) _applyPctMode(chart);
+              else                     _applyRawMode(chart);
+            }
+          },
+          tooltip: { callbacks: {
+            label: ctx => {
+              const raw = ctx.datasetIndex === 0 ? _rawInApp[ctx.dataIndex] : _rawCash[ctx.dataIndex];
+              return ` ${ctx.dataset.label}: ${ctx.raw}%  (${fmt(raw)} SAR)`;
+            }
+          }}
+        },
+        scales: {
+          x: { stacked:true, beginAtZero:true, max:100,
+            grid:{ color:'rgba(255,255,255,.06)' },
+            ticks:{ color:'#9ca3af', font:{size:11,family:'Inter,system-ui'}, callback: v => v+'%' } },
+          y: { stacked:true, grid:{ display:false },
+            ticks:{ color:'#9ca3af', font:{size:11,family:'Inter,system-ui'} } }
+        }
+      }
+    });
+  }
 
   if (topDrivers.length) {
     destroyChart('topDrivers');
@@ -6854,7 +7516,487 @@ document.addEventListener('DOMContentLoaded', () => {
     autoLoadLatest();
     renderHistory();
   }
+  initMissionClock();
+  m8UpdateIdleOrb();
 });
+
+// ═══════════════════════════════════════════
+// SCI-FI FEATURE 1 — MISSION CLOCK
+// ═══════════════════════════════════════════
+function initMissionClock() {
+  function tick() {
+    const now   = new Date();
+    const hh    = String(now.getHours()).padStart(2,'0');
+    const mm    = String(now.getMinutes()).padStart(2,'0');
+    const ss    = String(now.getSeconds()).padStart(2,'0');
+    const dayOfMonth = now.getDate();
+    const daysInMonth= new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+
+    // Days until next payout cycle (Sun=0, Wed=3)
+    const dow = now.getDay();
+    const daysToSun = (7 - dow) % 7 || 7;
+    const daysToWed = (3 - dow + 7) % 7 || 7;
+    const daysToNext = Math.min(daysToSun, daysToWed);
+    const cycleLabel = daysToNext === 0 ? '⚡ CYCLE TODAY' : `CYCLE IN ${daysToNext}D`;
+
+    const el  = document.getElementById('mcTime');
+    const sub = document.getElementById('mcSub');
+    if (el)  el.textContent  = `${hh}:${mm}:${ss}`;
+    if (sub) sub.textContent = `DAY ${dayOfMonth}/${daysInMonth} · ${cycleLabel}`;
+  }
+  tick();
+  setInterval(tick, 1000);
+}
+
+// ═══════════════════════════════════════════
+// SCI-FI FEATURE 2 — WARP UPLOAD ANIMATION
+// ═══════════════════════════════════════════
+function triggerWarp() {
+  const overlay = document.getElementById('warpOverlay');
+  if (!overlay) return;
+  overlay.innerHTML = '';
+  const w = window.innerWidth, h = window.innerHeight;
+  const cx = w / 2, cy = h / 2;
+  const count = 32;
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2;
+    const len   = 120 + Math.random() * 340;
+    const delay = Math.random() * 0.3;
+    const s = document.createElement('div');
+    s.className = 'warp-streak';
+    const x = cx + Math.cos(angle) * (w * 0.1);
+    const y = cy + Math.sin(angle) * (h * 0.1);
+    Object.assign(s.style, {
+      left: x + 'px', top: y + 'px',
+      width: len + 'px',
+      transform: `rotate(${angle}rad)`,
+      animationDelay: delay + 's',
+      opacity: 0.4 + Math.random() * 0.6,
+    });
+    overlay.appendChild(s);
+  }
+  overlay.classList.add('active');
+  setTimeout(() => { overlay.classList.remove('active'); overlay.innerHTML = ''; }, 900);
+}
+
+// ═══════════════════════════════════════════
+// SCI-FI FEATURE 3 — BIOMETRIC SCAN
+// ═══════════════════════════════════════════
+function bioScanThenOpen(id, rowEl) {
+  const overlay = document.getElementById('bioScanOverlay');
+  const box     = document.getElementById('bioScanBox');
+  if (!overlay || !box || !rowEl) { openModal(id); return; }
+  const rect = rowEl.getBoundingClientRect();
+  Object.assign(box.style, {
+    top: rect.top + 'px', left: rect.left + 'px',
+    width: rect.width + 'px', height: rect.height + 'px',
+  });
+  // Reset scan line animation
+  const line = box.querySelector('.bio-scan-line');
+  if (line) { line.style.animation = 'none'; void line.offsetHeight; line.style.animation = ''; }
+  overlay.classList.add('active');
+  setTimeout(() => {
+    overlay.classList.remove('active');
+    openModal(id);
+  }, 460);
+}
+
+// ═══════════════════════════════════════════
+// SCI-FI FEATURE 4 — CORTEX ALERTS
+// ═══════════════════════════════════════════
+function checkCortexAlerts(drivers, period) {
+  if (!drivers || !drivers.length) return;
+  const alerts = [];
+  drivers.forEach(d => {
+    const name = lookupForeignName(d.name) || d.name;
+    if (d.actualPayout < 0)
+      alerts.push({ level:'danger', title:'⚠ NEGATIVE PAYOUT PROTOCOL',
+        msg:`${name} — Bolt deducted ${fmt(Math.abs(d.actualPayout))} SAR. Driver collected more cash than remitted.` });
+    if (sN(d.cashGap) > 20)
+      alerts.push({ level:'warn', title:'◈ CASH DEFICIT DETECTED',
+        msg:`${name} — ${fmt(d.cashGap)} SAR cash gap. Recovery sequence recommended.` });
+    const accGap = sN(d.acceptanceTotal) - sN(d.acceptance);
+    if (accGap > 20 && sN(d.acceptanceTotal) > 0)
+      alerts.push({ level:'warn', title:'◈ EVASION PATTERN DETECTED',
+        msg:`${name} — ${Math.round(accGap)}pp acceptance gap. Driver may be going offline to avoid assignments.` });
+  });
+  const active = drivers.filter(d => d.isActive);
+  if (active.length > 0) {
+    alerts.unshift({ level:'info', title:'◈ DATA UPLINK COMPLETE',
+      msg:`${active.length} captains online · ${period}` });
+  }
+  alerts.slice(0, 4).forEach((a, i) => setTimeout(() => fireCortexAlert(a), i * 900));
+}
+
+function fireCortexAlert({ level, title, msg }) {
+  const container = document.getElementById('cortexAlertContainer');
+  if (!container) return;
+  const el = document.createElement('div');
+  el.className = `cortex-alert cortex-${level}`;
+  el.innerHTML = `
+    <div class="cortex-alert-header">
+      <span>${title}</span>
+      <span class="cortex-alert-dismiss" onclick="dismissCortexAlert(this.parentElement.parentElement)">✕</span>
+    </div>
+    <div class="cortex-alert-body" id="ca-${Date.now()}"></div>`;
+  container.appendChild(el);
+  // Typewriter effect
+  const body = el.querySelector('.cortex-alert-body');
+  let i = 0;
+  const beep = () => { try { const a=new AudioContext(); const o=a.createOscillator(); const g=a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.value=level==='danger'?440:level==='warn'?660:880; g.gain.setValueAtTime(.06,a.currentTime); g.gain.exponentialRampToValueAtTime(.001,a.currentTime+.12); o.start(); o.stop(a.currentTime+.12); } catch(e){} };
+  beep();
+  const tw = setInterval(() => {
+    body.textContent = msg.slice(0, ++i);
+    if (i >= msg.length) clearInterval(tw);
+  }, 18);
+  // Auto-dismiss after 8s
+  setTimeout(() => dismissCortexAlert(el), 8000);
+}
+function dismissCortexAlert(el) {
+  if (!el || el.classList.contains('dismissing')) return;
+  el.classList.add('dismissing');
+  setTimeout(() => el.remove(), 320);
+}
+
+// ═══════════════════════════════════════════
+// SCI-FI FEATURE 5 — TACTICAL RADAR
+// ═══════════════════════════════════════════
+let _radarBlips = []; // { name, x, y, color, pulse, r }
+let _radarAnim  = null;
+
+function renderRadarView(entries) {
+  setTimeout(() => {
+    const canvas = document.getElementById('radarCanvas');
+    if (!canvas) return;
+    // Collect all active drivers aggregated across selected period
+    const map = {};
+    entries.forEach(h => h.drivers.filter(d => d.isActive).forEach(d => {
+      if (!map[d.name]) map[d.name] = { name:d.name, net:0, accept:0, aCount:0 };
+      map[d.name].net += sN(d.netEarnings);
+      if (sN(d.acceptance) > 0) { map[d.name].accept += sN(d.acceptance); map[d.name].aCount++; }
+    }));
+    const drivers = Object.values(map).map(m => ({
+      ...m, accept: m.aCount ? m.accept / m.aCount : 0
+    }));
+    if (!drivers.length) { canvas.getContext('2d').clearRect(0,0,560,560); return; }
+    const maxNet = Math.max(...drivers.map(d => d.net), 1);
+    const s = loadSettings();
+    const target = s.monthlyTarget || 6000;
+    _radarBlips = drivers.map(d => {
+      const pct   = d.net / target;
+      const color = pct >= 0.85 ? '#00FFB3' : pct >= 0.5 ? '#FFAA00' : '#FF4466';
+      const angle = (d.accept / 100) * Math.PI * 2 - Math.PI / 2;
+      const minR  = 60, maxR = 240;
+      const r     = minR + (d.net / maxNet) * (maxR - minR);
+      const cx    = 280, cy = 280;
+      return { name: d.name, x: cx + Math.cos(angle)*r, y: cy + Math.sin(angle)*r, color, r: 6 + (d.net/maxNet)*7, pulse: Math.random()*Math.PI*2 };
+    });
+    drawRadar(canvas, 0);
+    canvas.onclick = e => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) * (560/rect.width);
+      const my = (e.clientY - rect.top)  * (560/rect.height);
+      const hit = _radarBlips.find(b => Math.hypot(b.x-mx, b.y-my) < b.r + 6);
+      if (hit) bioScanThenOpen(hit.name, canvas.closest('.radar-wrap'));
+    };
+  }, 80);
+}
+
+function drawRadar(canvas, t) {
+  if (_radarAnim) cancelAnimationFrame(_radarAnim);
+  const ctx = canvas.getContext('2d');
+  const W = 560, cx = 280, cy = 280;
+
+  function frame() {
+    t += 0.018;
+    ctx.clearRect(0, 0, W, W);
+
+    // Background
+    ctx.fillStyle = '#020A14'; ctx.fillRect(0, 0, W, W);
+
+    // Concentric rings
+    [60, 120, 180, 240].forEach((r, i) => {
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(0,212,255,${0.06 + i*0.03})`; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = 'rgba(0,212,255,.3)'; ctx.font = '9px Share Tech Mono';
+      ctx.fillText(['25%','50%','75%','100%'][i], cx + r + 3, cy - 3);
+    });
+
+    // Cross hairs
+    ctx.strokeStyle = 'rgba(0,212,255,.08)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx, 20); ctx.lineTo(cx, W-20); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(20, cy); ctx.lineTo(W-20, cy); ctx.stroke();
+
+    // Acceptance rate labels (angles)
+    [0, 25, 50, 75, 100].forEach(pct => {
+      const a = (pct/100)*Math.PI*2 - Math.PI/2;
+      ctx.fillStyle = 'rgba(0,212,255,.4)'; ctx.font = '8px Share Tech Mono';
+      ctx.fillText(pct+'%', cx + Math.cos(a)*256, cy + Math.sin(a)*256 + 4);
+    });
+
+    // Sweep line
+    const sweep = t % (Math.PI * 2);
+    const grad  = ctx.createConicalGradient ? null : null; // fallback
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(sweep);
+    const g = ctx.createLinearGradient(0, 0, 250, 0);
+    g.addColorStop(0, 'rgba(0,255,179,.5)'); g.addColorStop(1, 'rgba(0,255,179,0)');
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(250, 0);
+    ctx.strokeStyle = g; ctx.lineWidth = 2; ctx.stroke();
+    ctx.restore();
+
+    // Blips
+    _radarBlips.forEach(b => {
+      b.pulse += 0.06;
+      const alpha = 0.6 + 0.4 * Math.sin(b.pulse);
+      // Glow ring
+      const grd = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r*3);
+      grd.addColorStop(0, b.color + '80');
+      grd.addColorStop(1, b.color + '00');
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r*3, 0, Math.PI*2);
+      ctx.fillStyle = grd; ctx.fill();
+      // Core blip
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
+      ctx.fillStyle = b.color; ctx.globalAlpha = alpha; ctx.fill(); ctx.globalAlpha = 1;
+      // Name label
+      const foreign = lookupForeignName(b.name);
+      const label   = (foreign || b.name).split(' ')[0];
+      ctx.fillStyle = 'rgba(200,232,255,.8)'; ctx.font = '9px Share Tech Mono';
+      ctx.fillText(label, b.x + b.r + 4, b.y + 3);
+    });
+
+    // Center dot
+    ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI*2);
+    ctx.fillStyle = 'var(--bolt-green, #00FFB3)'; ctx.fill();
+
+    // Frame label
+    ctx.fillStyle = 'rgba(0,212,255,.3)'; ctx.font = '10px Share Tech Mono';
+    ctx.fillText('FLEET TACTICAL RADAR', 12, 22);
+    ctx.fillText('ACCEPT % →', W-92, cy - 4);
+
+    if (document.getElementById('radarCanvas') === canvas)
+      _radarAnim = requestAnimationFrame(frame);
+  }
+  frame();
+}
+
+// ═══════════════════════════════════════════
+// SCI-FI FEATURE 6 — CORTEX REPORT PANEL
+// ═══════════════════════════════════════════
+function openCortexReport(title, html) {
+  document.getElementById('crpTitleText').textContent = title;
+  document.getElementById('crpBody').innerHTML = html;
+  document.getElementById('cortexReportPanel').classList.add('open');
+}
+function closeCortexReport() {
+  document.getElementById('cortexReportPanel').classList.remove('open');
+}
+
+function generateFleetBriefing(periodLabel) {
+  const history = getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
+  const entry = history[0];
+  if (!entry) return '<div style="color:var(--text-muted);padding:20px">NO DATA LOADED — UPLOAD A CSV FIRST</div>';
+  const s = loadSettings();
+  const target = s.monthlyTarget || 6000;
+  const dailyTarget = Math.round(target/30);
+  const drivers  = entry.drivers || [];
+  const active   = drivers.filter(d => d.isActive);
+  const inactive = drivers.filter(d => !d.isActive);
+  const sorted   = [...active].sort((a,b) => sN(b.netEarnings)-sN(a.netEarnings));
+  const totalNet = active.reduce((s,d)=>s+sN(d.netEarnings),0);
+  const totalGross = active.reduce((s,d)=>s+sN(d.grossEarnings),0);
+  const avgAccept= active.length ? active.reduce((s,d)=>s+sN(d.acceptance),0)/active.length : 0;
+  const cashGapTotal = drivers.reduce((s,d)=>s+Math.max(0,sN(d.cashGap)),0);
+  const owesDrivers  = drivers.filter(d => sN(d.actualPayout) < 0);
+  const ln = n => lookupForeignName(n)||n;
+
+  const pct = p => `<span class="crp-val ${p>=85?'green':p>=55?'amber':'red'}">${p.toFixed(0)}%</span>`;
+  const sar = (v,cls='') => `<span class="crp-val ${cls}">${fmt(v)} SAR</span>`;
+  const list = arr => arr.map(d=>`<div class="crp-line"><span class="crp-key">${ln(d.name)}</span><span class="crp-val green">${fmt(sN(d.netEarnings))} SAR · ${sN(d.orders)} orders</span></div>`).join('');
+
+  // Monthly cumulative across all history
+  const allNet = history.reduce((s,h)=>s+(h.totalNet||0),0);
+
+  const anomalyHtml = [
+    ...owesDrivers.map(d=>`<div class="crp-alert-row">⚠ ${ln(d.name)} — owes Bolt ${fmt(Math.abs(sN(d.actualPayout)))} SAR (cash deficit)</div>`),
+    ...(cashGapTotal>0?[`<div class="crp-alert-row">◈ Fleet cash gap: ${fmt(cashGapTotal)} SAR uncollected</div>`]:[]),
+    ...active.filter(d=>sN(d.acceptance)<50&&sN(d.acceptance)>0).map(d=>`<div class="crp-alert-row">◈ ${ln(d.name)} — acceptance rate critical: ${sN(d.acceptance).toFixed(0)}%</div>`),
+  ].join('') || '<div class="crp-good-row">✓ No anomalies detected — all systems nominal</div>';
+
+  return `
+    <div class="crp-section">
+      <div class="crp-section-title">◈ MISSION STATUS — ${entry.period}</div>
+      <div class="crp-line"><span class="crp-key">Captains Online</span>${sar(active.length+'',active.length>0?'green':'red')}</div>
+      <div class="crp-line"><span class="crp-key">Captains Offline</span><span class="crp-val ${inactive.length>0?'amber':''}">${inactive.length}</span></div>
+      <div class="crp-line"><span class="crp-key">Fleet Net Revenue</span>${sar(totalNet,'green')}</div>
+      <div class="crp-line"><span class="crp-key">Fleet Gross Revenue</span>${sar(totalGross)}</div>
+      <div class="crp-line"><span class="crp-key">Daily Target/Captain</span>${sar(dailyTarget)}</div>
+      <div class="crp-line"><span class="crp-key">Avg Acceptance</span>${pct(avgAccept)}</div>
+      <div class="crp-line"><span class="crp-key">Total Orders</span><span class="crp-val">${active.reduce((s,d)=>s+sN(d.orders),0)}</span></div>
+    </div>
+    <div class="crp-section">
+      <div class="crp-section-title">◈ TOP PERFORMERS</div>
+      ${sorted.slice(0,5).map((d,i)=>`<div class="crp-line">
+        <span class="crp-key">#${i+1} ${ln(d.name)}</span>
+        <span class="crp-val ${sN(d.netEarnings)>=dailyTarget?'green':'amber'}">${fmt(sN(d.netEarnings))} SAR · ${sN(d.orders)} trips · ${sN(d.hoursOnline).toFixed(1)}h</span>
+      </div>`).join('')}
+    </div>
+    <div class="crp-section">
+      <div class="crp-section-title">◈ ANOMALY SCAN</div>
+      ${anomalyHtml}
+    </div>
+    <div class="crp-section">
+      <div class="crp-section-title">◈ INACTIVE CAPTAINS</div>
+      ${inactive.length ? inactive.map(d=>`<div class="crp-line"><span class="crp-key">${ln(d.name)}</span><span class="crp-val red">OFFLINE</span></div>`).join('') : '<div class="crp-good-row">✓ All captains active</div>'}
+    </div>
+    <div class="crp-section">
+      <div class="crp-section-title">◈ CUMULATIVE INTELLIGENCE — ALL TIME (${history.length} DAYS)</div>
+      <div class="crp-line"><span class="crp-key">Total Fleet Net</span>${sar(allNet,'green')}</div>
+    </div>`;
+}
+
+function generateDriverReport(name) {
+  const history = getDriverAllHistory('', name);
+  if (!history.length) return `<div style="color:var(--text-muted);padding:20px">NO DATA FOR ${name}</div>`;
+  const agg   = aggregateDriverRows(history);
+  const s     = loadSettings();
+  const target = s.monthlyTarget || 6000;
+  const pct   = target > 0 ? Math.min(100, agg.net/target*100) : 100;
+  const ln    = lookupForeignName(name) || name;
+  const pInfo = currentPeriodInfo;
+  const effTarget = getProratedTarget(name, target, pInfo);
+  const monthly = pInfo ? getMonthlyNet('', name, pInfo.end.month, pInfo.end.year) : 0;
+  const cashPct = agg.gross > 0 ? (agg.cashEarnings / agg.gross * 100) : 0;
+  const accGap  = agg.acceptanceTotal > 0 ? (agg.acceptanceTotal - agg.acceptance) : 0;
+
+  const profile = getCourierProfile(name);
+  const model   = profile.model === 'Custom' ? (profile.modelCustom||'Custom') : (profile.model||'—');
+
+  return `
+    <div class="crp-section">
+      <div class="crp-section-title">◈ CAPTAIN DOSSIER — ${ln.toUpperCase()}</div>
+      <div class="crp-line"><span class="crp-key">Model</span><span class="crp-val">${model}</span></div>
+      <div class="crp-line"><span class="crp-key">Days on Record</span><span class="crp-val">${history.length}</span></div>
+      <div class="crp-line"><span class="crp-key">Days Active</span><span class="crp-val green">${agg.activeDays}</span></div>
+    </div>
+    <div class="crp-section">
+      <div class="crp-section-title">◈ EARNINGS INTELLIGENCE</div>
+      <div class="crp-line"><span class="crp-key">Total Net (all-time)</span><span class="crp-val green">${fmt(agg.net)} SAR</span></div>
+      <div class="crp-line"><span class="crp-key">This Month</span><span class="crp-val ${monthly>=effTarget?'green':'amber'}">${fmt(monthly)} SAR / ${fmt(effTarget)} target (${Math.round(monthly/effTarget*100)||0}%)</span></div>
+      <div class="crp-line"><span class="crp-key">Total Gross</span><span class="crp-val">${fmt(agg.gross)} SAR</span></div>
+      <div class="crp-line"><span class="crp-key">Commission Paid</span><span class="crp-val red">${fmt(agg.commission)} SAR</span></div>
+      <div class="crp-line"><span class="crp-key">Tips</span><span class="crp-val">${fmt(agg.tips)} SAR</span></div>
+      <div class="crp-line"><span class="crp-key">Bolt Bonus</span><span class="crp-val ${agg.campaign>0?'green':''}">${agg.campaign>0?fmt(agg.campaign)+' SAR':'—'}</span></div>
+      <div class="crp-line"><span class="crp-key">Net / Hour avg</span><span class="crp-val">${agg.netPerHour>0?agg.netPerHour.toFixed(1)+' SAR/h':'—'}</span></div>
+    </div>
+    <div class="crp-section">
+      <div class="crp-section-title">◈ PERFORMANCE PROFILE</div>
+      <div class="crp-line"><span class="crp-key">Total Orders</span><span class="crp-val">${agg.orders}</span></div>
+      <div class="crp-line"><span class="crp-key">Hours Online</span><span class="crp-val">${agg.hours.toFixed(1)}h</span></div>
+      <div class="crp-line"><span class="crp-key">Eff. Acceptance avg</span><span class="crp-val ${agg.acceptance>=80?'green':agg.acceptance>=60?'amber':'red'}">${agg.acceptance>0?Math.round(agg.acceptance)+'%':'—'}</span></div>
+      ${agg.acceptanceTotal>0?`<div class="crp-line"><span class="crp-key">Total Acceptance avg</span><span class="crp-val ${accGap>15?'amber':''}">${Math.round(agg.acceptanceTotal)}%${accGap>15?` ⚠ ${Math.round(accGap)}pp gap`:''}</span></div>`:''}
+      <div class="crp-line"><span class="crp-key">Avg Rating</span><span class="crp-val ${agg.rating>=4.5?'green':agg.rating>=4?'amber':'red'}">${agg.rating>0?agg.rating.toFixed(2)+'★':'—'}</span></div>
+      <div class="crp-line"><span class="crp-key">Total KM</span><span class="crp-val">${fmt(agg.distance)} km</span></div>
+      <div class="crp-line"><span class="crp-key">Cash Mix</span><span class="crp-val ${cashPct>60?'red':cashPct>30?'amber':'green'}">${cashPct>0?Math.round(cashPct)+'% cash':'0% cash (all digital)'}</span></div>
+      ${agg.cashGap>0?`<div class="crp-alert-row">⚠ Cash gap: ${fmt(agg.cashGap)} SAR uncollected</div>`:''}
+      ${agg.tollFees>0?`<div class="crp-line"><span class="crp-key">Toll Fees</span><span class="crp-val">${fmt(agg.tollFees)} SAR</span></div>`:''}
+      ${agg.expenseReimbursements>0?`<div class="crp-line"><span class="crp-key">Reimbursements</span><span class="crp-val green">+${fmt(agg.expenseReimbursements)} SAR</span></div>`:''}
+    </div>
+    <div class="crp-section">
+      <div class="crp-section-title">◈ RECENT ACTIVITY (LAST 7 DAYS)</div>
+      ${history.slice(-7).reverse().map(h=>`<div class="crp-line">
+        <span class="crp-key">${h.period}</span>
+        <span class="crp-val ${h.d.isActive?'green':'red'}">${h.d.isActive?fmt(sN(h.d.netEarnings))+' SAR · '+sN(h.d.orders)+' trips':'OFFLINE'}</span>
+      </div>`).join('')}
+    </div>`;
+}
+
+// ═══════════════════════════════════════════
+// M8 ENHANCED — SMARTER COMMANDS + REPORTS
+// ═══════════════════════════════════════════
+
+// Override m8PickCmd to handle new commands
+const _origM8PickCmd = m8PickCmd;
+function m8PickCmd(type, val) {
+  if (type === 'briefing') {
+    const html = generateFleetBriefing();
+    openCortexReport('◈ CORTEX BRIEFING — FLEET STATUS', html);
+    hideM8Picker();
+    return;
+  }
+  if (type === 'driverReport') {
+    const html = generateDriverReport(val);
+    openCortexReport(`◈ CAPTAIN DOSSIER — ${(lookupForeignName(val)||val).toUpperCase()}`, html);
+    hideM8Picker();
+    return;
+  }
+  if (type === 'periodReport') {
+    const history = getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
+    const idx = val === 'yesterday' ? 0 : val === 'daybefore' ? 1 : 0;
+    const entry = history[idx];
+    if (!entry) { m8PickShow(`<span class="vt-err">No data for that period</span>`); return; }
+    // Temporarily simulate that period
+    const prev = { d:currentDrivers, p:currentPeriod, i:currentPeriodInfo };
+    currentDrivers = entry.drivers; currentPeriod = entry.period; currentPeriodInfo = entry.periodInfo||null;
+    const html = generateFleetBriefing(entry.period);
+    currentDrivers=prev.d; currentPeriod=prev.p; currentPeriodInfo=prev.i;
+    openCortexReport(`◈ BRIEFING — ${entry.period}`, html);
+    hideM8Picker();
+    return;
+  }
+  _origM8PickCmd(type, val);
+}
+
+// Override parseVoiceCommand to handle new patterns
+const _origParseVC = parseVoiceCommand;
+function parseVoiceCommand(txt) {
+  const l = txt.trim().toLowerCase();
+
+  // ── Fleet briefing ──
+  if (/\b(briefing|sitrep|status|report|mission status|fleet report|what.?s happening|كيف الأسطول)\b/i.test(l)
+      && !/\b(driver|captain|who)\b/i.test(l))
+    return { type:'briefing', label:'Fleet Briefing' };
+
+  // ── Period report ──
+  if (/\b(yesterday|last day|الأمس)\b/i.test(l) && /\b(report|summary|briefing)\b/i.test(l))
+    return { type:'periodReport', period:'yesterday', label:'Yesterday Report' };
+
+  // ── Driver report: "report for Ali", "how is Mansour", "show me Ali" ──
+  const driverReportMatch = l.match(/(?:report (?:for|on)|how is|how's|show me|profile|dossier)(?: (?:captain|driver))?\s+(.+)/i);
+  if (driverReportMatch) {
+    const scored = findDriverByVoice(driverReportMatch[1].trim());
+    if (scored.length) return { type:'driverReport', name:scored[0].n, label:`Dossier: ${scored[0].n}` };
+  }
+
+  // ── Radar ──
+  if (/\b(radar|tactical|map view|blip|رادار)\b/i.test(l))
+    return { type:'mode', mode:'radar', label:'Tactical Radar' };
+
+  return _origParseVC(txt);
+}
+
+// Patch executeVoiceCommand for new types
+const _origExecVC = executeVoiceCommand;
+function executeVoiceCommand(cmd) {
+  if (cmd.type === 'briefing')    { m8PickCmd('briefing', null); return; }
+  if (cmd.type === 'periodReport'){ m8PickCmd('periodReport', cmd.period); return; }
+  if (cmd.type === 'driverReport'){ m8PickCmd('driverReport', cmd.name); return; }
+  if (cmd.type === 'mode' && cmd.mode === 'radar') {
+    captainView = 'radar';
+    const tabEl = document.querySelector('[data-tab="captains"]');
+    if (tabEl && !tabEl.classList.contains('active')) showTab('captains', tabEl); else renderCaptains();
+    return;
+  }
+  _origExecVC(cmd);
+}
+
+// Patch m8PickIntel to add briefing button
+const _origM8PickIntel = m8PickIntel;
+function m8PickIntel(type) {
+  if (type === 'briefing') { m8PickCmd('briefing', null); return; }
+  _origM8PickIntel(type);
+}
 </script>
 </body>
 </html>
