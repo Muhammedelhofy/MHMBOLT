@@ -930,7 +930,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
     <div id="m8BriefCard"></div>
     <div class="m8pick-section">⌨ ASK OR COMMAND</div>
     <div style="display:flex;gap:6px;margin-bottom:10px">
-      <input id="m8Smart" type="text" autocomplete="off" placeholder="A name, &quot;compare&quot;, &quot;who's offline&quot;, &quot;finance&quot;…" style="flex:1;background:rgba(0,255,179,.05);border:1px solid rgba(0,255,179,.25);color:var(--bolt-green);font-family:var(--mono);font-size:11px;padding:6px 9px;border-radius:3px;outline:none" onkeydown="if(event.key==='Enter')m8SmartCommand()">
+      <input id="m8Smart" type="text" autocomplete="off" placeholder="A name → then &quot;this month&quot;, or &quot;finance&quot;, &quot;who's offline&quot;…" style="flex:1;background:rgba(0,255,179,.05);border:1px solid rgba(0,255,179,.25);color:var(--bolt-green);font-family:var(--mono);font-size:11px;padding:6px 9px;border-radius:3px;outline:none" onkeydown="if(event.key==='Enter')m8SmartCommand()">
       <button class="m8pick-btn" onclick="m8SmartCommand()">Go</button>
     </div>
     <div class="m8pick-row">
@@ -939,10 +939,10 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
       <button class="m8pick-btn" onclick="m8PickIntel('belowTarget')">⚠ Below Target</button>
     </div>
     <div style="font-size:9px;color:var(--text-muted);margin-top:9px;line-height:1.8;letter-spacing:.02em">
-      Try: a captain's name · <span style="color:var(--bolt-green)">compare</span> · <span style="color:var(--bolt-green)">who's offline</span> · <span style="color:var(--bolt-green)">sort by hours</span> · <span style="color:var(--bolt-green)">yesterday report</span> · <span style="color:var(--bolt-green)">finance</span> · <span style="color:var(--bolt-green)">radar</span>
+      Try: <span style="color:var(--bolt-green)">a captain's name</span> then <span style="color:var(--bolt-green)">this month</span> / <span style="color:var(--bolt-green)">last month</span> · <span style="color:var(--bolt-green)">who's offline</span> · <span style="color:var(--bolt-green)">top driver</span> · <span style="color:var(--bolt-green)">sort by hours</span> · <span style="color:var(--bolt-green)">yesterday report</span> · <span style="color:var(--bolt-green)">finance</span> · <span style="color:var(--bolt-green)">radar</span>
     </div>
     <div style="margin-top:9px;padding-top:8px;border-top:1px solid rgba(0,255,179,.12);display:flex;align-items:center;justify-content:space-between;gap:8px">
-      <span style="font-size:9px;color:var(--text-muted);letter-spacing:.04em" title="When ON, M8 listens in the background — say &quot;M8&quot; to open it hands-free">🎙 HANDS-FREE — say &ldquo;M8&rdquo; to summon</span>
+      <span style="font-size:9px;color:var(--text-muted);letter-spacing:.04em" title="When ON, M8 listens in the background — say &quot;Hofy&quot; or &quot;M8&quot; to open it hands-free">🎙 HANDS-FREE — say &ldquo;Hofy&rdquo; to summon</span>
       <button id="m8WakeToggle" class="m8pick-btn" onclick="m8ToggleAlwaysListen()" style="padding:3px 12px;font-size:10px">OFF</button>
     </div>
     <div id="m8PickResult" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(0,255,179,.15);font-size:11px;line-height:1.6;color:var(--text)"></div>
@@ -2333,20 +2333,43 @@ function toggleM8() {
   showM8Picker();
 }
 
-// Time-aware spoken greeting via the Web Speech API. No-op if unsupported.
+// ── Female voice, picked once and cached ─────────────────────────────────────
+// getVoices() is often empty on first call (loads async), so we resolve it on
+// the 'voiceschanged' event too. We hard-prefer a female English voice and never
+// fall back to a male system default.
+let m8Voice = null;
+function m8PickVoice() {
+  const synth = window.speechSynthesis;
+  if (!synth) return null;
+  const vs = synth.getVoices() || [];
+  if (!vs.length) return null;
+  const femaleRe = /(samantha|aria|zira|jenny|jane|nora|victoria|karen|moira|tessa|fiona|serena|allison|susan|hazel|emily|sonia|libby|natural.*female|female|uk english female|google us english)/i;
+  return vs.find(v => /^en/i.test(v.lang) && femaleRe.test(v.name))
+      || vs.find(v => /female/i.test(v.name))
+      || vs.find(v => /^en[-_]?(gb|us)/i.test(v.lang))
+      || vs.find(v => /^en/i.test(v.lang))
+      || null;
+}
+if (window.speechSynthesis) {
+  m8Voice = m8PickVoice();
+  window.speechSynthesis.onvoiceschanged = () => { m8Voice = m8PickVoice(); };
+}
+
+// Quick spoken greeting via the Web Speech API. No-op if unsupported.
 function m8Greet() {
   try {
     const synth = window.speechSynthesis;
     if (!synth) return;
     synth.cancel(); // clear anything queued
+    // Mix casual + time-aware greetings, picked at random so M8 doesn't sound robotic.
     const h = new Date().getHours();
-    const part = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-    const u = new SpeechSynthesisUtterance(`${part}, Hofy. How can I help?`);
-    u.lang = 'en-US'; u.rate = 1; u.pitch = 1; u.volume = 1;
-    const vs = synth.getVoices() || [];
-    const voice = vs.find(v => /en[-_]?(GB|US)/i.test(v.lang) && /(samantha|aria|zira|jenny|google.*english|natural|female)/i.test(v.name))
-               || vs.find(v => /^en/i.test(v.lang));
-    if (voice) u.voice = voice;
+    const timed = h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : h < 22 ? 'Good evening' : 'Good night';
+    const pool = ['Hey Hofy', 'Hello Hofy', 'Hi Hofy', 'Yes Hofy', `${timed}, Hofy`, `${timed}, Hofy`, "Hofy, what's up", `Hey Hofy, ${timed.toLowerCase()}`];
+    const text = pool[Math.floor(Math.random() * pool.length)];
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-US'; u.rate = 1.2; u.pitch = 1.05; u.volume = 1; // quicker
+    const voice = m8Voice || (m8Voice = m8PickVoice());
+    if (voice) { u.voice = voice; u.lang = voice.lang; }
     // Resume listening only after the greeting finishes (prevents the mic from
     // hearing M8's own voice and firing a bogus command).
     u.onend = () => { if (m8WakeMode) m8RestartListen(); };
@@ -2360,7 +2383,7 @@ function m8Greet() {
 // mic). It auto-restarts on end to stay alive, and pauses whenever the picker
 // is open. Off by default; toggled via m8ToggleAlwaysListen (persisted).
 function m8WakeWordHit(text) {
-  return /\b(m8|m\s?8|m\s?eight|mate|matey|mato|hey m8|hey mate|ماتي|إم\s*8)\b/i.test(text || '');
+  return /\b(m8|m\s?8|m\s?eight|mate|matey|mato|hofy|hoffy|hofi|hofey|hovey|hovy|hey m8|hey mate|hey hofy|حوفى|حوفي|هوفي|ماتي|إم\s*8)\b/i.test(text || '');
 }
 function m8PickerOpen() { return document.getElementById('m8Picker')?.style.display === 'block'; }
 
@@ -2404,7 +2427,7 @@ function m8ToggleAlwaysListen() {
   localStorage.setItem('m8_always_listen', m8AlwaysOn ? '1' : '0');
   m8UpdateWakeToggleUI();
   if (m8AlwaysOn) {
-    toast('Hands-free ON — say "M8" to summon me (starts when this panel closes)');
+    toast('Hands-free ON — say "Hofy" to summon me (starts when this panel closes)');
     if (!m8PickerOpen()) startWakeListener();
   } else {
     stopWakeListener();
@@ -2473,9 +2496,10 @@ function m8PickCmd(type, val) {
   // The picker intentionally stays OPEN so commands can be chained
   // (e.g. sort, then go to a different page). It only closes via ✕ or clicking outside.
   if (type === 'tab') {
-    // Simulate a real tab click — fires the element's own onclick handler (showTab + render)
+    // Simulate a real tab click — fires the element's own onclick handler (showTab + render).
+    // Flag it as programmatic so the outside-click handler doesn't close the picker.
     const tabEl = document.querySelector(`[data-tab="${val}"]`);
-    if (tabEl) tabEl.click();
+    if (tabEl) { m8Programmatic = true; try { tabEl.click(); } finally { m8Programmatic = false; } }
     const label = {captains:'Captains',finance:'Finance',analytics:'Analytics',settings:'Settings'}[val]||val;
     m8PickShow(`<b>✓ ${label}</b> <span style="color:var(--text-muted)">— pick another command, or ✕ to close</span>`);
     return;
@@ -2563,8 +2587,12 @@ function m8PickIntel(type) {
     return;
   }
 }
-// Close picker when clicking outside
+// When M8 itself navigates (e.g. clicks a tab button on your behalf), that
+// synthetic click must NOT be treated as "user clicked outside → close".
+let m8Programmatic = false;
+// Close picker when the USER clicks outside it.
 document.addEventListener('click', e=>{
+  if (m8Programmatic) return;            // ignore clicks M8 fired itself
   const picker = document.getElementById('m8Picker');
   const orb    = document.getElementById('jarvisOrb');
   if (picker && picker.style.display!=='none' && !picker.contains(e.target) && !orb?.contains(e.target))
@@ -2590,38 +2618,60 @@ function m8RestartListen() {
   m8SetOrb('listening');
   const r = new SpeechRec();
   r.lang = 'en-US'; r.continuous = false; r.interimResults = false; r.maxAlternatives = 5;
-  let got = false;
+  let lastErr = null;
   r.onresult = e => {
-    got = true;
     const alts = Array.from({length:e.results[0].length},(_,i)=>e.results[0][i].transcript.trim());
     let cmd = null;
     for (const alt of alts) { const c=parseVoiceCommand(alt); if(c.type!=='unknown'){cmd=c;break;} }
     if (!cmd) cmd = parseVoiceCommand(alts[0]);
-    // Dispatch commands via m8PickCmd (uses .click() — same as button taps)
-    if      (cmd.type === 'tab')         { m8PickCmd('tab',       cmd.id);   }
-    else if (cmd.type === 'sort')        { m8PickCmd('sort',      cmd.col);  }
-    else if (cmd.type === 'mode')        { m8PickCmd('mode',      cmd.mode); }
-    else if (cmd.type === 'clear')       { m8PickCmd('clear',     null);     }
-    else if (cmd.type === 'yesterday' || cmd.type === 'daySummary')
-                                         { m8PickCmd('yesterday', null);     }
-    else if (cmd.type === 'driver')      { m8WakeMode=false; hideM8Picker(); executeVoiceCommand(cmd); }
-    else if (cmd.type === 'wake')        { /* stay open */ }
-    else if (cmd.type === 'unknown')     { /* say nothing — picker stays open */ }
-    else { m8WakeMode=false; hideM8Picker(); executeVoiceCommand(cmd); }
+    m8HandleVoiceCmd(cmd);
   };
-  r.onerror = () => { got = true; };
+  r.onerror = ev => { lastErr = ev && ev.error; };
   r.onend = () => {
     voiceRecog = null;
     m8SetOrb('idle');
-    // Restore picker header text
     if (hdr) hdr.innerHTML = '● M8 COMMAND CENTER';
-    // If picker still open and no result — just stay open (user can tap a button)
-    if (!got && m8WakeMode && document.getElementById('m8Picker')?.style.display !== 'none') {
-      // do nothing — picker stays visible for button click
+    // Mic blocked → stop, don't spin.
+    if (lastErr === 'not-allowed' || lastErr === 'service-not-allowed') return;
+    // CONTINUOUS conversation: while the panel is open, keep listening so the
+    // user can chain commands (e.g. open Finance, then ask for another tab).
+    // Pause only while M8 is speaking, so it never transcribes its own voice.
+    if (m8WakeMode && m8PickerOpen()) {
+      setTimeout(() => {
+        if (m8WakeMode && m8PickerOpen() && !voiceRecog &&
+            !(window.speechSynthesis && window.speechSynthesis.speaking)) {
+          m8RestartListen();
+        }
+      }, 450);
     }
   };
   voiceRecog = r;
   try { r.start(); } catch(e) { voiceRecog = null; }
+}
+
+// One place that turns a parsed voice command into an action. Returns nothing;
+// view/report commands keep the picker OPEN (so the re-listen loop continues),
+// while navigation-away commands (driver dossier, upload) close it.
+function m8HandleVoiceCmd(cmd) {
+  switch (cmd.type) {
+    case 'tab':         m8PickCmd('tab',  cmd.id);   break;
+    case 'sort':        m8PickCmd('sort', cmd.col);  break;
+    case 'mode':        if (cmd.mode === 'radar') { setCaptainView('radar'); m8WakeMode = false; hideM8Picker(); }
+                        else m8PickCmd('mode', cmd.mode); break;
+    case 'clear':       m8PickCmd('clear', null);    break;
+    case 'yesterday':
+    case 'daySummary':  m8PickCmd('yesterday', null); break;
+    case 'inactive':    m8PickIntel('inactive');     break;
+    case 'topDriver':   m8PickIntel('topDriver');    break;
+    case 'belowTarget': m8PickIntel('belowTarget');  break;
+    case 'driverPerf':  m8DriverPerf(cmd.name, cmd.scope); break;  // stay open for follow-ups
+    case 'upload':      m8WakeMode = false; hideM8Picker(); document.getElementById('fileInput')?.click(); break;
+    case 'driver':      m8DriverPerf((cmd.names||[])[0], 'yesterday'); break;  // name → perf card, stay open
+    case 'help':        m8SmartCommand('help'); break;  // print the cheat-sheet, stay open
+    case 'wake':        /* already open — keep listening */ break;
+    case 'unknown':     /* didn't catch — keep listening, no nag */ break;
+    default:            m8WakeMode = false; hideM8Picker(); executeVoiceCommand(cmd);
+  }
 }
 
 // Auto-detect: is the text Arabic script?
@@ -2733,39 +2783,44 @@ function findDriverByVoice(spoken) {
 
 // ── Command parser ──
 function parseVoiceCommand(txt) {
-  const t = txt.trim();
+  // Strip a LEADING wake word so "Hofy, finance" → "finance" (previously the
+  // wake word swallowed the whole phrase and the actual command was lost).
+  const wakeLead = /^(hey\s+|يا\s+)?(m8|m\s?8|m\s?eight|mate|matey|mato|hofy|hoffy|hofi|hofey|hovey|hovy|حوفى|حوفي|هوفي|ماتي|إم\s*8)\b[\s,.:؛-]*/i;
+  let t = txt.trim();
+  if (wakeLead.test(t)) {
+    t = t.replace(wakeLead, '').trim();
+    if (!t) return { type:'wake' };   // wake word alone → just open/greet
+  }
   const l = t.toLowerCase();
 
-  // ── Wake word → open command picker ──
-  if (/\b(m8|mate|hey m8|ماتي|إم\s*8)\b/i.test(l))
-    return { type:'wake' };
-
   // ── Navigation ──
-  if (/\b(captains?|fleet|main|home|الكبا|الرئيسية|الأسطول)\b/i.test(l))
+  // NB: trailing \b is intentionally omitted on prefix tokens so plural/longer
+  // spoken forms match too ("analytics" ⊃ "analyt", "settings" ⊃ "setting").
+  if (/\b(captain|fleet|main|home|الكبا|الرئيسية|الأسطول)/i.test(l))
     return { type:'tab', id:'captains', label:'Captains' };
-  if (/\b(finance|financ|مالية|المالية|الفاين)\b/i.test(l))
+  if (/\b(financ|مالية|المالية|الفاين)/i.test(l))
     return { type:'tab', id:'finance', label:'Finance' };
-  if (/\b(analyt|تحليل|التحليلات)\b/i.test(l))
+  if (/\b(analy|تحليل|التحليلات)/i.test(l))
     return { type:'tab', id:'analytics', label:'Analytics', extra:()=>renderAnalytics() };
-  if (/\b(setting|إعداد|الإعدادات)\b/i.test(l))
+  if (/\b(setting|إعداد|الإعدادات)/i.test(l))
     return { type:'tab', id:'settings', label:'Settings' };
 
   // ── View mode ──
-  if (/\b(compare|مقارنة|قارن)\b/i.test(l))
+  if (/\b(compare|مقارنة|قارن)/i.test(l))
     return { type:'mode', mode:'compare', label:'Compare Days' };
-  if (/\b(single|daily|يوم واحد|يومي)\b/i.test(l))
+  if (/\b(single|daily|يوم واحد|يومي)/i.test(l))
     return { type:'mode', mode:'single', label:'Single Day' };
 
   // ── Sort ──
-  if (/\b(earn|net|sar|أرباح|صافي)\b/i.test(l))
+  if (/\b(earn|net|sar|أرباح|صافي)/i.test(l))
     return { type:'sort', col:'net', label:'Sort → Net SAR' };
-  if (/\b(order|طلب|الطلبات)\b/i.test(l))
+  if (/\b(order|طلب|الطلبات)/i.test(l))
     return { type:'sort', col:'orders', label:'Sort → Orders' };
-  if (/\b(hour|ساعة|الساعات)\b/i.test(l))
+  if (/\b(hour|ساعة|الساعات)/i.test(l))
     return { type:'sort', col:'hours', label:'Sort → Hours' };
-  if (/\b(accept|قبول|القبول)\b/i.test(l))
+  if (/\b(accept|قبول|القبول)/i.test(l))
     return { type:'sort', col:'accept', label:'Sort → Acceptance' };
-  if (/\b(gross|إجمالي)\b/i.test(l))
+  if (/\b(gross|إجمالي)/i.test(l))
     return { type:'sort', col:'gross', label:'Sort → Gross SAR' };
 
   // ── Clear ──
@@ -2775,6 +2830,16 @@ function parseVoiceCommand(txt) {
   // ── Upload ──
   if (/\b(upload|رفع|ارفع)\b/i.test(l))
     return { type:'upload', label:'Opening upload…' };
+
+  // ── Data-query intents (yesterday report, who's offline, top, below) ──
+  if (/\b(yesterday|report|recap|day summary|أمس|البارحة|امبارح|تقرير|ملخص اليوم)\b/i.test(l))
+    return { type:'yesterday', label:'Yesterday report' };
+  if (/\b(offline|who.?s off|not work\w*|didn.?t work|inactive|absent|غايب|غائب|مش شغال|ما اشتغل)\b/i.test(l))
+    return { type:'inactive', label:"Who's offline" };
+  if (/\b(top|best|highest earner?|أفضل|الأعلى|الأفضل)\b/i.test(l))
+    return { type:'topDriver', label:'Top driver' };
+  if (/\b(below target|under target|lagging|behind|low earner?|أقل من|تحت الهدف)\b/i.test(l))
+    return { type:'belowTarget', label:'Below target' };
 
   // ── Help ──
   if (/\b(help|what|can you|commands?|ماذا|مساعدة|أوامر)\b/i.test(l))
@@ -4150,6 +4215,70 @@ function m8ParseDate(txt) {
   return null;
 }
 
+// Detect a time scope from a spoken/typed phrase (for driver performance).
+function m8DetectScope(l) {
+  if (/this month|هذا الشهر|الشهر الحالي/i.test(l))                       return 'thisMonth';
+  if (/last month|الشهر الماضي|الشهر السابق|الشهر اللي فات/i.test(l))     return 'lastMonth';
+  if (/today|اليوم/i.test(l))                                            return 'today';
+  if (/yesterday|أمس|البارحة|امبارح|last day/i.test(l))                  return 'yesterday';
+  if (/all.?time|overall|lifetime|إجمالي|كل الوقت/i.test(l))             return 'all';
+  return null;
+}
+// Aggregate one driver's rows across history, optionally filtered to a month.
+function m8DriverAgg(name, filterFn) {
+  const nk = driverKey(name);
+  let net = 0, orders = 0, hours = 0, days = 0;
+  getHistory().forEach(h => {
+    if (filterFn && !filterFn(h)) return;
+    const d = (h.drivers || []).find(x => driverKey(x.name) === nk);
+    if (!d) return;
+    net += d.netEarnings || 0; orders += d.orders || 0; hours += d.hoursOnline || 0; days++;
+  });
+  return { net, orders, hours, days };
+}
+// Inline driver performance card + voice-able suggestion chips. Keeps the picker
+// open (so the re-listen loop continues) and remembers the driver in m8Context
+// so follow-ups like "this month" / "last month" scope to the same person.
+function m8DriverPerf(name, scope) {
+  scope = scope || 'yesterday';
+  m8Context.driver = name; m8Context.queryType = 'driverPerf'; m8Context.scope = scope;
+  const hist = getHistory().sort((a, b) => periodSortKey(b.period) - periodSortKey(a.period));
+  const disp = lookupForeignName(name) || name;
+  if (!hist.length) { m8PickShow(`<span class="vt-err">No data loaded for ${disp}</span>`); return; }
+  const now = new Date();
+  let agg, periodLabel, active = null;
+  if (scope === 'thisMonth' || scope === 'lastMonth') {
+    const ref = scope === 'lastMonth' ? new Date(now.getFullYear(), now.getMonth() - 1, 1) : now;
+    const mi = ref.getMonth(), yr = ref.getFullYear();
+    agg = m8DriverAgg(name, h => { const dt = new Date(periodSortKey(h.period)); return dt.getMonth() === mi && dt.getFullYear() === yr; });
+    periodLabel = `${MONTH_NAMES[mi]} ${yr}`;
+  } else if (scope === 'all') {
+    agg = m8DriverAgg(name, null); periodLabel = 'All time';
+  } else { // 'yesterday' / 'today' → latest uploaded day
+    const h = hist[0];
+    const d = (h.drivers || []).find(x => driverKey(x.name) === driverKey(name));
+    periodLabel = h.period;
+    agg = d ? { net: d.netEarnings || 0, orders: d.orders || 0, hours: d.hoursOnline || 0, days: 1 } : { net: 0, orders: 0, hours: 0, days: 0 };
+    active = d ? !!d.isActive : null;
+  }
+  const nameArg = name.replace(/'/g, "\\'");
+  const chip = (label, sc) => `<button class="m8pick-btn" style="${sc===scope?'background:rgba(0,255,179,.18);box-shadow:0 0 8px rgba(0,255,179,.25)':''}" onclick="m8DriverPerf('${nameArg}','${sc}')">${label}</button>`;
+  const avgDay = agg.days ? Math.round(agg.net / agg.days) : 0;
+  m8PickShow(`
+    <div style="font-weight:700;color:var(--bolt-green);font-size:12px">${disp}${disp!==name?` <span style="color:var(--text-muted);font-weight:400">(${name})</span>`:''}</div>
+    <div style="font-size:10px;color:var(--text-muted);margin:2px 0 7px">📅 ${periodLabel}${agg.days?` · ${agg.days} day${agg.days!==1?'s':''}`:''}${active===false?' · <span style="color:var(--red)">offline</span>':active===true?' · <span style="color:var(--bolt-green)">active</span>':''}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:11px">
+      <div>💰 Net <b style="color:var(--bolt-green)">${fmt(agg.net)} SAR</b></div>
+      <div>📦 Orders <b style="color:var(--cyan)">${agg.orders}</b></div>
+      <div>⏱ Hours <b style="color:var(--cyan)">${agg.hours.toFixed(1)}h</b></div>
+      <div>📈 Avg/day <b style="color:var(--bolt-green)">${fmt(avgDay)} SAR</b></div>
+    </div>
+    <div class="m8pick-section" style="margin-top:8px">SAY OR TAP</div>
+    <div class="m8pick-row">${chip('Yesterday','yesterday')}${chip('This Month','thisMonth')}${chip('Last Month','lastMonth')}${chip('All Time','all')}</div>
+    <div class="m8pick-row"><button class="m8pick-btn" onclick="m8PickCmd('driverReport','${nameArg}')">📋 Full Dossier</button></div>
+  `);
+}
+
 // Format a fleet-day summary as M8 response HTML
 function m8DaySummary(entry) {
   const active=entry.drivers.filter(d=>d.isActive);
@@ -4176,6 +4305,26 @@ const _origParse = parseVoiceCommand;
 parseVoiceCommand = function(txt) {
   const t=txt.trim(), l=t.toLowerCase();
   const history=getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
+
+  // ── Driver performance: a named driver pulls up their card; "this month" /
+  //    "last month" / "performance yesterday" then re-scope the SAME driver.
+  //    Checked before fleet "yesterday" so a person's query isn't read as a
+  //    fleet query. Specific calendar dates ("Mansour May 10") fall through to
+  //    the date+driver path below. ──
+  {
+    const m8scope    = m8DetectScope(l);
+    const m8named    = findDriverByVoice(t);
+    const perfWord   = /performance|أداء|this month|last month|هذا الشهر|الشهر الماضي|الشهر السابق/i.test(l);
+    const fleetIntent= /didn.t work|not work|offline|inactive|top\s*driver|best\s*driver|below target|under target|how.*fleet/i.test(l);
+    const calDate    = /\b\d{1,2}\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s*\d{1,2}|\d{1,2}\/\d{1,2}/i.test(l);
+    if (!fleetIntent && !calDate && m8named.length) {
+      m8Context.driver = m8named[0].n;
+      return { type:'driverPerf', name:m8named[0].n, scope:m8scope||'yesterday' };
+    }
+    if (!fleetIntent && perfWord && m8Context.driver) {
+      return { type:'driverPerf', name:m8Context.driver, scope:m8scope||'yesterday' };
+    }
+  }
 
   // ── "what happened yesterday / how was the fleet" ──
   if (/yesterday|أمس|last.*day|how.*fleet|ايه اللي|كيف.*كان/.test(l)) {
@@ -6173,6 +6322,23 @@ function computeTransferStatus(driverName, cycleDateYMD, log) {
   return daysSince >= 3 ? 'CONFIRMED' : 'PENDING';
 }
 
+// Earliest fleet-activity date (ms) for a driver across all uploaded history.
+// Used to flag a transfer recorded on a date BEFORE the driver was ever on the
+// fleet — the "driver who joined later shows on 9 May" data-integrity bug.
+// Returns null if the driver never appears in history (can't judge).
+function driverFirstSeenMs(name) {
+  const nk = driverKey(name);
+  let earliest = null;
+  for (const h of getHistory()) {
+    const d = (h.drivers || []).find(x => driverKey(x.name) === nk);
+    if (!d) continue;
+    const ms = periodSortKey(h.period);
+    if (!ms) continue;
+    if (earliest === null || ms < earliest) earliest = ms;
+  }
+  return earliest;
+}
+
 function transferStatusBadge(status) {
   if (status === 'CONFIRMED') return '✅ Confirmed';
   if (status === 'REVERSED')  return '🔴 Reversed by Bolt';
@@ -6781,10 +6947,18 @@ function renderFinanceTransferView() {
     return { ...e, status, isBacklog: false };
   });
 
-  // Fleet-level summary for this cycle
-  const totalTransferred = enriched.filter(e => e.amount > 0).reduce((s, e) => s + e.amount, 0);
-  const countConfirmed   = enriched.filter(e => e.status === 'CONFIRMED').length;
-  const countPending     = enriched.filter(e => e.status === 'PENDING').length;
+  // Fleet-level summary for this cycle.
+  // Gross  = every positive transfer Bolt posted.
+  // Reversed = positive transfers Bolt later clawed back (status REVERSED) +
+  //            any standalone negative postings. This money did NOT stay.
+  // Net    = what actually landed and stuck = gross − reversed-positives.
+  const grossTransferred = enriched.filter(e => e.amount > 0).reduce((s, e) => s + e.amount, 0);
+  const reversedPositive = enriched.filter(e => e.amount > 0 && e.status === 'REVERSED').reduce((s, e) => s + e.amount, 0);
+  const negativePostings = enriched.filter(e => e.amount < 0).reduce((s, e) => s + Math.abs(e.amount), 0);
+  const reversedTotal    = reversedPositive + negativePostings;
+  const totalTransferred = grossTransferred - reversedPositive; // real cash delivered
+  const countConfirmed   = enriched.filter(e => e.amount > 0 && e.status === 'CONFIRMED').length;
+  const countPending     = enriched.filter(e => e.amount > 0 && e.status === 'PENDING').length;
   const countReversed    = enriched.filter(e => e.status === 'REVERSED').length;
 
   // Build cycle selector from all logged transfer dates
@@ -6801,14 +6975,29 @@ function renderFinanceTransferView() {
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
     .map(e => {
       const foreign = lookupForeignName(e.name);
-      let note = '';
+      const notes   = [];
       if (e.amount < 0) {
-        note = '<span style="color:var(--red);font-size:11px">⚠ Bolt reversed this transfer</span>';
+        notes.push('<span style="color:var(--red);font-size:11px">⚠ Negative posting — Bolt clawed money back</span>');
+      } else if (e.status === 'REVERSED') {
+        notes.push('<span style="color:var(--red);font-size:11px">⚠ Transfer reversed by Bolt within 3 days — likely bank/IBAN issue</span>');
       } else if (e.isBacklog) {
-        note = '<span style="color:var(--text-muted);font-size:11px">📦 includes backlog from prior cycles</span>';
+        notes.push('<span style="color:var(--text-muted);font-size:11px">📦 includes backlog from prior cycles</span>');
       }
-      const amtColor  = e.amount < 0 ? 'var(--red)' : 'var(--text)';
+      // Roster-integrity check: was this driver even on the fleet on/before this
+      // transfer date? If their first-ever activity is AFTER the transfer date,
+      // the entry is almost certainly from a mis-dated or multi-day CSV.
+      const firstSeen = driverFirstSeenMs(e.name);
+      const transMs   = parseLocalDate(selectedCycle).getTime();
+      if (firstSeen !== null && firstSeen > transMs) {
+        const fs = new Date(firstSeen);
+        notes.push(`<span style="color:var(--amber);font-size:11px">⚠ No fleet activity until ${fs.getDate()} ${MONTH_NAMES[fs.getMonth()]} — verify this date/CSV</span>`);
+      }
+      // A reversed positive transfer is money that did NOT stay — show it struck
+      // through in red, not as a healthy green "+".
+      const reversedPos = e.amount > 0 && e.status === 'REVERSED';
+      const amtColor  = (e.amount < 0 || reversedPos) ? 'var(--red)' : 'var(--text)';
       const amtSign   = e.amount < 0 ? '−' : '+';
+      const amtDecor  = reversedPos ? 'text-decoration:line-through;' : '';
       const netCell   = e.netEarnings > 0
         ? `<span style="font-family:var(--mono);color:var(--text-muted)">${fmt(e.netEarnings)}</span>`
         : `<span style="color:var(--text-dim)">—</span>`;
@@ -6817,10 +7006,10 @@ function renderFinanceTransferView() {
           <div style="font-weight:600">${e.name}</div>
           ${foreign ? `<span class="d-foreign">${foreign}</span>` : ''}
         </td>
-        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:${amtColor}">${amtSign}${fmt(Math.abs(e.amount))}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:${amtColor};${amtDecor}">${amtSign}${fmt(Math.abs(e.amount))}</td>
         <td style="text-align:right">${netCell}</td>
         <td><span style="${transferStatusStyle(e.status)}">${transferStatusBadge(e.status)}</span></td>
-        <td style="font-size:11px">${note}</td>
+        <td style="font-size:11px">${notes.join('<br>')}</td>
       </tr>`;
     }).join('');
 
@@ -6837,8 +7026,9 @@ function renderFinanceTransferView() {
       <!-- Fleet summary for this cycle -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:16px 20px;background:var(--bg-card2);border-bottom:1px solid var(--border)">
         <div>
-          <div class="finance-kpi-label">Total Transferred</div>
+          <div class="finance-kpi-label">Net Transferred</div>
           <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--green)">${fmt(totalTransferred)} <span style="font-size:13px">SAR</span></div>
+          <div style="font-size:10px;color:var(--text-muted)">${reversedTotal > 0 ? `gross ${fmt(grossTransferred)} · reversed −${fmt(reversedTotal)}` : 'cash that landed & stuck'}</div>
         </div>
         <div>
           <div class="finance-kpi-label">✅ Confirmed</div>
@@ -8175,16 +8365,30 @@ m8PickCmd = function(type, val) {
 // Override parseVoiceCommand to handle new patterns (binding reassignment — see note above)
 const _origParseVC = parseVoiceCommand;
 parseVoiceCommand = function(txt) {
-  const l = txt.trim().toLowerCase();
+  // Strip a LEADING wake word ("Hofy …", "M8 …", "mate …") so the actual command
+  // survives — previously "Hofy finance" was swallowed whole and lost.
+  let raw = (txt || '').trim();
+  const wakeLead = /^(hey\s+|يا\s+)?(m8|m\s?8|m\s?eight|mate|matey|mato|hofy|hoffy|hofi|hofey|hovey|hovy|حوفى|حوفي|هوفي|ماتي|إم\s*8)\b[\s,.:؛-]*/i;
+  if (wakeLead.test(raw)) {
+    const stripped = raw.replace(wakeLead, '').trim();
+    if (!stripped) return { type:'wake' };   // wake word on its own → just open/greet
+    raw = stripped;
+  }
+  const l = raw.toLowerCase();
+
+  // ── Period / "yesterday" report — checked BEFORE briefing, because the briefing
+  // regex also matches the word "report" and used to hijack "yesterday report".
+  // Skip when the phrase is about a person ("performance yesterday", "Mansour
+  // yesterday") so the driver layer below can scope it to that driver. ──
+  if (/\b(yesterday|last day|الأمس|أمس|البارحة|امبارح)\b/i.test(l)
+      && !/performance|أداء/i.test(l)
+      && !findDriverByVoice(raw).length)
+    return { type:'periodReport', period:'yesterday', label:'Yesterday Report' };
 
   // ── Fleet briefing ──
-  if (/\b(briefing|sitrep|status|report|mission status|fleet report|what.?s happening|كيف الأسطول)\b/i.test(l)
+  if (/\b(briefing|sitrep|mission status|fleet report|what.?s happening|كيف الأسطول)\b/i.test(l)
       && !/\b(driver|captain|who)\b/i.test(l))
     return { type:'briefing', label:'Fleet Briefing' };
-
-  // ── Period report ──
-  if (/\b(yesterday|last day|الأمس)\b/i.test(l) && /\b(report|summary|briefing)\b/i.test(l))
-    return { type:'periodReport', period:'yesterday', label:'Yesterday Report' };
 
   // ── Driver report: "report for Ali", "how is Mansour", "show me Ali" ──
   const driverReportMatch = l.match(/(?:report (?:for|on)|how is|how's|show me|profile|dossier)(?: (?:captain|driver))?\s+(.+)/i);
@@ -8197,7 +8401,7 @@ parseVoiceCommand = function(txt) {
   if (/\b(radar|tactical|map view|blip|رادار)\b/i.test(l))
     return { type:'mode', mode:'radar', label:'Tactical Radar' };
 
-  return _origParseVC(txt);
+  return _origParseVC(raw);
 };
 
 // Patch executeVoiceCommand for new types (binding reassignment — see note above)
@@ -8246,12 +8450,14 @@ function m8SmartCommand(arg) {
     case 'periodReport': m8PickCmd('periodReport', cmd.period); break;
     case 'driverReport': m8PickCmd('driverReport', cmd.name); break;
     // Data-query intents from the analytics layer:
+    case 'yesterday':    m8PickCmd('yesterday', null); break;
     case 'daySummary':   m8PickIntel('daySummary'); break;
     case 'inactive':     m8PickIntel('inactive'); break;
     case 'topDriver':    m8PickIntel('topDriver'); break;
     case 'belowTarget':  m8PickIntel('belowTarget'); break;
-    case 'driverDay':    m8PickCmd('driverReport', cmd.name); break;     // open full dossier
-    case 'driver':       m8PickCmd('driverReport', (cmd.names||[])[0]); break;
+    case 'driverPerf':   m8DriverPerf(cmd.name, cmd.scope); break;        // inline perf card + chips
+    case 'driverDay':    m8DriverPerf(cmd.name, 'yesterday'); break;       // name+date → perf card
+    case 'driver':       m8DriverPerf((cmd.names||[])[0], 'yesterday'); break;
     case 'nodata':       m8PickShow(`<span class="vt-err">No data loaded yet</span><div class="vt-hint">Upload a CSV report first</div>`); break;
     case 'help':
     case 'wake':         m8PickShow(`<div style="color:var(--text-muted);line-height:1.8">Type or say:<br>• a captain's name → dossier<br>• <span style="color:var(--bolt-green)">compare</span> / <span style="color:var(--bolt-green)">radar</span> → views<br>• <span style="color:var(--bolt-green)">who's offline</span> · <span style="color:var(--bolt-green)">top driver</span> · <span style="color:var(--bolt-green)">below target</span><br>• <span style="color:var(--bolt-green)">sort by hours/earnings/orders</span><br>• <span style="color:var(--bolt-green)">finance</span> · <span style="color:var(--bolt-green)">analytics</span> · <span style="color:var(--bolt-green)">settings</span><br>• <span style="color:var(--bolt-green)">yesterday report</span> · <span style="color:var(--bolt-green)">briefing</span></div>`); break;
