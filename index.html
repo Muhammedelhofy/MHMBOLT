@@ -935,6 +935,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
     </div>
     <div class="m8pick-row">
       <button class="m8pick-btn" style="color:var(--bolt-green);border-color:rgba(0,255,179,.4)" onclick="m8PickCmd('briefing',null)">⚡ Fleet Briefing</button>
+      <button class="m8pick-btn" onclick="m8PickCmd('weekReview',null)">📅 This Week</button>
       <button class="m8pick-btn" onclick="m8PickIntel('topDriver')">🏆 Top Driver</button>
       <button class="m8pick-btn" onclick="m8PickIntel('belowTarget')">⚠ Below Target</button>
     </div>
@@ -2638,6 +2639,7 @@ function m8HandleVoiceCmd(cmd, alts) {
     case 'yesterday':   m8PickCmd('yesterday', null); break;
     case 'periodReport':m8PickCmd('periodReport', cmd.period); break;
     case 'briefing':    m8PickCmd('briefing', null); break;
+    case 'weekReview':  m8PickCmd('weekReview', null); break;
     case 'driverReport':m8PickCmd('driverReport', cmd.name); break;
     case 'daySummary':  m8PickIntel('daySummary');   break;
     case 'inactive':    m8PickIntel('inactive');     break;
@@ -8502,6 +8504,11 @@ parseVoiceCommand = function(txt) {
       && !findDriverByVoice(raw).length)
     return { type:'periodReport', period:'yesterday', label:'Yesterday Report' };
 
+  // ── Week review (checked before briefing) ──
+  if (/\b(this week|last week|past week|last 7 days|weekly|week review|week in review|الأسبوع|اسبوع)\b/i.test(l)
+      && !findDriverByVoice(raw).length)
+    return { type:'weekReview', label:'Week Review' };
+
   // ── Fleet briefing ──
   if (/\b(briefing|sitrep|mission status|fleet report|what.?s happening|كيف الأسطول)\b/i.test(l)
       && !/\b(driver|captain|who)\b/i.test(l))
@@ -8525,6 +8532,7 @@ parseVoiceCommand = function(txt) {
 const _origExecVC = executeVoiceCommand;
 executeVoiceCommand = function(cmd) {
   if (cmd.type === 'briefing')    { m8PickCmd('briefing', null); return; }
+  if (cmd.type === 'weekReview')  { m8PickCmd('weekReview', null); return; }
   if (cmd.type === 'periodReport'){ m8PickCmd('periodReport', cmd.period); return; }
   if (cmd.type === 'driverReport'){ m8PickCmd('driverReport', cmd.name); return; }
   if (cmd.type === 'mode' && cmd.mode === 'radar') {
@@ -8564,6 +8572,7 @@ function m8SmartCommand(arg) {
     case 'clear':        m8PickCmd('clear', null); break;
     case 'upload':       hideM8Picker(); document.getElementById('fileInput')?.click(); break;
     case 'briefing':     m8PickCmd('briefing', null); break;
+    case 'weekReview':   m8PickCmd('weekReview', null); break;
     case 'periodReport': m8PickCmd('periodReport', cmd.period); break;
     case 'driverReport': m8PickCmd('driverReport', cmd.name); break;
     // Data-query intents from the analytics layer:
