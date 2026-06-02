@@ -6921,6 +6921,19 @@ function deleteCycleReceiptConfirm(transferDate) {
 // ═══════════════════════════════════════════
 // RENDER FINANCE — TRANSFER LOG VIEW
 // ═══════════════════════════════════════════
+function deleteTransferLogEntry(dateYMD) {
+  if (!dateYMD) return;
+  const dt = parseLocalDate(dateYMD);
+  const label = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()] + ' ' + dt.getDate() + ' ' + MONTH_NAMES[dt.getMonth()] + ' ' + dt.getFullYear();
+  if (!confirm(`Delete the Transfer Log entry for ${label}?\n\nThis only removes it from the log — your CSV data and earnings are not affected.`)) return;
+  const log = loadTransferLog();
+  delete log[dateYMD];
+  saveTransferLog(log);
+  financeCycle = Object.keys(log).sort().reverse()[0] || '';
+  renderFinanceTab();
+  toast('Transfer log entry deleted');
+}
+
 function renderFinanceTransferView() {
   const log = loadTransferLog();
   const el  = document.getElementById('financeMainContent');
@@ -7024,8 +7037,9 @@ function renderFinanceTransferView() {
     }).join('');
 
   const notPayDayBanner = !selectedIsPayDay
-    ? `<div style="background:rgba(255,170,0,.1);border-bottom:1px solid rgba(255,170,0,.25);padding:10px 20px;font-size:12px;color:var(--amber)">
-        ⚠ <strong>${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][selectedDow]} ${selectedCycle}</strong> is not a Bolt payment day (Sun/Wed). These entries may be from a mis-dated CSV. New uploads on non-pay days will no longer record positive transfers.
+    ? `<div style="background:rgba(255,170,0,.1);border-bottom:1px solid rgba(255,170,0,.25);padding:10px 20px;font-size:12px;color:var(--amber);display:flex;align-items:center;justify-content:space-between;gap:16px">
+        <span>⚠ <strong>${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][selectedDow]} ${selectedCycle}</strong> is not a Bolt payment day (Sun/Wed). These entries may be from a mis-dated CSV. New uploads on non-pay days will no longer record positive transfers.</span>
+        <button class="finance-btn finance-btn-danger" onclick="deleteTransferLogEntry('${selectedCycle}')" style="white-space:nowrap;flex-shrink:0">🗑 Delete this entry</button>
       </div>`
     : '';
 
