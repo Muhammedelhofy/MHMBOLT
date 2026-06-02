@@ -393,6 +393,13 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 .model-E { background:rgba(255,68,102,.08); border:1px solid rgba(255,68,102,.28); color:var(--red); }
 .model-X { background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1); color:var(--text-muted); }
 
+/* ── Funnel source tags ── */
+.funnel-badge { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:2px; font-family:var(--mono); font-size:9px; font-weight:700; flex-shrink:0; letter-spacing:0; margin-left:4px; vertical-align:middle; }
+.funnel-N { background:rgba(6,182,212,.12);  border:1px solid rgba(6,182,212,.4);  color:#22D3EE; }
+.funnel-M { background:rgba(139,92,246,.12); border:1px solid rgba(139,92,246,.4); color:#A78BFA; }
+.funnel-Y { background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.4); color:#F59E0B; }
+.funnel-H { background:rgba(236,72,153,.12); border:1px solid rgba(236,72,153,.4); color:#F472B6; }
+
 /* ── Compare Days — sticky Driver column header (same as td) ── */
 .compare-table th.col-driver { position:sticky; left:0; z-index:3; background:var(--bg-card2); }
 
@@ -1058,7 +1065,8 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
     <div class="sm-topbar">
       <div class="sm-title">FLEET STAR MAP &nbsp;—&nbsp; <span id="smPeriodLabel">No data</span></div>
       <div class="sm-controls">
-        <select id="smPeriodSelect" class="kpi-select sm-period-sel" onchange="smOnPeriodChange()"></select>
+        <select id="smMonthSel" class="kpi-select sm-period-sel" onchange="smOnMonthChange()" style="min-width:110px"></select>
+        <select id="smPeriodSelect" class="kpi-select sm-period-sel" onchange="smOnPeriodChange()" style="min-width:120px"></select>
         <button id="smPlayBtn" class="sm-play-btn" onclick="smToggleTimeLapse()">▶&nbsp;PLAY</button>
         <select id="smSpeedSel" class="kpi-select sm-speed-sel" onchange="smSetSpeed(this.value)">
           <option value="2200">Slow</option>
@@ -3162,11 +3170,9 @@ let smWarpFrom=[];  // previous star positions for warp animation
 let smWarpT=1;      // 0→1 warp progress (1=done)
 
 const SM_ARMS={
-  'A':{deg:0,   rgb:[70,130,220],  label:'A — Acct+Car Rent'},   // Neptune ice-blue
-  'B':{deg:72,  rgb:[60,160,120],  label:'B — Own Car'},          // Earth teal-green
-  'C':{deg:144, rgb:[200,140,60],  label:'C — Salaried'},         // Jupiter amber-orange
-  'D':{deg:216, rgb:[180,70,50],   label:'D — Saudi Own'},        // Mars rust-red
-  'E':{deg:288, rgb:[190,160,80],  label:'E — Foreign SA'},       // Venus cloud-yellow
+  'B':{deg:0,   rgb:[60,160,120],  label:'B — Own Car'},          // Earth teal-green
+  'C':{deg:120, rgb:[200,140,60],  label:'C — Salaried'},         // Jupiter amber-orange
+  'D':{deg:240, rgb:[180,70,50],   label:'D — Saudi Own'},        // Mars rust-red
 };
 const SM_CATCOLS={
   'blaze':[190,50,255], 'grocery':[30,190,255],
@@ -3186,16 +3192,20 @@ function smCatRgb(catStr){
   for(const [k,v] of Object.entries(SM_CATCOLS)) if(l.includes(k)) return v;
   return null;
 }
-function smBuildDrivers(chosen, history){
+function smBuildDrivers(chosen, history, monthFilter){
+  // Apply month filter first when aggregating
+  const pool = (monthFilter && monthFilter !== 'all')
+    ? history.filter(h => periodMonthLabel(h.period) === monthFilter)
+    : history;
   if(chosen==='aggregated'){
-    const allNames=[...new Set(history.flatMap(h=>h.drivers.map(d=>d.name)))];
+    const allNames=[...new Set(pool.flatMap(h=>h.drivers.map(d=>d.name)))];
     return allNames.map(name=>{
       let net=0,orders=0,hours=0,accept=0,cnt=0,tier='Active',isActive=false,cats='';
-      history.forEach(h=>{ const d=h.drivers.find(x=>x.name===name); if(d){net+=d.netEarnings||0;orders+=d.orders||0;hours+=d.hoursOnline||0;accept+=d.acceptance||0;cnt++;tier=d.tier?.englishName||tier;isActive=isActive||!!d.isActive;cats=cats||d.activeCategories||'';} });
+      pool.forEach(h=>{ const d=h.drivers.find(x=>x.name===name); if(d){net+=d.netEarnings||0;orders+=d.orders||0;hours+=d.hoursOnline||0;accept+=d.acceptance||0;cnt++;tier=d.tier?.englishName||tier;isActive=isActive||!!d.isActive;cats=cats||d.activeCategories||'';} });
       return {name,netEarnings:net,orders,hoursOnline:hours,acceptance:cnt?accept/cnt:0,tier:{englishName:tier},isActive,activeCategories:cats};
     });
   }
-  return [...(history.find(h=>h.period===chosen)?.drivers||[])];
+  return [...(pool.find(h=>h.period===chosen)?.drivers||[])];
 }
 function smBuildStars(drivers, W, H){
   const cx=W/2, cy=H/2;
@@ -3244,11 +3254,46 @@ function smBuildStars(drivers, W, H){
   return stars;
 }
 function smPopulatePeriodSel(history){
-  const sel=document.getElementById('smPeriodSelect');
-  if(!sel||sel.options.length) return;
-  ['aggregated',...history.map(h=>h.period)].forEach(p=>{
-    const o=document.createElement('option');o.value=p;o.textContent=p==='aggregated'?'All Time':p;sel.appendChild(o);
-  });
+  const monthSel = document.getElementById('smMonthSel');
+  const daySel   = document.getElementById('smPeriodSelect');
+  if (!monthSel || !daySel) return;
+
+  // Build unique month list (e.g. "Jun 2026") preserving order newest-first
+  const months = [...new Set(history.map(h => periodMonthLabel(h.period)).filter(Boolean))];
+
+  // Populate month dropdown (only if empty to avoid losing selection)
+  if (!monthSel.options.length) {
+    const allOpt = document.createElement('option'); allOpt.value='all'; allOpt.textContent='All Months'; monthSel.appendChild(allOpt);
+    months.forEach(m => { const o=document.createElement('option'); o.value=m; o.textContent=m; monthSel.appendChild(o); });
+  }
+
+  smPopulateDaySel(history);
+}
+function smPopulateDaySel(history){
+  const monthSel = document.getElementById('smMonthSel');
+  const daySel   = document.getElementById('smPeriodSelect');
+  if (!monthSel || !daySel) return;
+  const activeMonth = monthSel.value || 'all';
+  const prevDay     = daySel.value;
+  daySel.innerHTML  = '';
+  const allOpt = document.createElement('option'); allOpt.value='aggregated'; allOpt.textContent='All Days'; daySel.appendChild(allOpt);
+  const filtered = activeMonth === 'all' ? history : history.filter(h => periodMonthLabel(h.period) === activeMonth);
+  filtered.forEach(h => { const o=document.createElement('option'); o.value=h.period; o.textContent=h.period; daySel.appendChild(o); });
+  // Restore previous selection if still valid
+  if (prevDay && [...daySel.options].some(o=>o.value===prevDay)) daySel.value=prevDay;
+}
+function smOnMonthChange(){
+  const history = getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
+  smPopulateDaySel(history);
+  smOnPeriodChange();
+}
+// Helper: convert a period string to a month label like "Jun 2026"
+function periodMonthLabel(period) {
+  if (!period) return '';
+  const mk = periodMonthKey(period); // e.g. "2026-06"
+  if (!mk) return '';
+  const [y, m] = mk.split('-').map(Number);
+  return MONTH_NAMES[m-1] + ' ' + y;
 }
 function smBuildCatBar(drivers){
   const bar=document.getElementById('smCatBar'); if(!bar) return;
@@ -3313,6 +3358,10 @@ function smTimeLapseStep(){
   const period=history[smTimeLapseIndex].period;
   const sel=document.getElementById('smPeriodSelect');
   if(sel) sel.value=period;
+  // Sync month selector to match the timelapse period
+  const mLbl=periodMonthLabel(period);
+  const mSel=document.getElementById('smMonthSel');
+  if(mSel&&mLbl&&[...mSel.options].some(o=>o.value===mLbl)) mSel.value=mLbl;
   document.getElementById('smFrameLabel').textContent=`${smTimeLapseIndex+1} / ${history.length}`;
   // Warp: save current positions
   smWarpFrom=smStars.map(s=>({x:s.x,y:s.y}));
@@ -3346,9 +3395,11 @@ function renderStarMap(skipPopulate){
   if(!sel||!lbl) return;
   if(!skipPopulate) smPopulatePeriodSel(history);
   const chosen=sel.value||'aggregated';
-  lbl.textContent=chosen==='aggregated'?'All Time':chosen;
+  const activeMonth=(document.getElementById('smMonthSel')?.value)||'all';
+  const monthLabel=activeMonth!=='all'?activeMonth:'';
+  lbl.textContent=chosen==='aggregated'?(monthLabel?monthLabel+' — All Days':'All Time'):chosen;
 
-  const drivers=smBuildDrivers(chosen, history);
+  const drivers=smBuildDrivers(chosen, history, activeMonth);
   if(!drivers.length){ document.getElementById('starMapCanvas')?.getContext('2d')?.clearRect(0,0,9999,9999); return; }
 
   smCanvas=document.getElementById('starMapCanvas');
@@ -4118,9 +4169,6 @@ function renderSmOpsView(){
 
 // ── Cinematic Model Info Panel ──
 const SM_MODEL_INFO={
-  'A':{ title:'Account + Car Rental', sub:'Foreigner rents both account & vehicle from fleet',
-    desc:'Fleet provides the Bolt driver account and the car. Driver pays monthly rent for both. Fleet earns two rental streams. Common with new foreign drivers.',
-    fields:[{l:'Account Rent',c:'#00D4FF',dir:'IN',d:'Monthly fee for Bolt account access'},{l:'Car Rent',c:'#00D4FF',dir:'IN',d:'Monthly vehicle rental fee'},{l:'Fleet Cut',c:'#00FFB3',dir:'IN',d:'Optional % or flat from earnings'}] },
   'B':{ title:'Own Car (Account Rent)', sub:'Foreigner brings own vehicle, rents account only',
     desc:'Driver owns or has arranged their vehicle. Fleet provides the Bolt account only. Lower overhead — one rental stream. Driver has more independence.',
     fields:[{l:'Account Rent',c:'#00D4FF',dir:'IN',d:'Monthly fee for account access'},{l:'Fleet Cut',c:'#00FFB3',dir:'IN',d:'Optional commission on earnings'}] },
@@ -4130,9 +4178,6 @@ const SM_MODEL_INFO={
   'D':{ title:'Saudi Own', sub:'Saudi national — owns account & vehicle',
     desc:'Saudi citizen who owns their own Bolt account and car. Partners with fleet for management, admin, and operational support only. Fleet takes a management cut.',
     fields:[{l:'Fleet Cut',c:'#00FFB3',dir:'IN',d:'% of earnings for management services'}] },
-  'E':{ title:'Foreign (Saudi Account)', sub:'Foreigner with own Saudi Bolt account',
-    desc:'Foreign national who holds their own Saudi Bolt account. May or may not use a fleet vehicle. Hybrid arrangement — account is theirs, vehicle situation varies.',
-    fields:[{l:'Car Rent',c:'#00D4FF',dir:'IN',d:'If using fleet vehicle (optional)'},{l:'Fleet Cut',c:'#00FFB3',dir:'IN',d:'Management & operational commission'}] },
 };
 
 function smOpenModelPanel(m){
@@ -5028,7 +5073,7 @@ function renderCaptains() {
     <div class="ctrl-group">
       <span class="ctrl-group-label">Model</span>
       <button class="sort-btn ${sumModelFilter==='all'?'active':''}" onclick="setSumModelFilter('all')" style="font-size:10px;padding:4px 9px">All</button>
-      ${['A','B','C','D','E'].map(m=>`<button class="sort-btn model-badge model-${m} ${sumModelFilter===m?'active':''}" onclick="setSumModelFilter('${m}')" style="width:26px;height:26px;padding:0;font-family:var(--mono);font-size:10px;font-weight:700;border-radius:2px" title="Filter Model ${m}">${m}</button>`).join('')}
+      ${['B','C','D'].map(m=>`<button class="sort-btn model-badge model-${m} ${sumModelFilter===m?'active':''}" onclick="setSumModelFilter('${m}')" style="width:26px;height:26px;padding:0;font-family:var(--mono);font-size:10px;font-weight:700;border-radius:2px" title="Filter Model ${m}">${m}</button>`).join('')}
     </div>
   ` : '';
   const searchBar = captainView === 'captain' ? `
@@ -5409,8 +5454,13 @@ function buildCourierSummaryTable(entries, searchFilter) {
   };
   const modelBadge = name => {
     const m = getModel(name);
-    const cls = ['A','B','C','D','E'].includes(m) ? `model-${m}` : 'model-X';
+    const cls = ['B','C','D'].includes(m) ? `model-${m}` : 'model-X';
     return `<span class="model-badge ${cls}" title="Model ${m}">${m}</span>`;
+  };
+  const funnelBadge = name => {
+    const f = getCourierProfile(name)?.funnel;
+    if (!f) return '';
+    return `<span class="funnel-badge funnel-${f}" title="Funnel: ${f}">${f}</span>`;
   };
 
   // Apply model filter
@@ -5418,7 +5468,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
   if (sumModelFilter !== 'all') {
     filtered = couriers.filter(c => {
       const m = getModel(c.name);
-      return sumModelFilter === 'none' ? !['A','B','C','D','E'].includes(m) : m === sumModelFilter;
+      return sumModelFilter === 'none' ? !['B','C','D'].includes(m) : m === sumModelFilter;
     });
   }
   if (!filtered.length && sumModelFilter !== 'all') {
@@ -5431,7 +5481,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const rows = filtered.map(c => {
     const foreign = lookupForeignName(c.name);
     const displayName = foreign || c.name;
-    const badge = modelBadge(c.name);
+    const badge = modelBadge(c.name) + funnelBadge(c.name);
     const nameHTML = foreign
       ? `<div class="d-name">${c.name}${badge}</div><div class="d-foreign">${foreign}</div>`
       : `<div class="d-name">${c.name}${badge}</div>`;
@@ -5718,7 +5768,7 @@ function clearAllData() {
 // don't see this exact string, your browser is serving a cached old HTML.
 // Force-refresh with Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac).
 // ═══════════════════════════════════════════
-const BUILD_VERSION = 'v3.3 — 2026-06-02 — fix: full cross-device sync (settings, finance, anchor)';
+const BUILD_VERSION = 'v3.4 — 2026-06-02 — feat: remove models A/E; funnel tag (N/M/Y/H); galaxy month/day filter';
 console.log('%cBolt Dashboard ' + BUILD_VERSION, 'color:#34d186;font-weight:bold');
 
 // ═══════════════════════════════════════════
@@ -6245,7 +6295,7 @@ function defaultProfile() {
   return { model:'C', modelCustom:null,
     accountRent:{dir:'NONE',amount:0}, carRent:{dir:'NONE',amount:0},
     salary:0, fleetCut:{type:'NONE',value:0},
-    other:{label:'',dir:'NONE',amount:0}, notes:'', startDate: null };
+    other:{label:'',dir:'NONE',amount:0}, notes:'', startDate: null, funnel: null };
 }
 // Returns the effective monthly target for a driver, prorated if they started mid-month
 function getProratedTarget(driverName, baseTarget, pInfo) {
@@ -7186,11 +7236,9 @@ function buildFinanceModals() {
       </div>
       <div class="fin-form-row"><label>Model</label>
         <select id="cpModel" onchange="onCpModelChange(this.value)">
-          <option value="A">A — Foreigner rents account + car</option>
           <option value="B">B — Foreigner brings own car (rents account)</option>
           <option value="C">C — Salaried (fleet operates everything)</option>
           <option value="D">D — Saudi drives himself (own everything)</option>
-          <option value="E">E — Foreigner with own Saudi account</option>
           <option value="Custom">Custom…</option>
         </select>
         <input type="text" id="cpModelCustom" placeholder="Type custom model name" style="margin-top:6px;display:none;width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box">
@@ -7238,6 +7286,15 @@ function buildFinanceModals() {
       <div class="fin-form-row"><label>Start Date (for prorated monthly target)</label>
         <input type="date" id="cpStartDate" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box">
         <div style="font-size:11px;color:var(--text-muted);margin-top:4px">If set, the 6k target is prorated for the courier's first month. Leave blank for full target always.</div>
+      </div>
+      <div class="fin-form-row"><label>Funnel Source</label>
+        <select id="cpFunnel">
+          <option value="">— none —</option>
+          <option value="N">N</option>
+          <option value="M">M</option>
+          <option value="Y">Y</option>
+          <option value="H">H</option>
+        </select>
       </div>
       <div class="fin-form-row"><label>Notes (optional)</label>
         <input type="text" id="cpNotes" placeholder="Free text — e.g. Saudi owner name">
@@ -7363,6 +7420,7 @@ function openCourierProfileModal(name) {
   document.getElementById('cpOtherAmount').value = profile.other?.amount || '';
   document.getElementById('cpNotes').value = profile.notes || '';
   document.getElementById('cpStartDate').value = profile.startDate || '';
+  document.getElementById('cpFunnel').value = profile.funnel || '';
   document.getElementById('courierProfileModal').classList.add('open');
 }
 function closeCourierProfileModal() { document.getElementById('courierProfileModal').classList.remove('open'); }
@@ -7396,7 +7454,8 @@ function saveCourierProfileFromModal() {
     fleetCut: { type: document.getElementById('cpFleetCutType').value, value: parseFloat(document.getElementById('cpFleetCutValue').value) || 0 },
     other: { label: document.getElementById('cpOtherLabel').value || '', dir: document.getElementById('cpOtherDir').value, amount: parseFloat(document.getElementById('cpOtherAmount').value) || 0 },
     notes: document.getElementById('cpNotes').value || '',
-    startDate: document.getElementById('cpStartDate').value || null
+    startDate: document.getElementById('cpStartDate').value || null,
+    funnel: document.getElementById('cpFunnel').value || null
   };
   upsertCourierProfile(name, profile);
   closeCourierProfileModal();
