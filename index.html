@@ -5381,19 +5381,29 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const target = s.monthlyTarget;
 
   const map = {};
+  const blank = name => ({ name, days:0, gross:0, net:0, campaign:0, rides:0, dist:0, hrs:0, frSum:0, acSum:0, utSum:0, rDays:0, cashEarnings:0, cashGap:0, minActualPayout:Infinity });
   entries.forEach(h => {
-    h.drivers.filter(d => d.isActive).forEach(d => {
-      if (!map[d.name]) map[d.name] = { name:d.name, days:0, gross:0, net:0, campaign:0, rides:0, dist:0, hrs:0, frSum:0, acSum:0, utSum:0, rDays:0, cashEarnings:0, cashGap:0, minActualPayout:Infinity };
+    // Include ALL drivers from CSV (not just isActive) so zero-order days still surface the captain
+    h.drivers.forEach(d => {
+      if (!d.name) return;
+      if (!map[d.name]) map[d.name] = blank(d.name);
       const m = map[d.name];
-      m.days++; m.gross+=sN(d.grossEarnings); m.net+=sN(d.netEarnings); m.campaign+=sN(d.campaign);
-      m.rides+=sN(d.orders); m.dist+=sN(d.distanceTotal); m.hrs+=sN(d.hoursOnline);
-      m.cashEarnings+=sN(d.cashEarnings); m.cashGap+=sN(d.cashGap);
-      if (sN(d.actualPayout) < m.minActualPayout) m.minActualPayout = sN(d.actualPayout);
-      if (accVal(d) > 0 || sN(d.utilization) > 0) {
-        m.frSum+=sN(d.finishRate); m.acSum+=accVal(d);
-        m.utSum+=sN(d.utilization); m.rDays++;
+      // Only accumulate stats for days they actually worked (had orders)
+      if (d.isActive) {
+        m.days++; m.gross+=sN(d.grossEarnings); m.net+=sN(d.netEarnings); m.campaign+=sN(d.campaign);
+        m.rides+=sN(d.orders); m.dist+=sN(d.distanceTotal); m.hrs+=sN(d.hoursOnline);
+        m.cashEarnings+=sN(d.cashEarnings); m.cashGap+=sN(d.cashGap);
+        if (sN(d.actualPayout) < m.minActualPayout) m.minActualPayout = sN(d.actualPayout);
+        if (accVal(d) > 0 || sN(d.utilization) > 0) {
+          m.frSum+=sN(d.finishRate); m.acSum+=accVal(d);
+          m.utSum+=sN(d.utilization); m.rDays++;
+        }
       }
     });
+  });
+  // Also include profile-only drivers (have a profile but no CSV entry in this period)
+  Object.keys(loadCourierProfiles()).forEach(k => {
+    if (!Object.keys(map).some(n => driverKey(n) === k)) map[k] = blank(k);
   });
 
   // Compute derived values. Note: d.netEarnings already includes campaign (Bolt includes it in gross→net).
@@ -5481,7 +5491,9 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const rows = filtered.map(c => {
     const foreign = lookupForeignName(c.name);
     const displayName = foreign || c.name;
-    const badge = modelBadge(c.name) + funnelBadge(c.name);
+    const isBlocked = !!getCourierProfile(c.name)?.blocked;
+    const badge = modelBadge(c.name) + funnelBadge(c.name)
+      + (isBlocked ? `<span style="display:inline-flex;align-items:center;font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;margin-left:4px;background:rgba(255,68,102,.15);border:1px solid rgba(255,68,102,.4);color:var(--red);letter-spacing:.06em">🚫 BLOCKED</span>` : '');
     const nameHTML = foreign
       ? `<div class="d-name">${c.name}${badge}</div><div class="d-foreign">${foreign}</div>`
       : `<div class="d-name">${c.name}${badge}</div>`;
@@ -5524,7 +5536,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
       ? `${fmt(c.net)} <span style="font-size:10px;color:var(--green);font-weight:600" title="Net includes ${fmt(c.campaign)} SAR Bolt bonus">★${fmt(c.campaign)}</span>`
       : `${fmt(c.net)}`;
 
-    return `<tr class="driver-row" style="cursor:pointer" ${clickAttr}>
+    return `<tr class="driver-row" style="cursor:pointer;${isBlocked?'opacity:.55;background:rgba(255,68,102,.04)':''}" ${clickAttr}>
       <td><div class="driver-cell"><div class="avatar">${displayName.charAt(0).toUpperCase()}</div><div>${nameHTML}${owesBadge}${cashBadgeHtml}</div></div></td>
       <td class="td-r" style="color:var(--text-muted)">${c.days}d</td>
       <td class="td-r">${earningsHtml} <span style="font-size:11px;color:var(--text-muted)">/ ${fmt(c.gross)} gross</span></td>
@@ -5768,7 +5780,7 @@ function clearAllData() {
 // don't see this exact string, your browser is serving a cached old HTML.
 // Force-refresh with Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac).
 // ═══════════════════════════════════════════
-const BUILD_VERSION = 'v3.4 — 2026-06-02 — feat: remove models A/E; funnel tag (N/M/Y/H); galaxy month/day filter';
+const BUILD_VERSION = 'v3.5 — 2026-06-02 — fix: captain tab shows all drivers; blocked captain flag';
 console.log('%cBolt Dashboard ' + BUILD_VERSION, 'color:#34d186;font-weight:bold');
 
 // ═══════════════════════════════════════════
@@ -6295,7 +6307,7 @@ function defaultProfile() {
   return { model:'C', modelCustom:null,
     accountRent:{dir:'NONE',amount:0}, carRent:{dir:'NONE',amount:0},
     salary:0, fleetCut:{type:'NONE',value:0},
-    other:{label:'',dir:'NONE',amount:0}, notes:'', startDate: null, funnel: null };
+    other:{label:'',dir:'NONE',amount:0}, notes:'', startDate: null, funnel: null, blocked: false };
 }
 // Returns the effective monthly target for a driver, prorated if they started mid-month
 function getProratedTarget(driverName, baseTarget, pInfo) {
@@ -7299,6 +7311,13 @@ function buildFinanceModals() {
       <div class="fin-form-row"><label>Notes (optional)</label>
         <input type="text" id="cpNotes" placeholder="Free text — e.g. Saudi owner name">
       </div>
+      <div class="fin-form-row">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="cpBlocked" class="checkbox-toggle">
+          <span>🚫 Mark as Blocked</span>
+          <span style="font-size:11px;color:var(--text-muted)">(captain is suspended / no longer active)</span>
+        </label>
+      </div>
       <div class="fin-modal-actions">
         <button class="finance-btn finance-btn-secondary" onclick="closeCourierProfileModal()">Cancel</button>
         <button class="finance-btn finance-btn-primary" onclick="saveCourierProfileFromModal()">Save Profile</button>
@@ -7421,6 +7440,7 @@ function openCourierProfileModal(name) {
   document.getElementById('cpNotes').value = profile.notes || '';
   document.getElementById('cpStartDate').value = profile.startDate || '';
   document.getElementById('cpFunnel').value = profile.funnel || '';
+  document.getElementById('cpBlocked').checked = !!profile.blocked;
   document.getElementById('courierProfileModal').classList.add('open');
 }
 function closeCourierProfileModal() { document.getElementById('courierProfileModal').classList.remove('open'); }
@@ -7455,7 +7475,8 @@ function saveCourierProfileFromModal() {
     other: { label: document.getElementById('cpOtherLabel').value || '', dir: document.getElementById('cpOtherDir').value, amount: parseFloat(document.getElementById('cpOtherAmount').value) || 0 },
     notes: document.getElementById('cpNotes').value || '',
     startDate: document.getElementById('cpStartDate').value || null,
-    funnel: document.getElementById('cpFunnel').value || null
+    funnel: document.getElementById('cpFunnel').value || null,
+    blocked: document.getElementById('cpBlocked').checked || false
   };
   upsertCourierProfile(name, profile);
   closeCourierProfileModal();
