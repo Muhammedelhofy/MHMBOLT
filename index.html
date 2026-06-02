@@ -5690,7 +5690,12 @@ async function deleteHistoryEntry(period) {
 // ═══════════════════════════════════════════
 // UTILS
 // ═══════════════════════════════════════════
-function fmt(n) { if (n===null||n===undefined) return '—'; return Math.round(n).toLocaleString('en-US'); }
+function fmt(n) {
+  if (n===null||n===undefined) return '—';
+  const f = parseFloat((+n).toFixed(2));
+  if (f % 1 === 0) return f.toLocaleString('en-US');
+  return f.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
 function toast(msg) {
   const el=document.getElementById('toast');
   el.textContent=msg; el.classList.add('show');
@@ -5713,7 +5718,7 @@ function clearAllData() {
 // don't see this exact string, your browser is serving a cached old HTML.
 // Force-refresh with Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac).
 // ═══════════════════════════════════════════
-const BUILD_VERSION = 'v3.1 — 2026-05-31 — feat: Payment Transfer Tracking (auto-status, backlog hint)';
+const BUILD_VERSION = 'v3.2 — 2026-06-02 — fix: exact SAR decimals (no rounding); Transfer Log Sun/Wed only';
 console.log('%cBolt Dashboard ' + BUILD_VERSION, 'color:#34d186;font-weight:bold');
 
 // ═══════════════════════════════════════════
@@ -6290,10 +6295,15 @@ function saveTransferLog(o) { localStorage.setItem(TRANSFER_LOG_KEY, JSON.string
 
 function recordTransfersFromUpload(cycleDateYMD, drivers) {
   if (!cycleDateYMD || !drivers || !drivers.length) return;
+  const dow = parseLocalDate(cycleDateYMD).getDay();
+  const isBoltPayDay = dow === 0 || dow === 3; // Bolt only pays Sun(0) or Wed(3)
   const entries = [];
   drivers.forEach(d => {
     const amount = d.actualPayout || 0;
-    if (amount === 0) return; // skip — no Bolt transfer for this driver this cycle
+    if (amount === 0) return;
+    // Positive transfers only record on Sun/Wed — Bolt payment days.
+    // Negative transfers (reversals) are recorded on any day.
+    if (amount > 0 && !isBoltPayDay) return;
     entries.push({
       name:        d.name,
       amount:      +amount.toFixed(2),
@@ -6957,12 +6967,17 @@ function renderFinanceTransferView() {
   const countReversed    = enriched.filter(e => e.status === 'REVERSED').length;
 
   // Build cycle selector from all logged transfer dates
+  const selectedDow = parseLocalDate(selectedCycle).getDay();
+  const selectedIsPayDay = selectedDow === 0 || selectedDow === 3;
   const cycleOpts = cycleDates.map(d => {
     const dt  = parseLocalDate(d);
-    const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()];
-    const lbl = dow + ' ' + dt.getDate() + ' ' + MONTH_NAMES[dt.getMonth()] + ' ' + dt.getFullYear();
+    const dow = dt.getDay();
+    const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow];
+    const isPayDay = dow === 0 || dow === 3;
+    const lbl = dayName + ' ' + dt.getDate() + ' ' + MONTH_NAMES[dt.getMonth()] + ' ' + dt.getFullYear();
     const n   = (log[d] || []).filter(e => e.amount !== 0).length;
-    return `<option value="${d}" ${d === selectedCycle ? 'selected' : ''}>${lbl}  (${n} driver${n!==1?'s':''})</option>`;
+    const warn = !isPayDay ? ' ⚠ not a pay day' : '';
+    return `<option value="${d}" ${d === selectedCycle ? 'selected' : ''}>${lbl}  (${n} driver${n!==1?'s':''})${warn}</option>`;
   }).join('');
 
   // Per-driver rows, sorted by absolute amount descending
@@ -7008,6 +7023,12 @@ function renderFinanceTransferView() {
       </tr>`;
     }).join('');
 
+  const notPayDayBanner = !selectedIsPayDay
+    ? `<div style="background:rgba(255,170,0,.1);border-bottom:1px solid rgba(255,170,0,.25);padding:10px 20px;font-size:12px;color:var(--amber)">
+        ⚠ <strong>${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][selectedDow]} ${selectedCycle}</strong> is not a Bolt payment day (Sun/Wed). These entries may be from a mis-dated CSV. New uploads on non-pay days will no longer record positive transfers.
+      </div>`
+    : '';
+
   el.innerHTML = `
     <div class="finance-section">
       <div class="finance-section-header">
@@ -7017,6 +7038,7 @@ function renderFinanceTransferView() {
           <select class="kpi-select" onchange="setFinanceCycle(this.value)" style="min-width:260px">${cycleOpts}</select>
         </div>
       </div>
+      ${notPayDayBanner}
 
       <!-- Fleet summary for this cycle -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:16px 20px;background:var(--bg-card2);border-bottom:1px solid var(--border)">
