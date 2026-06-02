@@ -112,8 +112,8 @@ body::after {
 .driver-table tr.driver-row:hover td { background:rgba(0,212,255,.05); }
 .driver-table tr.inactive-row td { opacity:.3; }
 .driver-cell { display:flex; align-items:center; gap:10px; }
-.avatar { width:32px; height:32px; border-radius:2px; background:rgba(0,255,179,.08); border:1px solid rgba(0,255,179,.28); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:13px; color:var(--bolt-green); flex-shrink:0; }
-.avatar.av-inactive { background:rgba(255,255,255,.03); border-color:rgba(255,255,255,.08); color:var(--text-muted); }
+.avatar { width:32px; height:32px; border-radius:2px; background:rgba(0,212,255,.07); border:1px solid rgba(0,212,255,.3); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:13px; color:var(--cyan); flex-shrink:0; text-shadow:0 0 8px rgba(0,212,255,.5); }
+.avatar.av-inactive { background:rgba(255,255,255,.03); border-color:rgba(255,255,255,.08); color:var(--text-muted); text-shadow:none; }
 .d-name  { font-weight:600; font-size:13px; white-space:nowrap; color:var(--text); }
 .d-meta  { font-size:11px; color:var(--text-muted); }
 .tier { font-size:9px; font-weight:700; padding:3px 8px; border-radius:2px; white-space:nowrap; letter-spacing:.08em; text-transform:uppercase; }
@@ -122,6 +122,13 @@ body::after {
 .tier-gold  { background:rgba(255,170,0,.1);   border:1px solid rgba(255,170,0,.3);   color:var(--amber); }
 .tier-active{ background:rgba(0,255,179,.08);  border:1px solid rgba(0,255,179,.28);  color:var(--bolt-green); }
 .tier-none  { background:transparent; border:1px solid var(--border); color:var(--text-muted); }
+/* ── Per-model badge colours ── */
+.model-x    { background:rgba(0,212,255,.1);   border:1px solid rgba(0,212,255,.4);   color:#00D4FF; box-shadow:0 0 8px rgba(0,212,255,.25);  letter-spacing:.12em; }
+.model-y    { background:rgba(168,85,247,.12);  border:1px solid rgba(168,85,247,.4);  color:#C084FC; box-shadow:0 0 8px rgba(168,85,247,.28); letter-spacing:.12em; }
+.model-z    { background:rgba(255,170,0,.1);    border:1px solid rgba(255,170,0,.38);  color:#FFAA00; box-shadow:0 0 8px rgba(255,170,0,.22);  letter-spacing:.12em; }
+.model-a    { background:rgba(20,184,166,.1);   border:1px solid rgba(20,184,166,.4);  color:#2DD4BF; box-shadow:0 0 8px rgba(20,184,166,.22); letter-spacing:.12em; }
+.model-e    { background:rgba(244,63,94,.1);    border:1px solid rgba(244,63,94,.35);  color:#FB7185; box-shadow:0 0 8px rgba(244,63,94,.2);   letter-spacing:.12em; }
+.model-custom{ background:rgba(148,163,184,.08); border:1px solid rgba(148,163,184,.3); color:#94A3B8; box-shadow:none; letter-spacing:.12em; }
 .kv      { font-weight:600; font-family:var(--mono); color:var(--cyan); }
 .kv-muted{ color:var(--text-muted); font-family:var(--mono); font-size:12px; }
 .c-red   { color:var(--red);        font-weight:600; }
@@ -223,7 +230,7 @@ body::after {
 .modal-panel { position:fixed; top:0; right:0; bottom:0; width:480px; max-width:100vw; background:#030D18; border-left:1px solid rgba(0,212,255,.18); z-index:201; transform:translateX(100%); transition:transform .25s ease; display:flex; flex-direction:column; overflow:hidden; box-shadow:-12px 0 40px rgba(0,0,0,.8); }
 .modal-panel.open { transform:translateX(0); }
 .modal-header { padding:18px 20px 14px; border-bottom:1px solid rgba(0,212,255,.1); display:flex; align-items:flex-start; gap:12px; }
-.modal-avatar { width:44px; height:44px; border-radius:3px; background:rgba(0,255,179,.07); border:1px solid rgba(0,255,179,.35); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:18px; color:var(--bolt-green); flex-shrink:0; text-shadow:var(--glow-green); }
+.modal-avatar { width:44px; height:44px; border-radius:3px; background:rgba(0,212,255,.07); border:1px solid rgba(0,212,255,.35); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:18px; color:var(--cyan); flex-shrink:0; text-shadow:0 0 12px rgba(0,212,255,.6); }
 .modal-driver-name { font-size:16px; font-weight:700; color:var(--text); }
 .modal-driver-meta { font-size:12px; color:var(--text-muted); margin-top:3px; }
 .modal-close { margin-left:auto; width:32px; height:32px; display:flex; align-items:center; justify-content:center; cursor:pointer; border-radius:2px; background:transparent; border:1px solid var(--border); font-size:16px; color:var(--text-muted); flex-shrink:0; transition:all .15s; }
@@ -799,6 +806,131 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
 .summary-card:hover::before,
 .summary-card:hover::after { border-color:rgba(0,212,255,.7)!important; animation:corner-glow 1.5s ease infinite; }
 
+/* ══════════════════════════════════════════
+   HOLOGRAPHIC EFFECTS SYSTEM
+   ══════════════════════════════════════════ */
+
+/* ── A: Driver modal — top glow bar + scanline sweep ── */
+@keyframes holo-modal-scan {
+  0%   { top:0; opacity:0; }
+  5%   { opacity:.8; }
+  92%  { opacity:.5; }
+  100% { top:100%; opacity:0; }
+}
+.modal-panel::before {
+  content:'';
+  position:absolute; top:0; left:0; right:0; height:1px; z-index:10;
+  background:linear-gradient(90deg,transparent 0%,rgba(0,212,255,.5) 20%,rgba(0,255,179,1) 50%,rgba(0,212,255,.5) 80%,transparent 100%);
+  box-shadow:0 0 14px rgba(0,255,179,.7), 0 0 28px rgba(0,212,255,.4);
+  opacity:0; pointer-events:none; transition:opacity .4s .15s;
+}
+.modal-panel.open::before { opacity:1; }
+.modal-panel::after {
+  content:'';
+  position:absolute; left:0; right:0; height:2px; top:0;
+  background:linear-gradient(90deg,transparent,rgba(0,212,255,.4),rgba(0,255,179,.6),rgba(0,212,255,.4),transparent);
+  pointer-events:none; z-index:9; opacity:0;
+}
+.modal-panel.open::after { animation:holo-modal-scan 2.4s ease .4s 1 forwards; }
+.modal-panel.open {
+  box-shadow:-12px 0 40px rgba(0,0,0,.8),
+             -2px 0 24px rgba(0,212,255,.08),
+             inset 0 0 1px rgba(0,212,255,.15);
+}
+
+/* ── B: Driver row — HUD targeting line (::before is free; ::after is the scan) ── */
+.driver-row::before {
+  content:'';
+  position:absolute; top:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,rgba(0,212,255,.9) 0%,rgba(0,255,179,.5) 45%,transparent 100%);
+  opacity:0; pointer-events:none; z-index:3; transition:opacity .1s;
+}
+.driver-row:hover::before { opacity:1; }
+.driver-row:hover td:first-child { box-shadow:inset 2px 0 0 rgba(0,212,255,.7); }
+
+/* ── C: Full-viewport upload scan beam ── */
+@keyframes upload-sweep {
+  0%   { top:-4px; opacity:0; }
+  4%   { opacity:1; }
+  93%  { opacity:.9; }
+  100% { top:100vh; opacity:0; }
+}
+#uploadScanBeam {
+  position:fixed; left:0; right:0; height:3px; top:-4px;
+  background:linear-gradient(90deg,
+    transparent 0%, rgba(0,255,179,.15) 8%,
+    rgba(0,255,179,.85) 30%, rgba(0,212,255,1) 50%,
+    rgba(0,255,179,.85) 70%, rgba(0,255,179,.15) 92%, transparent 100%);
+  box-shadow:0 0 14px rgba(0,255,179,.85), 0 0 36px rgba(0,212,255,.5), 0 3px 10px rgba(0,255,179,.4);
+  z-index:9997; pointer-events:none; opacity:0;
+}
+#uploadScanBeam.sweep { animation:upload-sweep 1.8s cubic-bezier(.25,.46,.45,.94) forwards; }
+
+/* ── D: KPI card holographic lift ── */
+.summary-grid { perspective:1000px; }
+.summary-card {
+  transform-style:preserve-3d;
+  transition:border-color .2s, box-shadow .2s, transform .35s cubic-bezier(.34,1.56,.64,1);
+  will-change:transform;
+}
+.summary-card:hover {
+  transform:translateY(-8px) rotateX(4deg);
+  box-shadow:
+    0 24px 48px rgba(0,0,0,.65),
+    0 8px 20px rgba(0,212,255,.15),
+    0 0 50px rgba(0,255,179,.05) !important;
+}
+.s-value.holo-scramble { opacity:.65; }
+
+/* ── E: M8 pulse ring ── */
+@keyframes m8-ring-out {
+  0%   { transform:translate(-50%,-50%) scale(.6); opacity:.9; }
+  100% { transform:translate(-50%,-50%) scale(3.2); opacity:0; }
+}
+.m8-ring {
+  position:fixed; width:36px; height:36px;
+  border-radius:50%; border:1.5px solid rgba(0,255,179,.75);
+  pointer-events:none;
+  animation:m8-ring-out .75s ease-out forwards;
+  z-index:650;
+}
+
+/* ── F: Ambient floating particles ── */
+@keyframes particle-float {
+  0%   { transform:translateY(0) translateX(0); opacity:0; }
+  8%   { opacity:.85; }
+  88%  { opacity:.3; }
+  100% { transform:translateY(var(--py,-90px)) translateX(var(--px,8px)); opacity:0; }
+}
+.holo-particle {
+  position:fixed; width:2px; height:2px; border-radius:50%;
+  pointer-events:none;
+  animation:particle-float var(--pdur,5s) ease-in var(--pdel,0s) infinite;
+  z-index:1;
+}
+.holo-particle.cyan  { background:rgba(0,212,255,.9); box-shadow:0 0 5px rgba(0,212,255,1); }
+.holo-particle.green { background:rgba(0,255,179,.8); box-shadow:0 0 5px rgba(0,255,179,.9); }
+.holo-particle.amber { background:rgba(255,170,0,.7); box-shadow:0 0 4px rgba(255,170,0,.8); }
+
+/* ── G: Glitch flash on red-flagged driver rows ── */
+@keyframes glitch-row-bg {
+  0%,87%,100% { background:transparent; }
+  88%  { background:rgba(255,68,102,.06); }
+  90%  { background:transparent; }
+  92%  { background:rgba(255,68,102,.04); }
+  94%  { background:transparent; }
+}
+@keyframes glitch-text {
+  0%,87%,100% { text-shadow:none; clip-path:none; }
+  88% { text-shadow:1.5px 0 rgba(255,68,102,.85),-1.5px 0 rgba(0,212,255,.85); }
+  89% { clip-path:inset(20% 0 60% 0); text-shadow:2px 0 rgba(255,68,102,.9),-2px 0 rgba(0,212,255,.9); }
+  90% { clip-path:none; text-shadow:none; }
+  92% { clip-path:inset(65% 0 8% 0); text-shadow:-1px 0 rgba(255,68,102,.7),1px 0 rgba(0,212,255,.7); }
+  94% { clip-path:none; text-shadow:none; }
+}
+.holo-glitch     { animation:glitch-row-bg 5s ease infinite; }
+.holo-glitch td:first-child { animation:glitch-text 5s ease infinite; }
+
 /* ── Modal month filter (driver detail) ── */
 .modal-month-select { font-size:11px; }
 .modal-month-select.filter-on {
@@ -959,6 +1091,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
 <input type="file" id="fileInput" accept=".csv" onchange="handleFile(this.files[0])">
 <input type="file" id="mappingFileInput" accept=".xlsx,.xls,.csv" onchange="handleMappingFile(this.files[0])">
 <div class="toast" id="toast"></div>
+<div id="uploadScanBeam"></div>
 
 <!-- ── Date Confirmation Modal ── -->
 <div class="confirm-overlay" id="confirmOverlay">
@@ -1870,12 +2003,14 @@ function renderFleet(drivers, period) {
     </div>
     ${buildPagination(totalFiltered, currentPage)}`;
   triggerCountUp();
+  initKpiScramble(); // Effect D
 }
 
 function driverRow(d, target, pInfo, s, rank) {
   const init        = d.name ? d.name[0].toUpperCase() : '?';
   const tierClass   = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Active:'tier-active'})[d.tier.englishName] || 'tier-none';
   const accFlag     = d.acceptance < s.flagAccRed ? 'c-red' : d.acceptance < s.flagAccAmber ? 'c-amber' : 'c-green';
+  const isRedFlagged = d.isActive && (d.acceptance < s.flagAccRed || (d.rating > 0 && d.rating < s.flagRatRed));
   const monthly     = d.monthlyNet || d.netEarnings;
   const foreignName = lookupForeignName(d.name);
   const effTarget = getProratedTarget(d.name, target, pInfo);
@@ -1893,7 +2028,7 @@ function driverRow(d, target, pInfo, s, rank) {
   const rankBadgeCls = rank===1?'rank-1':rank===2?'rank-2':rank===3?'rank-3':'rank-n';
   const rankLabel    = rank<=3 ? rank : rank;
   return `
-    <tr class="driver-row ${d.isActive?'':'inactive-row'}" onclick="openModal('${d.driverId||d.name}')">
+    <tr class="driver-row ${d.isActive?'':'inactive-row'}${isRedFlagged?' holo-glitch':''}" onclick="openModal('${d.driverId||d.name}')">
       <td><div class="driver-cell">
         <span class="rank-badge ${rankBadgeCls}">${rankLabel}</span>
         <div class="avatar ${d.isActive?'':'av-inactive'}">${init}</div>
@@ -2950,6 +3085,7 @@ function startVoiceSearch() {
   voiceRecog.maxAlternatives = 5;
 
   m8SetOrb('listening');
+  fireM8Pulse(); // Effect E
   showVoiceListening('قل أمر أو اسم سائق — EN/AR');
   // Request mic for waveform
   navigator.mediaDevices?.getUserMedia({audio:true}).then(stream=>{
@@ -4553,7 +4689,8 @@ function renderSingleDay(sorted) {
     const clickFn = !isAgg
       ? `openModalForEntry('${d.driverId||d.name}','${dailySelectedDay}')`
       : `openModal('${d.driverId||d.name}')`;
-    return `<tr class="driver-row ${d.isActive?'':'inactive-row'}" onclick="${clickFn}">
+    const isRedFlagged2 = d.isActive && (d.acceptance < s.flagAccRed || (d.rating > 0 && d.rating < s.flagRatRed));
+    return `<tr class="driver-row ${d.isActive?'':'inactive-row'}${isRedFlagged2?' holo-glitch':''}" onclick="${clickFn}">
       <td><div class="driver-cell">
         <div class="avatar ${d.isActive?'':'av-inactive'}">${d.name[0].toUpperCase()}</div>
         <div>
@@ -5631,6 +5768,7 @@ function saveToHistory(period, drivers, filename, pInfo) {
     drivers,
   });
   saveHistory(history);
+  triggerUploadScanBeam(); // Effect C
 }
 
 function setHistSort(col) {
@@ -6306,7 +6444,7 @@ let financeSortCol  = 'netPnL';
 let financeSortAsc  = false;
 function driverKey(name) { return (name||'').trim().toLowerCase(); }
 function defaultProfile() {
-  return { model:'C', modelCustom:null,
+  return { model:'Y', modelCustom:null,
     accountRent:{dir:'NONE',amount:0}, carRent:{dir:'NONE',amount:0},
     salary:0, fleetCut:{type:'NONE',value:0},
     other:{label:'',dir:'NONE',amount:0}, notes:'', startDate: null, funnel: null, blocked: false };
@@ -6677,8 +6815,18 @@ function cycleLabel(ymd) {
   return dow + ' ' + fmtD(ymd) + ' — covers ' + fmtD(win.start) + ' → ' + fmtD(win.end);
 }
 function modelDescription(m) {
-  const map = { A:'Foreigner rents acct + car', B:'Foreigner brings own car', C:'Salaried (fleet operates)', D:'Saudi self-driving', E:'Foreigner w/ own Saudi acct' };
+  const map = {
+    A:'Foreigner rents acct + car',
+    X:'Foreigner brings own car', B:'Foreigner brings own car',
+    Y:'Salaried (fleet operates)',  C:'Salaried (fleet operates)',
+    Z:'Saudi self-driving',         D:'Saudi self-driving',
+    E:'Foreigner w/ own Saudi acct'
+  };
   return map[m] || 'Custom';
+}
+function modelBadgeClass(m) {
+  const map = { A:'model-a', X:'model-x', B:'model-x', Y:'model-y', C:'model-y', Z:'model-z', D:'model-z', E:'model-e' };
+  return 'tier ' + (map[m] || 'model-custom');
 }
 function setFinanceMonth(m) { financeMonth = m; finShowAllCycles = false; renderFinanceTab(); }
 function setFinanceCycle(c) { financeCycle = c; renderFinanceTab(); }
@@ -6731,9 +6879,10 @@ function renderFinanceTab() {
   el.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
       <div style="font-size:18px;font-weight:700;color:var(--text)">Fleet Finance — v2</div>
-      <div style="display:flex;gap:8px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="finance-btn finance-btn-secondary" onclick="exportFinanceCSV()">⬇ Export CSV</button>
         <button class="finance-btn finance-btn-primary" onclick="exportFinanceReport()">🖨 Print Report</button>
+        <button class="finance-btn finance-btn-primary" style="background:rgba(0,255,179,.14);border-color:rgba(0,255,179,.55);color:var(--bolt-green);font-weight:700" onclick="openEomReportModal()">📊 End of Month Report</button>
       </div>
     </div>
     ${anchorBanner}
@@ -6817,7 +6966,7 @@ function renderFinanceCourierView() {
     const nameAttr = escAttr(p.name);
     return `<tr>
       <td><div style="font-weight:600">${p.name}</div>${foreign?`<span class="d-foreign">${foreign}</span>`:''}</td>
-      <td><span class="tier tier-active">${modelLabel}</span></td>
+      <td><span class="${modelBadgeClass(p.model)}">${modelLabel}</span></td>
       <td style="text-align:right">${fmt(p.income)}</td>
       <td style="text-align:right">${signed(p.acctRent)}</td>
       <td style="text-align:right">${signed(p.carRent)}</td>
@@ -6889,7 +7038,7 @@ function renderFinanceModelView() {
   }), { count:0, income:0, costs:0, inflow:0, netPnL:0 });
   const pnlCell = v => `<span style="font-weight:700;color:${v >= 0 ? 'var(--green)' : 'var(--red)'}">${v >= 0 ? '+' : ''}${fmt(v)}</span>`;
   const rows = rollup.map(r => `<tr>
-    <td><span class="tier tier-active">${r.model}</span> <span style="color:var(--text-muted);font-size:11px">${modelDescription(r.model)}</span></td>
+    <td><span class="${modelBadgeClass(r.model)}">${r.model}</span> <span style="color:var(--text-muted);font-size:11px">${modelDescription(r.model)}</span></td>
     <td style="text-align:right">${r.count}</td>
     <td style="text-align:right">${fmt(r.income)}</td>
     <td style="text-align:right;color:var(--green)">${r.inflow>0?'+'+fmt(r.inflow):'—'}</td>
@@ -7259,9 +7408,9 @@ function buildFinanceModals() {
       </div>
       <div class="fin-form-row"><label>Model</label>
         <select id="cpModel" onchange="onCpModelChange(this.value)">
-          <option value="B">B — Foreigner brings own car (rents account)</option>
-          <option value="C">C — Salaried (fleet operates everything)</option>
-          <option value="D">D — Saudi drives himself (own everything)</option>
+          <option value="X">X — Foreigner brings own car (rents account)</option>
+          <option value="Y">Y — Salaried (fleet operates everything)</option>
+          <option value="Z">Z — Saudi drives himself (own everything)</option>
           <option value="Custom">Custom…</option>
         </select>
         <input type="text" id="cpModelCustom" placeholder="Type custom model name" style="margin-top:6px;display:none;width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box">
@@ -7347,8 +7496,8 @@ function buildFinanceModals() {
       </div>
       <div class="fin-form-row"><label><input type="checkbox" id="ovUseModel" class="checkbox-toggle"> Override Model</label>
         <select id="ovModel" style="margin-top:6px">
-          <option value="A">A</option><option value="B">B</option><option value="C">C</option>
-          <option value="D">D</option><option value="E">E</option><option value="Custom">Custom</option>
+          <option value="A">A</option><option value="X">X</option><option value="Y">Y</option>
+          <option value="Z">Z</option><option value="E">E</option><option value="Custom">Custom</option>
         </select>
       </div>
       <div class="fin-form-row"><label><input type="checkbox" id="ovUseAcctRent" class="checkbox-toggle"> Override Account Rent</label>
@@ -7397,6 +7546,36 @@ function buildFinanceModals() {
         <button class="finance-btn finance-btn-secondary" onclick="closeOverrideModal()">Cancel</button>
         <button class="finance-btn finance-btn-primary" onclick="saveOverrideFromModal()">Save Override</button>
       </div>
+    </div>
+  </div>
+
+  <!-- End of Month Report Modal -->
+  <div class="fin-modal-overlay" id="eomReportModal" onclick="if(event.target===this)closeEomReportModal()">
+    <div class="fin-modal" style="width:860px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column">
+      <h3 style="margin-bottom:14px">📊 End of Month Report</h3>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+        <label style="font-size:12px;color:var(--text-muted);white-space:nowrap">Select Month</label>
+        <select id="eomMonthSelect" onchange="renderEomReportTable()" style="padding:5px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:13px;min-width:150px"></select>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="finance-btn finance-btn-secondary" onclick="exportEomReportCSV()">⬇ Export CSV</button>
+          <button class="finance-btn finance-btn-secondary" onclick="closeEomReportModal()">Close</button>
+        </div>
+      </div>
+      <div id="eomReportNote" style="font-size:11px;color:var(--text-muted);margin-bottom:10px;padding:6px 10px;background:rgba(0,212,255,.05);border-radius:4px;border-left:2px solid rgba(0,212,255,.3)"></div>
+      <div style="overflow:auto;flex:1">
+        <table class="finance-table" id="eomReportTable" style="min-width:700px">
+          <thead><tr>
+            <th style="width:36px">#</th>
+            <th>Account Holder Name</th>
+            <th>Email</th>
+            <th>Mobile Number</th>
+            <th style="text-align:right">Month Net Earning (SAR)</th>
+            <th>Date of 1st Trip</th>
+          </tr></thead>
+          <tbody id="eomReportBody"></tbody>
+        </table>
+      </div>
+      <div id="eomReportTotals" style="padding:12px 0 0;border-top:1px solid rgba(0,212,255,.1);margin-top:8px;font-family:var(--mono);font-size:13px;color:var(--bolt-green);text-align:right"></div>
     </div>
   </div>
 
@@ -7704,6 +7883,180 @@ function exportFinanceCSV() {
   toast('CSV exported');
 }
 function exportFinanceReport() { window.print(); }
+
+// ═══════════════════════════════════════════
+// END OF MONTH REPORT
+// ═══════════════════════════════════════════
+
+// Returns the earliest date in `monthKey` where the driver had orders > 0.
+// Period strings are like "22 May 2026" (single day) or "22 May 2026 → 28 May 2026" (range).
+// We use the START date of the period as the work date for display.
+function getDriverFirstTripDateInMonth(driverName, monthKey) {
+  const nk = driverKey(driverName);
+  const [y, m] = monthKey.split('-').map(Number);
+  const targetMonth = m - 1, targetYear = y;
+  const seen = new Set();
+  let earliest = null;
+  for (const h of getHistory()) {
+    if (!entryInMonth(h, targetMonth, targetYear) || seen.has(h.period)) continue;
+    seen.add(h.period);
+    const d = (h.drivers || []).find(x => driverKey(x.name) === nk);
+    if (!d || !(d.orders > 0)) continue;
+    const sk = periodSortKey(h.period);
+    if (earliest === null || sk < earliest.sk) earliest = { sk, period: h.period };
+  }
+  if (!earliest) return '—';
+  const mx = earliest.period.match(/(\d{1,2})\s(\w{3})\s(\d{4})/);
+  return mx ? `${parseInt(mx[1])} ${mx[2]} ${mx[3]}` : earliest.period;
+}
+
+// Returns email + phone for a driver, preferring data from the selected month,
+// falling back to any history entry if not found in that month.
+function getDriverContactInfo(driverName, monthKey) {
+  const nk = driverKey(driverName);
+  const [y, m] = monthKey.split('-').map(Number);
+  const targetMonth = m - 1, targetYear = y;
+  let email = '', phone = '';
+  const hist = getHistory();
+  // First pass: same month (most recent contact data)
+  for (const h of hist) {
+    if (!entryInMonth(h, targetMonth, targetYear)) continue;
+    const d = (h.drivers || []).find(x => driverKey(x.name) === nk);
+    if (d) {
+      if (d.email) email = d.email;
+      if (d.phone) phone = d.phone;
+      if (email && phone) break;
+    }
+  }
+  // Second pass: fall back to any history if still missing
+  if (!email || !phone) {
+    for (const h of hist) {
+      const d = (h.drivers || []).find(x => driverKey(x.name) === nk);
+      if (d) {
+        if (!email && d.email) email = d.email;
+        if (!phone && d.phone) phone = d.phone;
+        if (email && phone) break;
+      }
+    }
+  }
+  return { email, phone };
+}
+
+// Build the full report data for a month: one row per driver who earned > 0 SAR.
+function buildEomReportData(monthKey) {
+  const [y, m] = monthKey.split('-').map(Number);
+  const targetMonth = m - 1, targetYear = y;
+  const driverNames = getDriversInMonth(monthKey);
+  return driverNames.map(name => {
+    const net      = sumDriverNetForMonth(name, targetMonth, targetYear, null);
+    const contact  = getDriverContactInfo(name, monthKey);
+    const firstTrip = getDriverFirstTripDateInMonth(name, monthKey);
+    return { name, email: contact.email, phone: contact.phone, net, firstTrip };
+  })
+  .filter(r => r.net > 0)          // only drivers who earned this month
+  .sort((a, b) => b.net - a.net);  // highest earner first
+}
+
+function openEomReportModal() {
+  const modal = document.getElementById('eomReportModal');
+  if (!modal) return;
+  const months = getAvailableMonths();
+  const sel    = document.getElementById('eomMonthSelect');
+  sel.innerHTML = months.length
+    ? months.map(mk => `<option value="${mk}" ${mk === financeMonth ? 'selected' : ''}>${monthLabel(mk)}</option>`).join('')
+    : `<option value="${financeMonth}">${monthLabel(financeMonth)} (no data)</option>`;
+  if (!sel.value && months.length) sel.value = months[0];
+  modal.classList.add('open');
+  renderEomReportTable();
+}
+
+function closeEomReportModal() {
+  const modal = document.getElementById('eomReportModal');
+  if (modal) modal.classList.remove('open');
+}
+
+function renderEomReportTable() {
+  const sel = document.getElementById('eomMonthSelect');
+  if (!sel) return;
+  const monthKey = sel.value;
+  if (!monthKey) return;
+
+  // Note: current month vs past month
+  const [y, m] = monthKey.split('-').map(Number);
+  const now = new Date();
+  const isCurrent = (now.getFullYear() === y && now.getMonth() === m - 1);
+  const noteEl = document.getElementById('eomReportNote');
+  if (noteEl) {
+    if (isCurrent) {
+      noteEl.textContent = `Current month — showing data through ${now.getDate()} ${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}. The report will include more drivers as you upload more daily CSVs.`;
+    } else {
+      const lastDay = new Date(y, m, 0).getDate();
+      noteEl.textContent = `Full month: 1–${lastDay} ${monthLabel(monthKey)} — all uploaded days are included.`;
+    }
+  }
+
+  const data   = buildEomReportData(monthKey);
+  const tbody  = document.getElementById('eomReportBody');
+  const totDiv = document.getElementById('eomReportTotals');
+  if (!tbody) return;
+
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:28px;color:var(--text-muted)">No driver data for ${monthLabel(monthKey)}.<br>Upload Bolt CSV files for this month first.</td></tr>`;
+    if (totDiv) totDiv.textContent = '';
+    return;
+  }
+
+  tbody.innerHTML = data.map((r, i) => {
+    return `<tr>
+      <td style="text-align:center;font-family:var(--mono);font-weight:700;color:var(--cyan);font-size:12px">${i + 1}</td>
+      <td><div style="font-weight:600">${r.name}</div></td>
+      <td style="color:var(--text-muted);font-size:12px">${r.email || '—'}</td>
+      <td style="color:var(--text-muted);font-size:12px">${r.phone || '—'}</td>
+      <td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--bolt-green)">${fmt(r.net)}</td>
+      <td style="font-family:var(--mono);font-size:12px">${r.firstTrip}</td>
+    </tr>`;
+  }).join('');
+
+  const total = data.reduce((s, r) => s + r.net, 0);
+  if (totDiv) totDiv.innerHTML = `
+    <span style="color:var(--text-muted);font-size:11px;margin-right:12px">${data.length} driver${data.length === 1 ? '' : 's'}</span>
+    <span style="font-size:11px;color:var(--text-muted);margin-right:6px">Total Net Earnings:</span>
+    <span style="font-size:16px;color:var(--bolt-green);text-shadow:var(--glow-green)">${fmt(total)} SAR</span>`;
+}
+
+function exportEomReportCSV() {
+  const sel = document.getElementById('eomMonthSelect');
+  const monthKey = (sel && sel.value) ? sel.value : financeMonth;
+  const data  = buildEomReportData(monthKey);
+  const lines = [
+    `MOHM Fleet — End of Month Report`,
+    `Month: ${monthLabel(monthKey)}`,
+    `Generated: ${new Date().toLocaleString('en-GB')}`,
+    '',
+    'No.,Account Holder Name,Email,Mobile Number,Month Net Earning (SAR),Date of 1st Trip'
+  ];
+  data.forEach((r, i) => {
+    lines.push([
+      i + 1,
+      escCsv(r.name),
+      escCsv(r.email || ''),
+      escCsv(r.phone || ''),
+      r.net.toFixed(2),
+      escCsv(r.firstTrip)
+    ].join(','));
+  });
+  const total = data.reduce((s, r) => s + r.net, 0);
+  lines.push(['', 'TOTAL', '', '', total.toFixed(2), ''].join(','));
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `MOHM_EOM_${monthLabel(monthKey).replace(' ', '_')}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('End of Month report exported ✓');
+}
 
 // ═══════════════════════════════════════════
 // ANALYTICS TAB
@@ -8040,7 +8393,85 @@ function renderAnalytics() {
 }
 
 // ═══════════════════════════════════════════
-// INIT (DOMContentLoaded)
+// ═══════════════════════════════════════════
+// HOLOGRAPHIC EFFECTS SYSTEM
+// ═══════════════════════════════════════════
+
+// ── C: Upload scan beam ──
+function triggerUploadScanBeam() {
+  const beam = document.getElementById('uploadScanBeam');
+  if (!beam) return;
+  beam.classList.remove('sweep');
+  void beam.offsetWidth; // force reflow to restart animation
+  beam.classList.add('sweep');
+  beam.addEventListener('animationend', () => beam.classList.remove('sweep'), { once: true });
+}
+
+// ── D: Number scramble on KPI card hover ──
+function initKpiScramble() {
+  document.querySelectorAll('.summary-card .s-value').forEach(el => {
+    if (el.dataset.holoInit) return;
+    el.dataset.holoInit = '1';
+    el.addEventListener('mouseenter', () => {
+      const original = el.innerHTML;
+      const small    = el.querySelector('small');
+      const smallHtml = small ? small.outerHTML : '';
+      const digits   = '0123456789';
+      let frame = 0;
+      el.classList.add('holo-scramble');
+      const t = setInterval(() => {
+        if (++frame > 7) {
+          clearInterval(t);
+          el.innerHTML = original;
+          el.classList.remove('holo-scramble');
+          return;
+        }
+        const len = Math.max(2, (el.textContent || '').replace(/[^0-9.]/g,'').length || 3);
+        const rand = Array.from({length: len}, () => digits[Math.floor(Math.random() * 10)]).join('');
+        el.innerHTML = rand + smallHtml;
+      }, 48);
+    });
+  });
+}
+
+// ── E: M8 pulse rings ──
+function fireM8Pulse() {
+  const orb = document.getElementById('jarvisOrb');
+  if (!orb) return;
+  const rect = orb.getBoundingClientRect();
+  const cx = rect.left + rect.width  / 2;
+  const cy = rect.top  + rect.height / 2;
+  [0, 220].forEach(delay => {
+    setTimeout(() => {
+      const ring = document.createElement('div');
+      ring.className = 'm8-ring';
+      ring.style.cssText = `left:${cx}px;top:${cy}px;`;
+      document.body.appendChild(ring);
+      setTimeout(() => ring.remove(), 800);
+    }, delay);
+  });
+}
+
+// ── F: Ambient floating particles ──
+function initHoloParticles() {
+  const colors  = ['cyan','cyan','cyan','green','green','amber'];
+  const N       = 22;
+  for (let i = 0; i < N; i++) {
+    const p     = document.createElement('div');
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const dur   = (4 + Math.random() * 5).toFixed(2);
+    const del   = (Math.random() * 8).toFixed(2);
+    const px    = ((Math.random() - 0.5) * 40).toFixed(1);
+    const py    = -(55 + Math.random() * 90);
+    const left  = (Math.random() * 98).toFixed(1);
+    const bottom= (2 + Math.random() * 55).toFixed(1);
+    p.className = `holo-particle ${color}`;
+    p.style.cssText = `left:${left}vw;bottom:${bottom}vh;--pdur:${dur}s;--pdel:${del}s;--px:${px}px;--py:${py}px`;
+    document.body.appendChild(p);
+  }
+}
+
+// ── INIT (DOMContentLoaded)
 // ═══════════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -8072,6 +8503,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   initMissionClock();
   m8UpdateIdleOrb();
+  initHoloParticles(); // Effect F
 });
 
 // ═══════════════════════════════════════════
@@ -8711,6 +9143,7 @@ function m8SmartCommand(arg) {
   const text = (arg != null ? arg : (box ? box.value : '')).trim();
   if (!text) return;
   if (box) box.value = '';
+  fireM8Pulse(); // Effect E
 
   const cmd = parseVoiceCommand(text);
   switch (cmd.type) {
