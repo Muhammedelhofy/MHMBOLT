@@ -926,7 +926,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
     <span onclick="hideM8Picker()" style="cursor:pointer;color:var(--text-muted);font-size:16px;line-height:1">✕</span>
   </div>
   <div style="padding:10px 12px;max-height:420px;overflow-y:auto">
-    <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;padding:5px 8px;background:rgba(0,255,179,.04);border-radius:2px;border-left:2px solid rgba(0,255,179,.3)">🎙 Mic is on — speak a command, or tap a button below</div>
+    <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;padding:5px 8px;background:rgba(0,255,179,.04);border-radius:2px;border-left:2px solid rgba(0,255,179,.3)">🎙 Tap <b>Speak</b> for one voice command, or tap a button below</div>
     <div id="m8BriefCard"></div>
     <div class="m8pick-section">⌨ ASK OR COMMAND</div>
     <div style="display:flex;gap:6px;margin-bottom:10px">
@@ -942,10 +942,9 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
       Try: <span style="color:var(--bolt-green)">a captain's name</span> then <span style="color:var(--bolt-green)">this month</span> / <span style="color:var(--bolt-green)">last month</span> · <span style="color:var(--bolt-green)">who's offline</span> · <span style="color:var(--bolt-green)">top driver</span> · <span style="color:var(--bolt-green)">sort by hours</span> · <span style="color:var(--bolt-green)">yesterday report</span> · <span style="color:var(--bolt-green)">finance</span> · <span style="color:var(--bolt-green)">radar</span>
     </div>
     <div style="margin-top:9px;padding-top:8px;border-top:1px solid rgba(0,255,179,.12);display:flex;align-items:center;justify-content:space-between;gap:8px">
-      <span style="font-size:9px;color:var(--text-muted);letter-spacing:.04em" title="When ON, M8 listens in the background — say &quot;Hofy&quot; or &quot;M8&quot; to open it hands-free">🎙 HANDS-FREE — say &ldquo;Hofy&rdquo; to summon</span>
-      <button id="m8WakeToggle" class="m8pick-btn" onclick="m8ToggleAlwaysListen()" style="padding:3px 12px;font-size:10px">OFF</button>
+      <span style="font-size:9px;color:var(--text-muted);letter-spacing:.04em" title="Tap to speak one command. The mic runs for a single pass, then stops.">🎙 PUSH-TO-TALK — one command per tap</span>
+      <button id="m8TalkBtn" class="m8pick-btn" onclick="m8RestartListen()" style="padding:3px 12px;font-size:10px;color:var(--bolt-green);border-color:rgba(0,255,179,.4)">🎙 Speak</button>
     </div>
-    <div id="m8MicDbg" style="margin-top:7px;font-family:var(--mono);font-size:9px;color:var(--text-muted);line-height:1.5;white-space:pre-wrap;word-break:break-word;min-height:13px" title="Live mic diagnostics — tell support what this shows">mic: idle</div>
     <div id="m8PickResult" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(0,255,179,.15);font-size:11px;line-height:1.6;color:var(--text)"></div>
   </div>
 </div>
@@ -1585,18 +1584,32 @@ function entryMonthYear(h) {
   }
   return null;
 }
-function getMonthlyNet(driverId, driverName, month, year) {
+// True if history entry h belongs to (month,year). Uses entryMonthYear, so an
+// entry WITHOUT periodInfo is still attributed (by the last date in its period
+// string) instead of being silently dropped. month is 0-indexed.
+function entryInMonth(h, month, year) {
+  const my = entryMonthYear(h);
+  return !!my && my.month === month && my.year === year;
+}
+// Canonical "net earnings for one driver in one month" — the SINGLE source of
+// truth behind both the driver modal/targets (getMonthlyNet) and the Finance PnL
+// (computeDriverNetForPeriod), so the two can never disagree. Robust by design:
+// driver match is case/trim-insensitive (driverKey) or by driverId; entries are
+// de-duped by period; sums are NaN-safe (sN); no periodInfo dependency.
+function sumDriverNetForMonth(driverName, month, year, driverId) {
+  const nk = driverKey(driverName);
   const seen = new Set(); let total = 0;
   for (const h of getHistory()) {
-    const my = entryMonthYear(h);
-    if (!my) continue;
-    const inMonth = my.month===month && my.year===year;
-    if (!inMonth || seen.has(h.period)) continue;
+    if (!entryInMonth(h, month, year) || seen.has(h.period)) continue;
     seen.add(h.period);
-    const d = h.drivers.find(d => d.driverId===driverId || d.name===driverName);
-    if (d) total += d.netEarnings;
+    const drivers = Array.isArray(h.drivers) ? h.drivers : [];
+    const d = drivers.find(x => (driverId && x.driverId === driverId) || driverKey(x.name) === nk);
+    if (d) total += sN(d.netEarnings);
   }
   return total;
+}
+function getMonthlyNet(driverId, driverName, month, year) {
+  return sumDriverNetForMonth(driverName, month, year, driverId);
 }
 // All history rows for one driver, oldest→newest, since they first appear.
 // No periodInfo requirement — falls back to period-string ordering.
@@ -2033,7 +2046,7 @@ function openModal(id) {
   }
   const accFlag = d.acceptance<s.flagAccRed?'flag-red':d.acceptance<s.flagAccAmber?'flag-amber':'flag-green';
   const ratFlag = d.rating>0?(d.rating<s.flagRatRed?'flag-red':d.rating<s.flagRatAmber?'flag-amber':'flag-green'):'';
-  const tc      = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Active:'tier-active'})[d.tier.englishName]||'tier-none';
+  const tc      = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Active:'tier-active'})[d.tier?.englishName]||'tier-none';
   // Full history for this driver (since their first working day), not just one month.
   const fullHistory = getDriverAllHistory(d.driverId, d.name);
   // Store everything the body renderer needs so the month filter can re-render
@@ -2298,16 +2311,14 @@ function showM8Picker() {
   const picker = document.getElementById('m8Picker');
   if (!picker) return;
   picker.style.display = 'block';
-  m8WakeMode = true;
-  stopWakeListener();        // command session owns the mic while the panel is open
+  m8WakeMode = true;         // a voice session is active while the panel is open
   m8UpdateBriefCard();
-  m8UpdateWakeToggleUI();
   // Clear the voice toast so it doesn't overlap
   const t = document.getElementById('voiceToast');
   if (t) t.classList.remove('show');
-  // Auto-restart mic so user can speak right away — but hold off while a spoken
+  // Push-to-talk: do ONE listen pass on open — but hold off while the spoken
   // greeting is still playing (otherwise the mic transcribes M8's own voice).
-  // m8Greet() resumes listening via its utterance onend.
+  // m8Greet() fires the single pass via its utterance onend.
   setTimeout(() => { if (!(window.speechSynthesis && window.speechSynthesis.speaking)) m8RestartListen(); }, 200);
 }
 function hideM8Picker() {
@@ -2320,8 +2331,6 @@ function hideM8Picker() {
   if (voiceRecog) { try { voiceRecog.stop(); } catch(e){} voiceRecog = null; }
   try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch(e){}
   m8SetOrb('idle');
-  // Resume hands-free background listening if the user has it on
-  if (m8AlwaysOn) setTimeout(startWakeListener, 500);
 }
 
 // Orb click = toggle the command center. First click greets (spoken, time-aware)
@@ -2378,89 +2387,9 @@ function m8Greet() {
   } catch (e) {}
 }
 
-// ── Hands-free wake word ("M8" / "mate") — optional, user-toggled ───────────
-// A background recognizer that listens only while the picker is CLOSED. On a
-// wake hit it stops itself and opens M8 (so the command recognizer can take the
-// mic). It auto-restarts on end to stay alive, and pauses whenever the picker
-// is open. Off by default; toggled via m8ToggleAlwaysListen (persisted).
-function m8WakeWordHit(text) {
-  return /\b(m8|m\s?8|m\s?eight|mate|matey|mato|hofy|hoffy|hofi|hofey|hovey|hovy|hey m8|hey mate|hey hofy|حوفى|حوفي|هوفي|ماتي|إم\s*8)\b/i.test(text || '');
-}
+// Is the M8 command panel currently open? (guards the single listen pass)
 function m8PickerOpen() { return document.getElementById('m8Picker')?.style.display === 'block'; }
 
-function startWakeListener() {
-  // Never run the wake recognizer while the command recognizer owns the mic
-  // (picker open / wake mode / a live voiceRecog) — two recognizers abort each other.
-  if (!m8AlwaysOn || wakeRecog || voiceRecog || m8WakeMode || m8PickerOpen()) return;
-  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRec) return;
-  let rec; try { rec = new SpeechRec(); } catch (e) { return; }
-  wakeRecog = rec;
-  rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 3;
-  rec.onstart      = () => m8Dbg('wake: listening for "Hofy"/"M8"…', 'wake');
-  rec.onaudiostart = () => m8Dbg('wake: mic live', 'wake');
-  rec.onresult = e => {
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const r = e.results[i];
-      for (let j = 0; j < r.length; j++) {
-        const tx = r[j].transcript;
-        if (r[j] === r[0]) m8Dbg('wake heard: "' + tx.trim() + '"', 'wake');
-        if (m8WakeWordHit(tx)) {
-          try { rec.stop(); } catch (_) {}
-          if (!m8PickerOpen()) { m8Greet(); showM8Picker(); }
-          return;
-        }
-      }
-    }
-  };
-  rec.onerror = err => {
-    if (err.error === 'not-allowed' || err.error === 'service-not-allowed') {
-      m8AlwaysOn = false; localStorage.setItem('m8_always_listen', '0');
-      m8UpdateWakeToggleUI();
-      toast('Mic permission needed for hands-free — allow it, then turn wake word back on');
-      m8Dbg('wake: blocked — allow mic', 'wake');
-      return;
-    }
-    m8Dbg('wake: ' + (err && err.error), 'wake');
-    // Transient errors (no-speech, aborted, network): let onend revive it.
-  };
-  rec.onend = () => {
-    wakeRecog = null;
-    if (m8AlwaysOn && !m8PickerOpen()) setTimeout(startWakeListener, 400); // keep alive
-  };
-  // start() can throw "already started" if the command mic hasn't fully released
-  // yet — retry shortly instead of giving up (this is why "M8" sometimes never
-  // woke after closing the panel).
-  try { rec.start(); }
-  catch (e) { wakeRecog = null; if (m8AlwaysOn && !m8PickerOpen()) setTimeout(startWakeListener, 700); }
-}
-function stopWakeListener() {
-  if (wakeRecog) { try { wakeRecog.stop(); } catch (e) {} wakeRecog = null; }
-}
-function m8ToggleAlwaysListen() {
-  m8AlwaysOn = !m8AlwaysOn;
-  localStorage.setItem('m8_always_listen', m8AlwaysOn ? '1' : '0');
-  m8UpdateWakeToggleUI();
-  if (m8AlwaysOn) {
-    toast('Hands-free ON — say "Hofy" to summon me (starts when this panel closes)');
-    if (!m8PickerOpen()) startWakeListener();
-  } else {
-    stopWakeListener();
-    toast('Hands-free OFF — click the orb to open M8');
-  }
-}
-function m8UpdateWakeToggleUI() {
-  const b = document.getElementById('m8WakeToggle');
-  if (!b) return;
-  b.textContent = m8AlwaysOn ? 'ON' : 'OFF';
-  b.style.color = m8AlwaysOn ? 'var(--bolt-green)' : 'var(--text-muted)';
-  b.style.borderColor = m8AlwaysOn ? 'rgba(0,255,179,.5)' : 'rgba(0,255,179,.2)';
-}
-function m8InitWake() {
-  m8AlwaysOn = (localStorage.getItem('m8_always_listen') === '1');
-  m8UpdateWakeToggleUI();
-  if (m8AlwaysOn) startWakeListener(); // resumes if mic permission already granted
-}
 // Show a result/confirmation INSIDE the picker (keeps the picker open for chaining)
 function m8PickShow(html) {
   const r = document.getElementById('m8PickResult');
@@ -2618,20 +2547,18 @@ document.addEventListener('click', e=>{
 // M8 — Voice Command Engine
 // ════════════════════════════════════════════
 let voiceRecog   = null;
-let m8WakeMode   = false; // true = picker is open and we re-listen after each command
-let wakeRecog    = null;  // background wake-word recognizer (hands-free / always-listen)
-let m8AlwaysOn   = (localStorage.getItem('m8_always_listen') === '1'); // user toggle
+let m8WakeMode   = false; // true = command panel is open (a voice session is active)
 let m8LastHeard  = '';    // last raw transcript M8 captured (for feedback/debug)
 
-// ── Live mic diagnostics ─────────────────────────────────────────────────────
-// Writes to the #m8MicDbg line in the panel AND the console ([M8] prefix), so a
-// "no voice" report becomes debuggable: you can see start/audio/speech/result/
-// error/end events and exact error codes without DevTools.
+// ── Mic diagnostics (console only) ───────────────────────────────────────────
+// Logs each recognition event ([M8] prefix) so a "no voice" report is debuggable
+// from DevTools: start/audio/speech/result/error/end events and exact error codes.
+// (The on-panel #m8MicDbg line was removed with the push-to-talk redesign; this
+// still updates it if a future build re-adds the element.)
 function m8Dbg(msg, tag) {
-  const line = `mic: ${msg}`;
   try { console.log('[M8] ' + (tag ? tag + ' — ' : '') + msg); } catch (_) {}
   const el = document.getElementById('m8MicDbg');
-  if (el) el.textContent = line;
+  if (el) el.textContent = `mic: ${msg}`;
 }
 // Browser capability probe — call from console: m8MicCheck()
 function m8MicCheck() {
@@ -2648,25 +2575,23 @@ function m8MicCheck() {
   return info;
 }
 
-// ── Command listening while the picker is open ──
-// continuous=true so ONE recognition stays open and fires onresult per phrase —
-// no start/stop churn (that churn, plus the wake recognizer running at the same
-// time, caused the endless "aborted" loop where nothing was ever captured).
+// ── Push-to-talk: ONE recognition pass per tap ──
+// No wake recognizer, no auto re-listen loop. continuous=false so the pass ends
+// on its own after the first final phrase — the mic is live only for that single
+// command, then stops. This is what eliminates the old dual-recognizer "aborted"
+// loop entirely. To speak again, tap the 🎙 Speak button (fires this once more).
 function m8RestartListen() {
   if (!m8WakeMode) return;
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec || voiceRecog) return; // already listening
-  // HARD mutual exclusion: the background wake recognizer must be dead before the
-  // command recognizer touches the mic — two recognizers abort each other.
-  stopWakeListener();
   const hdr = document.querySelector('#m8Picker [data-m8hdr]');
   if (hdr) hdr.innerHTML = '<span style="animation:pulse 1s infinite;color:var(--bolt-green)">🎙</span> Listening…';
   m8SetOrb('listening');
   const r = new SpeechRec();
-  r.lang = 'en-US'; r.continuous = true; r.interimResults = false; r.maxAlternatives = 5;
-  let lastErr = null, gotAudio = false, abortBackoff = false;
+  r.lang = 'en-US'; r.continuous = false; r.interimResults = false; r.maxAlternatives = 5;
+  let lastErr = null;
   r.onstart       = () => m8Dbg('starting…');
-  r.onaudiostart  = () => { gotAudio = true; m8Dbg('listening (mic live) — speak now'); };
+  r.onaudiostart  = () => m8Dbg('listening (mic live) — speak now');
   r.onspeechstart = () => m8Dbg('hearing speech…');
   r.onresult = e => {
     // Only act on the latest FINAL result.
@@ -2686,25 +2611,14 @@ function m8RestartListen() {
   };
   r.onerror = ev => {
     lastErr = ev && ev.error;
-    if (lastErr === 'aborted') abortBackoff = true;   // mic was contended — back off
-    else m8Dbg('error: ' + lastErr);
+    m8Dbg('error: ' + lastErr);
   };
   r.onend = () => {
     voiceRecog = null;
     m8SetOrb('idle');
     if (hdr) hdr.innerHTML = '● M8 COMMAND CENTER';
     if (lastErr === 'not-allowed' || lastErr === 'service-not-allowed') { m8Dbg('blocked — allow mic, then reopen'); return; }
-    // Keep listening while the panel is open. Longer pause after an abort so the
-    // mic fully releases (prevents the tight abort loop), normal pause otherwise.
-    if (m8WakeMode && m8PickerOpen()) {
-      const delay = abortBackoff ? 1000 : 350;
-      setTimeout(() => {
-        if (m8WakeMode && m8PickerOpen() && !voiceRecog && !wakeRecog &&
-            !(window.speechSynthesis && window.speechSynthesis.speaking)) {
-          m8RestartListen();
-        }
-      }, delay);
-    }
+    // Push-to-talk: the pass is done. No auto re-listen — tap 🎙 Speak to go again.
   };
   voiceRecog = r;
   try { r.start(); m8Dbg('start requested'); } catch(e) { voiceRecog = null; m8Dbg('start failed: ' + e.message); }
@@ -5607,9 +5521,16 @@ function getHistory() {
   if (!raw) return [];
   let parsed;
   try { parsed = JSON.parse(raw); } catch(_) { return []; }
-  if (Array.isArray(parsed)) return parsed;                 // legacy uncompressed
-  if (parsed && parsed.fmt === CLOUD_FMT && Array.isArray(parsed.h)) return parsed.h.map(unpackEntry);
-  return [];
+  let arr;
+  if (Array.isArray(parsed)) arr = parsed;                              // legacy uncompressed
+  else if (parsed && parsed.fmt === CLOUD_FMT && Array.isArray(parsed.h)) arr = parsed.h.map(unpackEntry);
+  else return [];
+  // INVARIANT the whole app assumes: every entry has a drivers ARRAY. A legacy or
+  // partially-corrupt entry missing it used to crash any downstream
+  // h.drivers.find/.map — the documented "no voice at all" / blank-render class.
+  // Normalising once here protects all ~30 direct .drivers.* call sites.
+  for (const e of arr) if (e && !Array.isArray(e.drivers)) e.drivers = [];
+  return arr;
 }
 
 // Saves history compressed + capped to LOCAL_MAX_DAYS. If localStorage is full
@@ -6390,10 +6311,15 @@ function recordTransfersFromUpload(cycleDateYMD, drivers) {
 function computeTransferStatus(driverName, cycleDateYMD, log) {
   const dk      = (driverName || '').trim().toLowerCase();
   const cycleMs = parseLocalDate(cycleDateYMD).getTime();
+  // A malformed/invalid cycle date gives NaN; every comparison below would then
+  // be false, BYPASSING both the "must be after" and "within 3 days" guards and
+  // mislabelling any negative entry as a reversal. Bail to a neutral status.
+  if (isNaN(cycleMs)) return 'PENDING';
   const today   = new Date(); today.setHours(12, 0, 0, 0);
   // Scan later entries for a reversal within 3 calendar days
   for (const [otherDate, entries] of Object.entries(log)) {
     const otherMs  = parseLocalDate(otherDate).getTime();
+    if (isNaN(otherMs)) continue;                              // skip corrupt log keys
     if (otherMs <= cycleMs) continue;                          // must be strictly after
     const daysDiff = (otherMs - cycleMs) / 86400000;
     if (daysDiff > 3) continue;                                // outside the 3-day window
@@ -6504,20 +6430,7 @@ function deriveCycleWindow(transferDate) {
 function pInfoToYMD(p) { return p.year + '-' + String(p.month+1).padStart(2,'0') + '-' + String(p.day).padStart(2,'0'); }
 function computeDriverNetForPeriod(name, monthKey) {
   const [y, m] = monthKey.split('-').map(Number);
-  const targetMonth = m - 1, targetYear = y;
-  const seen = new Set();
-  let total = 0;
-  getHistory().forEach(h => {
-    if (!h.periodInfo) return;
-    const { start, end } = h.periodInfo;
-    const inMonth = (start.month === targetMonth && start.year === targetYear) ||
-                    (end.month   === targetMonth && end.year   === targetYear);
-    if (!inMonth || seen.has(h.period)) return;
-    seen.add(h.period);
-    const d = h.drivers.find(x => driverKey(x.name) === driverKey(name));
-    if (d) total += (d.netEarnings || 0);
-  });
-  return total;
+  return sumDriverNetForMonth(name, m - 1, y);   // canonical, periodInfo-independent
 }
 function computeDriverPnL(name, monthKey) {
   const p = getEffectiveProfile(name, monthKey);
@@ -6539,12 +6452,8 @@ function getDriversInMonth(monthKey) {
   const targetMonth = m - 1, targetYear = y;
   const map = new Map();
   getHistory().forEach(h => {
-    if (!h.periodInfo) return;
-    const { start, end } = h.periodInfo;
-    const inMonth = (start.month === targetMonth && start.year === targetYear) ||
-                    (end.month   === targetMonth && end.year   === targetYear);
-    if (!inMonth) return;
-    h.drivers.forEach(d => { if (d.name) map.set(driverKey(d.name), d.name.trim()); });
+    if (!entryInMonth(h, targetMonth, targetYear)) return;   // same rule as the net sum
+    (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => { if (d.name) map.set(driverKey(d.name), d.name.trim()); });
   });
   return [...map.values()];
 }
@@ -8012,7 +7921,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   initMissionClock();
   m8UpdateIdleOrb();
-  m8InitWake();
 });
 
 // ═══════════════════════════════════════════
@@ -8290,7 +8198,8 @@ function closeCortexReport() {
 
 function generateFleetBriefing(periodLabel) {
   const history = getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
-  const entry = history[0];
+  // Honor a requested period (e.g. "day before") instead of always the latest day.
+  const entry = periodLabel ? (history.find(h=>h.period===periodLabel) || history[0]) : history[0];
   if (!entry) return '<div style="color:var(--text-muted);padding:20px">NO DATA LOADED — UPLOAD A CSV FIRST</div>';
   const s = loadSettings();
   const target = s.monthlyTarget || 6000;
@@ -8305,6 +8214,47 @@ function generateFleetBriefing(periodLabel) {
   const cashGapTotal = drivers.reduce((s,d)=>s+Math.max(0,sN(d.cashGap)),0);
   const owesDrivers  = drivers.filter(d => sN(d.actualPayout) < 0);
   const ln = n => lookupForeignName(n)||n;
+  const totalOrders = active.reduce((s,d)=>s+sN(d.orders),0);
+
+  // ── Day-over-day deltas vs the previous working day (added 2026-06-02) ──
+  const _idx = history.findIndex(h=>h.period===entry.period);
+  const prevEntry = _idx >= 0 ? history[_idx+1] : history[1];   // the next-older day
+  const pAct     = prevEntry ? (prevEntry.drivers||[]).filter(d=>d.isActive) : null;
+  const pNet     = pAct ? pAct.reduce((s,d)=>s+sN(d.netEarnings),0) : null;
+  const pOrders  = pAct ? pAct.reduce((s,d)=>s+sN(d.orders),0) : null;
+  const pAccept  = pAct && pAct.length ? pAct.reduce((s,d)=>s+sN(d.acceptance),0)/pAct.length : null;
+  const pActiveN = pAct ? pAct.length : null;
+  // mode: 'pct' (% change) · 'pp' (percentage points) · 'count' (+/- integer)
+  const deltaTag = (cur, prev, mode) => {
+    if (prev == null || !prevEntry) return '';
+    const diff = cur - prev;
+    if (Math.abs(diff) < 0.5) return ` <span style="color:var(--text-muted);font-size:9px">◦ flat</span>`;
+    const up = diff > 0, color = up ? 'var(--bolt-green)' : 'var(--red)', sym = up ? '▲' : '▼';
+    let txt;
+    if (mode === 'pct')     txt = prev !== 0 ? Math.abs(diff/prev*100).toFixed(0)+'%' : '—';
+    else if (mode === 'pp') txt = Math.abs(diff).toFixed(0)+'pp';
+    else                    txt = (up?'+':'−')+Math.abs(Math.round(diff));
+    return ` <span style="color:${color};font-size:9px;margin-left:4px">${sym} ${txt}</span>`;
+  };
+
+  // ── Richer day stats + action list (added 2026-06-02) ──
+  const totalHours  = active.reduce((s,d)=>s+sN(d.hoursOnline),0);
+  const avgHours    = active.length ? totalHours/active.length : 0;
+  const totalTips   = active.reduce((s,d)=>s+sN(d.tips),0);
+  const totalBonus  = active.reduce((s,d)=>s+sN(d.campaign),0);
+  const hitTarget   = active.filter(d=>sN(d.netEarnings)>=dailyTarget).length;
+  const utilActive  = active.filter(d=>sN(d.utilization)>0);
+  const avgUtil     = utilActive.length ? utilActive.reduce((s,d)=>s+sN(d.utilization),0)/utilActive.length : 0;
+  // "Needs attention" = active captains under the daily target, lowest first.
+  const belowTarget = active.filter(d=>sN(d.netEarnings)<dailyTarget).sort((a,b)=>sN(a.netEarnings)-sN(b.netEarnings));
+  const escName = str => String(str||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  const attentionRows = belowTarget.slice(0,8).map(d=>{
+    const hrs = sN(d.hoursOnline);
+    return `<div class="crp-line" style="cursor:pointer" title="Open dossier" onclick="m8PickCmd('driverReport','${escName(d.name)}')">
+      <span class="crp-key">${ln(d.name)} ▸</span>
+      <span class="crp-val ${hrs<4?'red':'amber'}">${fmt(sN(d.netEarnings))} / ${fmt(dailyTarget)} target · ${hrs.toFixed(1)}h</span>
+    </div>`;
+  }).join('');
 
   const pct = p => `<span class="crp-val ${p>=85?'green':p>=55?'amber':'red'}">${p.toFixed(0)}%</span>`;
   const sar = (v,cls='') => `<span class="crp-val ${cls}">${fmt(v)} SAR</span>`;
@@ -8321,14 +8271,22 @@ function generateFleetBriefing(periodLabel) {
 
   return `
     <div class="crp-section">
-      <div class="crp-section-title">◈ MISSION STATUS — ${entry.period}</div>
-      <div class="crp-line"><span class="crp-key">Captains Online</span>${sar(active.length+'',active.length>0?'green':'red')}</div>
+      <div class="crp-section-title">◈ MISSION STATUS — ${entry.period}${prevEntry?` <span style="color:var(--text-muted);font-weight:400;font-size:10px">vs ${prevEntry.period}</span>`:''}</div>
+      <div class="crp-line"><span class="crp-key">Captains Online</span><span class="crp-val ${active.length>0?'green':'red'}">${active.length}${deltaTag(active.length,pActiveN,'count')}</span></div>
       <div class="crp-line"><span class="crp-key">Captains Offline</span><span class="crp-val ${inactive.length>0?'amber':''}">${inactive.length}</span></div>
-      <div class="crp-line"><span class="crp-key">Fleet Net Revenue</span>${sar(totalNet,'green')}</div>
+      <div class="crp-line"><span class="crp-key">Fleet Net Revenue</span><span class="crp-val green">${fmt(totalNet)} SAR${deltaTag(totalNet,pNet,'pct')}</span></div>
       <div class="crp-line"><span class="crp-key">Fleet Gross Revenue</span>${sar(totalGross)}</div>
       <div class="crp-line"><span class="crp-key">Daily Target/Captain</span>${sar(dailyTarget)}</div>
-      <div class="crp-line"><span class="crp-key">Avg Acceptance</span>${pct(avgAccept)}</div>
-      <div class="crp-line"><span class="crp-key">Total Orders</span><span class="crp-val">${active.reduce((s,d)=>s+sN(d.orders),0)}</span></div>
+      <div class="crp-line"><span class="crp-key">Avg Acceptance</span><span class="crp-val ${avgAccept>=85?'green':avgAccept>=55?'amber':'red'}">${avgAccept.toFixed(0)}%${deltaTag(avgAccept,pAccept,'pp')}</span></div>
+      <div class="crp-line"><span class="crp-key">Total Orders</span><span class="crp-val">${totalOrders}${deltaTag(totalOrders,pOrders,'pct')}</span></div>
+    </div>
+    <div class="crp-section">
+      <div class="crp-section-title">◈ DAY PERFORMANCE</div>
+      <div class="crp-line"><span class="crp-key">Target Hit-Rate</span><span class="crp-val ${hitTarget>=active.length*0.6?'green':hitTarget>=active.length*0.3?'amber':'red'}">${hitTarget}/${active.length} captains ≥ ${fmt(dailyTarget)} SAR</span></div>
+      <div class="crp-line"><span class="crp-key">Hours Online</span><span class="crp-val">${totalHours.toFixed(1)}h total · ${avgHours.toFixed(1)}h avg</span></div>
+      <div class="crp-line"><span class="crp-key">Rider Tips</span><span class="crp-val ${totalTips>0?'green':''}">${fmt(totalTips)} SAR</span></div>
+      ${totalBonus>0?`<div class="crp-line"><span class="crp-key">Bonus / Campaign</span><span class="crp-val green">${fmt(totalBonus)} SAR <span style="color:var(--text-muted);font-size:9px">incl. in net</span></span></div>`:''}
+      <div class="crp-line"><span class="crp-key">Avg Utilisation</span><span class="crp-val ${avgUtil>=60?'green':avgUtil>=40?'amber':'red'}">${avgUtil>0?Math.round(avgUtil)+'%':'—'}</span></div>
     </div>
     <div class="crp-section">
       <div class="crp-section-title">◈ TOP PERFORMERS</div>
@@ -8336,6 +8294,11 @@ function generateFleetBriefing(periodLabel) {
         <span class="crp-key">#${i+1} ${ln(d.name)}</span>
         <span class="crp-val ${sN(d.netEarnings)>=dailyTarget?'green':'amber'}">${fmt(sN(d.netEarnings))} SAR · ${sN(d.orders)} trips · ${sN(d.hoursOnline).toFixed(1)}h</span>
       </div>`).join('')}
+    </div>
+    <div class="crp-section">
+      <div class="crp-section-title">◈ NEEDS ATTENTION TODAY</div>
+      ${belowTarget.length ? attentionRows + (belowTarget.length>8?`<div style="margin-top:4px;font-size:10px;color:var(--text-muted)">+${belowTarget.length-8} more below target</div>`:'') : '<div class="crp-good-row">✓ Every active captain hit the daily target</div>'}
+      ${belowTarget.length?'<div style="margin-top:6px;font-size:10px;color:var(--text-muted)">Tap a captain to open their dossier</div>':''}
     </div>
     <div class="crp-section">
       <div class="crp-section-title">◈ ANOMALY SCAN</div>
@@ -8348,6 +8311,75 @@ function generateFleetBriefing(periodLabel) {
     <div class="crp-section">
       <div class="crp-section-title">◈ CUMULATIVE INTELLIGENCE — ALL TIME (${history.length} DAYS)</div>
       <div class="crp-line"><span class="crp-key">Total Fleet Net</span>${sar(allNet,'green')}</div>
+    </div>`;
+}
+
+// Week-in-review: rolls up the most recent 7 uploaded days into one summary —
+// totals, daily average, best/worst day, and a per-day list with a net delta
+// vs the day before. Reuses sN (NaN-safe) like the audited money paths.
+function generateWeekReview() {
+  const history = getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
+  if (!history.length) return '<div style="color:var(--text-muted);padding:20px">NO DATA LOADED — UPLOAD A CSV FIRST</div>';
+  const week = history.slice(0, 7);                 // most recent 7 days, newest first
+  const ln = n => lookupForeignName(n)||n;
+  const dayStat = h => {
+    const act = (h.drivers||[]).filter(d=>d.isActive);
+    return {
+      period: h.period,
+      net:    act.reduce((s,d)=>s+sN(d.netEarnings),0),
+      orders: act.reduce((s,d)=>s+sN(d.orders),0),
+      hours:  act.reduce((s,d)=>s+sN(d.hoursOnline),0),
+      active: act.length,
+    };
+  };
+  const stats   = week.map(dayStat);                // newest first
+  const totNet  = stats.reduce((s,d)=>s+d.net,0);
+  const totOrd  = stats.reduce((s,d)=>s+d.orders,0);
+  const totHrs  = stats.reduce((s,d)=>s+d.hours,0);
+  const avgNet  = stats.length ? totNet/stats.length : 0;
+  const best    = [...stats].sort((a,b)=>b.net-a.net)[0];
+  const worst   = [...stats].sort((a,b)=>a.net-b.net)[0];
+  // Busiest captain over the window (sum net across the 7 days), case-insensitive.
+  const byDriver = {};
+  week.forEach(h => (h.drivers||[]).forEach(d => {
+    if (!d.isActive) return; const k = driverKey(d.name);
+    if (!byDriver[k]) byDriver[k] = { name:d.name, net:0 };
+    byDriver[k].net += sN(d.netEarnings);
+  }));
+  const topWk = Object.values(byDriver).sort((a,b)=>b.net-a.net)[0];
+  const sar = (v,cls='') => `<span class="crp-val ${cls}">${fmt(v)} SAR</span>`;
+
+  // Per-day rows oldest→newest with a net delta vs the previous day.
+  const chrono = [...stats].reverse();
+  const dayRows = chrono.map((d,i)=>{
+    const prev = i>0 ? chrono[i-1].net : null;
+    let delta = '';
+    if (prev != null) {
+      const diff = d.net - prev;
+      if (Math.abs(diff) < 0.5) delta = `<span style="color:var(--text-muted);font-size:9px">◦</span>`;
+      else { const up=diff>0; delta = `<span style="color:${up?'var(--bolt-green)':'var(--red)'};font-size:9px;margin-left:4px">${up?'▲':'▼'} ${prev!==0?Math.abs(diff/prev*100).toFixed(0)+'%':'—'}</span>`; }
+    }
+    return `<div class="crp-line"><span class="crp-key">${d.period}</span><span class="crp-val ${d.active>0?'green':'red'}">${fmt(d.net)} SAR · ${d.orders} trips${delta}</span></div>`;
+  }).join('');
+
+  const span = chrono.length ? `${chrono[0].period} → ${chrono[chrono.length-1].period}` : '';
+  return `
+    <div class="crp-section">
+      <div class="crp-section-title">◈ WEEK IN REVIEW <span style="color:var(--text-muted);font-weight:400;font-size:10px">${span} · ${stats.length} day${stats.length!==1?'s':''}</span></div>
+      <div class="crp-line"><span class="crp-key">Total Fleet Net</span>${sar(totNet,'green')}</div>
+      <div class="crp-line"><span class="crp-key">Daily Average</span>${sar(Math.round(avgNet))}</div>
+      <div class="crp-line"><span class="crp-key">Total Orders</span><span class="crp-val">${totOrd}</span></div>
+      <div class="crp-line"><span class="crp-key">Total Hours Online</span><span class="crp-val">${totHrs.toFixed(0)}h</span></div>
+    </div>
+    <div class="crp-section">
+      <div class="crp-section-title">◈ HIGHLIGHTS</div>
+      <div class="crp-line"><span class="crp-key">Best Day</span><span class="crp-val green">${best?best.period+' · '+fmt(best.net)+' SAR':'—'}</span></div>
+      <div class="crp-line"><span class="crp-key">Slowest Day</span><span class="crp-val amber">${worst?worst.period+' · '+fmt(worst.net)+' SAR':'—'}</span></div>
+      ${topWk?`<div class="crp-line" style="cursor:pointer" title="Open dossier" onclick="m8PickCmd('driverReport','${String(topWk.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')"><span class="crp-key">Top Captain (week) ▸</span><span class="crp-val" style="color:#FFD700">${ln(topWk.name)} · ${fmt(topWk.net)} SAR</span></div>`:''}
+    </div>
+    <div class="crp-section">
+      <div class="crp-section-title">◈ DAY BY DAY</div>
+      ${dayRows}
     </div>`;
 }
 
@@ -8434,12 +8466,13 @@ m8PickCmd = function(type, val) {
     const idx = val === 'yesterday' ? 0 : val === 'daybefore' ? 1 : 0;
     const entry = history[idx];
     if (!entry) { m8PickShow(`<span class="vt-err">No data for that period</span>`); return; }
-    // Temporarily simulate that period
-    const prev = { d:currentDrivers, p:currentPeriod, i:currentPeriodInfo };
-    currentDrivers = entry.drivers; currentPeriod = entry.period; currentPeriodInfo = entry.periodInfo||null;
-    const html = generateFleetBriefing(entry.period);
-    currentDrivers=prev.d; currentPeriod=prev.p; currentPeriodInfo=prev.i;
-    openCortexReport(`◈ BRIEFING — ${entry.period}`, html);
+    // generateFleetBriefing now resolves the day by period itself (no currentDrivers swap needed).
+    openCortexReport(`◈ BRIEFING — ${entry.period}`, generateFleetBriefing(entry.period));
+    hideM8Picker();
+    return;
+  }
+  if (type === 'weekReview') {
+    openCortexReport('◈ WEEK IN REVIEW — LAST 7 DAYS', generateWeekReview());
     hideM8Picker();
     return;
   }
