@@ -352,10 +352,12 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 
 /* ── Sticky first column in fleet table ── */
 .table-wrap { overflow-x:auto !important; }
-.driver-table td:first-child,
-.driver-table th:first-child { position:sticky; left:0; z-index:2; border-right:1px solid rgba(0,212,255,.06); }
-.driver-table td:first-child { background:var(--bg-card); z-index:1; }
-.driver-table th:first-child { background:var(--bg-card2); }
+.driver-table td:first-child { position:sticky; left:0; background:var(--bg-card); z-index:1; border-right:1px solid rgba(0,212,255,.06); }
+.driver-table th:first-child { position:sticky; left:0; background:var(--bg-card2); z-index:2; border-right:1px solid rgba(0,212,255,.06); }
+/* Fleet captain table — center all headers */
+.cap-table th { text-align:center !important; }
+.cap-table th .th-inner { justify-content:center !important; }
+.cap-table td:first-child { min-width:220px; }
 .driver-table tr.driver-row:hover td:first-child { background:rgba(0,16,32,.95); }
 .driver-table tr.inactive-row td:first-child { background:var(--bg-card); }
 
@@ -5675,9 +5677,12 @@ function buildCourierSummaryTable(entries, searchFilter) {
       : `${fmt(c.net)}`;
 
     return `<tr class="driver-row" style="cursor:pointer;${isBlocked?'opacity:.55;background:rgba(255,68,102,.04)':''}" ${clickAttr}>
-      <td class="td-r" style="color:rgba(0,212,255,.5);font-family:var(--mono);font-size:10px;font-weight:700;width:32px;padding-right:8px">${idx+1}</td>
-      <td><div class="driver-cell"><div class="avatar">${displayName.charAt(0).toUpperCase()}</div><div>${nameHTML}${owesBadge}${cashBadgeHtml}</div></div></td>
-      <td class="td-r"><span style="font-family:var(--mono);font-weight:700;color:#00D4FF;text-shadow:0 0 8px rgba(0,212,255,.7);font-size:12px">${c.days}</span><span style="font-size:10px;color:var(--text-muted)">d</span></td>
+      <td><div class="driver-cell">
+        <span style="font-family:var(--mono);font-size:10px;font-weight:700;color:rgba(0,212,255,.5);min-width:18px;text-align:right;flex-shrink:0">${idx+1}</span>
+        <div class="avatar">${displayName.charAt(0).toUpperCase()}</div>
+        <div>${nameHTML}${owesBadge}${cashBadgeHtml}</div>
+      </div></td>
+      <td class="td-r"><span style="font-family:var(--mono);font-weight:700;color:#00D4FF;text-shadow:0 0 8px rgba(0,212,255,.7);font-size:12px">${c.days}d</span></td>
       <td class="td-r">${earningsHtml} <span style="font-size:11px;color:var(--text-muted)">/ ${fmt(c.gross)} gross</span></td>
       <td class="td-r">${earnHrOrDash(c.earnHr)}</td>
       <td class="td-r ${c.finish>0?pctCol(c.finish,80,70):''}">${pctOrDash(c.finish)}</td>
@@ -5693,9 +5698,8 @@ function buildCourierSummaryTable(entries, searchFilter) {
     </tr>`;
   }).join('');
 
-  return `<div class="table-wrap"><table class="driver-table">
+  return `<div class="table-wrap"><table class="driver-table cap-table">
     <thead><tr>
-      <th style="width:32px;text-align:right;padding-right:8px"><span style="font-size:9px;color:rgba(0,212,255,.4)">#</span></th>
       ${cth('Captain','name')}
       ${cth('Days','days','td-r')}
       ${cth('Net SAR','net','td-r')}
@@ -5705,7 +5709,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
       ${cth('Util','util','td-r')}
       ${cth('Rides','rides','td-r')}
       ${cth('Distance','dist','td-r')}
-      <th class="td-r" style="min-width:160px"><span class="th-inner">Monthly Target</span></th>
+      <th style="min-width:160px;text-align:center">Monthly Target</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
