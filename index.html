@@ -5488,7 +5488,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const singlePeriod = summarySelectedDays?.size === 1 ? [...summarySelectedDays][0] : null;
   const esc = s => (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 
-  const rows = filtered.map(c => {
+  const rows = filtered.map((c, idx) => {
     const foreign = lookupForeignName(c.name);
     const displayName = foreign || c.name;
     const isBlocked = !!getCourierProfile(c.name)?.blocked;
@@ -5537,6 +5537,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
       : `${fmt(c.net)}`;
 
     return `<tr class="driver-row" style="cursor:pointer;${isBlocked?'opacity:.55;background:rgba(255,68,102,.04)':''}" ${clickAttr}>
+      <td class="td-r" style="color:var(--text-dim);font-family:var(--mono);font-size:11px;width:32px;padding-right:8px">${idx+1}</td>
       <td><div class="driver-cell"><div class="avatar">${displayName.charAt(0).toUpperCase()}</div><div>${nameHTML}${owesBadge}${cashBadgeHtml}</div></div></td>
       <td class="td-r" style="color:var(--text-muted)">${c.days}d</td>
       <td class="td-r">${earningsHtml} <span style="font-size:11px;color:var(--text-muted)">/ ${fmt(c.gross)} gross</span></td>
@@ -5556,6 +5557,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
 
   return `<div class="table-wrap"><table class="driver-table">
     <thead><tr>
+      <th style="width:32px;text-align:right;padding-right:8px"><span style="font-size:9px;color:var(--text-dim)">#</span></th>
       ${cth('Captain','name')}
       ${cth('Days','days','td-r')}
       ${cth('Net SAR','net','td-r')}
@@ -5780,7 +5782,7 @@ function clearAllData() {
 // don't see this exact string, your browser is serving a cached old HTML.
 // Force-refresh with Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac).
 // ═══════════════════════════════════════════
-const BUILD_VERSION = 'v3.5 — 2026-06-02 — fix: captain tab shows all drivers; blocked captain flag';
+const BUILD_VERSION = 'v3.6 — 2026-06-02 — fix: Finance shows all-time roster; captain # sequence';
 console.log('%cBolt Dashboard ' + BUILD_VERSION, 'color:#34d186;font-weight:bold');
 
 // ═══════════════════════════════════════════
@@ -6775,8 +6777,17 @@ function renderFinanceTab() {
 
 function renderFinanceCourierView() {
   const monthKey = financeMonth;
-  const drivers = getDriversInMonth(monthKey);
-  Object.keys(loadCourierProfiles()).forEach(k => { if (!drivers.some(d => driverKey(d) === k)) drivers.push(k); });
+  // Build complete roster: union of ALL-TIME CSV drivers + profile-only drivers.
+  // This ensures a driver who worked last month but not this month still appears
+  // in the Finance ledger (shows 0 income, costs still apply).
+  const nameMap = new Map();
+  getHistory().forEach(h => {
+    (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => {
+      if (d.name) nameMap.set(driverKey(d.name), d.name.trim());
+    });
+  });
+  Object.keys(loadCourierProfiles()).forEach(k => { if (!nameMap.has(k)) nameMap.set(k, k); });
+  const drivers = [...nameMap.values()];
   if (!drivers.length) {
     document.getElementById('financeMainContent').innerHTML =
       `<div class="finance-section"><div class="finance-empty">No driver data for ${monthLabel(monthKey)}.<br>Upload Bolt CSVs in the Fleet tab, then return here.</div></div>`;
