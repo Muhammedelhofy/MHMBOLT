@@ -1372,6 +1372,23 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
       <button class="save-btn" style="background:#fff;color:var(--red);border:1px solid #fca5a5;" onclick="resetCloudLink()">↺ Reset Cloud Link</button>
     </div>
     <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Seeing a 401/403 sync error? Tap <b>Fix Sync</b> — it re-links to a fresh cloud bin, re-uploads everything (history + captain profiles), and copies the new share link for you to send to the other devices.</div>
+
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(0,212,255,.12)">
+      <div style="font-weight:700;font-size:13px;color:var(--bolt-green)">🔑 Private Cloud Key (fixes recurring 403)</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;line-height:1.5">
+        The built-in key is <b>shared by everyone using this dashboard</b>, so its free monthly quota runs out and throws 403 for all. Use your own free key for a private quota:
+        <b>1)</b> make a free account at <span style="color:var(--cyan)">jsonbin.io</span> →
+        <b>2)</b> API Keys → copy your <b>Master Key</b> →
+        <b>3)</b> paste it below &amp; Save → <b>4)</b> tap <b>Fix Sync</b> to move your data onto it, then share the new link (it carries the key, so other devices auto-configure).
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
+        <input type="text" id="customKeyInput" placeholder="$2a$10$… your JSONBin Master Key" style="flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--mono);background:var(--bg);box-sizing:border-box">
+        <button class="save-btn" onclick="saveCustomKey()">Save Key</button>
+        <button class="save-btn" onclick="testCloudKey()">Test</button>
+        <button class="save-btn" style="background:#fff;color:var(--text-muted);border:1px solid var(--border)" onclick="clearCustomKey()">Use Shared</button>
+      </div>
+      <div id="customKeyStatus" style="font-size:11px;margin-top:6px;color:var(--text-muted)"></div>
+    </div>
   </div>
 
   <div class="settings-section">
@@ -1481,6 +1498,7 @@ function saveSettings() {
 function initSettingsUI() {
   const s = loadSettings();
   Object.keys(s).forEach(k => { const el = document.getElementById(k); if (el) el.value = s[k]; });
+  if (typeof renderKeyStatus === 'function') renderKeyStatus();
 }
 
 // ═══════════════════════════════════════════
@@ -6025,14 +6043,14 @@ async function deleteHistoryEntry(period) {
   const binId = getBinId();
   if (binId && !IS_FILE_ORIGIN) {
     setSyncStatus('syncing', 'deleting…');
-    const fetched = await jbFetch(`${JSONBIN_BASE}/b/${binId}/latest`, { headers: { 'X-Master-Key': JSONBIN_KEY } });
+    const fetched = await jbFetch(`${JSONBIN_BASE}/b/${binId}/latest`, { headers: { 'X-Master-Key': getJbKey() } });
     if (fetched) {
       const record    = fetched.record || {};
       const cloudHist = readCloudHistory(record).filter(h => h.period !== period);
       const updated   = { ...record, khair_history: cloudHist.map(packEntry), khair_fmt: CLOUD_FMT };
       const ok = await jbFetch(`${JSONBIN_BASE}/b/${binId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
+        headers: { 'Content-Type': 'application/json', 'X-Master-Key': getJbKey() },
         body: JSON.stringify(updated)
       });
       setSyncStatus(ok ? 'synced' : 'error', ok ? 'synced ✓' : 'delete failed');
@@ -6078,18 +6096,32 @@ console.log('%cBolt Dashboard ' + BUILD_VERSION, 'color:#34d186;font-weight:bold
 // ═══════════════════════════════════════════
 // CLOUD SYNC — JSONBin
 // ═══════════════════════════════════════════
+// DEFAULT key is shared by every copy of this dashboard, so its ~10k/month JSONBin quota
+// is pooled across ALL users worldwide → it gets exhausted and throws 403 for everyone, and
+// a new bin under the same key doesn't help. The cure is a PRIVATE key (free jsonbin.io
+// account) entered in Settings → it gives this fleet its own quota. getJbKey() prefers it.
 const JSONBIN_KEY  = '$2a$10$pKtSjVqNtz/Y/FPSBgejluCXMbiQuZ6oqtAeMpMi49UuVf22ou9SW';
 const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
 const IS_FILE_ORIGIN = window.location.protocol === 'file:';
+const JB_KEY_STORE = 'khair_jsonbin_key';
+function getJbKey() { return (localStorage.getItem(JB_KEY_STORE) || '').trim() || JSONBIN_KEY; }
+function usingCustomKey() { return !!(localStorage.getItem(JB_KEY_STORE) || '').trim(); }
 
 function getBinId() {
-  const p = new URLSearchParams(window.location.search).get('bin');
+  const params = new URLSearchParams(window.location.search);
+  // A share link can carry the private key (base64) so other devices auto-configure from one link.
+  const k = params.get('k');
+  if (k) { try { localStorage.setItem(JB_KEY_STORE, atob(k)); } catch(_) {} }
+  const p = params.get('bin');
   if (p) { localStorage.setItem('khair_bin_id', p); return p; }
   return localStorage.getItem('khair_bin_id') || null;
 }
 
 function getShareUrl(binId) {
-  return `${location.origin}${location.pathname}?bin=${binId}`;
+  // Embed the private key (if set) so a teammate who opens the link is auto-linked AND
+  // auto-keyed in one step — no manual key entry on each device.
+  const base = `${location.origin}${location.pathname}?bin=${binId}`;
+  return usingCustomKey() ? `${base}&k=${btoa(getJbKey())}` : base;
 }
 
 function setSyncStatus(state, label) {
@@ -6160,7 +6192,7 @@ async function createBin() {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Master-Key': JSONBIN_KEY,
+      'X-Master-Key': getJbKey(),
       'X-Bin-Name': 'khair-bolt-dashboard',
     },
     body: JSON.stringify({ khair_history: [], version: 1 })
@@ -6290,7 +6322,7 @@ async function syncToCloud() {
 
   // Fetch full bin first — preserve original fleet data, only update khair_ keys
   const fetchData = await jbFetch(`${JSONBIN_BASE}/b/${binId}/latest`, {
-    headers: { 'X-Master-Key': JSONBIN_KEY }
+    headers: { 'X-Master-Key': getJbKey() }
   });
   if (!fetchData) return;
 
@@ -6320,7 +6352,7 @@ async function syncToCloud() {
 
   const data = await jbFetch(`${JSONBIN_BASE}/b/${binId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
+    headers: { 'Content-Type': 'application/json', 'X-Master-Key': getJbKey() },
     body: JSON.stringify(updated)
   });
 
@@ -6346,7 +6378,7 @@ async function fetchFromCloud() {
   if (!binId) return;
   setSyncStatus('syncing', 'loading…');
   const data = await jbFetch(`${JSONBIN_BASE}/b/${binId}/latest`, {
-    headers: { 'X-Master-Key': JSONBIN_KEY }
+    headers: { 'X-Master-Key': getJbKey() }
   });
   if (!data) return;
   const khairHistory = readCloudHistory(data.record);
@@ -6448,6 +6480,47 @@ async function manualPull() {
   const after = getHistory().length;
   const added = after - before;
   toast(added > 0 ? `✓ Pulled ${added} new day(s) from cloud` : '✓ Already up to date');
+}
+
+// ── Private cloud key (per-fleet quota) ──
+function renderKeyStatus() {
+  const el = document.getElementById('customKeyStatus'); if (!el) return;
+  const inp = document.getElementById('customKeyInput');
+  const custom = (localStorage.getItem(JB_KEY_STORE) || '').trim();
+  if (inp && !inp.value) inp.value = custom;
+  el.innerHTML = custom
+    ? `<span style="color:var(--bolt-green)">✓ Using your private key</span> — your fleet has its own quota.`
+    : `<span style="color:var(--amber)">Using the shared key</span> — fine for testing, but switch to a private key to stop the recurring 403.`;
+}
+function saveCustomKey() {
+  const v = (document.getElementById('customKeyInput').value || '').trim();
+  if (!v) { toast('Paste your JSONBin Master Key first'); return; }
+  if (!v.startsWith('$2')) { if (!confirm('That does not look like a JSONBin Master Key (usually starts with "$2"). Save it anyway?')) return; }
+  localStorage.setItem(JB_KEY_STORE, v);
+  renderKeyStatus();
+  toast('Private key saved — now tap "Fix Sync" to move your data onto it.');
+}
+function clearCustomKey() {
+  if (!confirm('Switch back to the shared key? You will share its quota with everyone again (the 403 may return).')) return;
+  localStorage.removeItem(JB_KEY_STORE);
+  renderKeyStatus();
+  toast('Reverted to the shared key.');
+}
+async function testCloudKey() {
+  if (IS_FILE_ORIGIN) { toast('Open via a web server to test the cloud.'); return; }
+  const el = document.getElementById('customKeyStatus');
+  if (el) el.innerHTML = 'Testing…';
+  // A cheap authenticated call: create a tiny throwaway bin, then we know writes work.
+  const data = await jbFetch(`${JSONBIN_BASE}/b`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Master-Key': getJbKey(), 'X-Bin-Name': 'khair-key-test', 'X-Bin-Private': 'true' },
+    body: JSON.stringify({ test: 1 })
+  });
+  if (el) {
+    el.innerHTML = data && data.metadata?.id
+      ? `<span style="color:var(--bolt-green)">✓ Key works — writes succeeded.</span> ${usingCustomKey()?'(private key)':'(shared key)'}`
+      : `<span style="color:var(--red)">✗ Test failed — see the toast/console. If 403, your key is wrong or out of quota.</span>`;
+  }
 }
 
 function resetCloudLink() {
