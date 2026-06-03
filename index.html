@@ -6090,7 +6090,7 @@ function clearAllData() {
 // don't see this exact string, your browser is serving a cached old HTML.
 // Force-refresh with Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac).
 // ═══════════════════════════════════════════
-const BUILD_VERSION = 'v3.6 — 2026-06-02 — fix: Finance shows all-time roster; captain # sequence';
+const BUILD_VERSION = 'v3.7 — 2026-06-03 — private key everywhere + tier colours + auto-salary + effective-dated finance + URL-scrub recovery';
 console.log('%cBolt Dashboard ' + BUILD_VERSION, 'color:#34d186;font-weight:bold');
 
 // ═══════════════════════════════════════════
@@ -6162,7 +6162,7 @@ async function jbFetch(url, options = {}) {
     return null;
   }
   const controller = new AbortController();
-  const tid = setTimeout(() => controller.abort(), 10000);
+  const tid = setTimeout(() => controller.abort(), 20000); // 20s — JSONBin can be slow; 10s caused spurious "request timed out"
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(tid);
