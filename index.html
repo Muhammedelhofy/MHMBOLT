@@ -6090,7 +6090,7 @@ function clearAllData() {
 // don't see this exact string, your browser is serving a cached old HTML.
 // Force-refresh with Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac).
 // ═══════════════════════════════════════════
-const BUILD_VERSION = 'v3.7 — 2026-06-03 — private key everywhere + tier colours + auto-salary + effective-dated finance + URL-scrub recovery';
+const BUILD_VERSION = 'v3.9 — 2026-06-03 — FIX: cloud upload now budgets the WHOLE payload <100KB (was "record over 100kb" 403)';
 console.log('%cBolt Dashboard ' + BUILD_VERSION, 'color:#34d186;font-weight:bold');
 
 // ═══════════════════════════════════════════
@@ -6173,17 +6173,12 @@ async function jbFetch(url, options = {}) {
       const msg = json?.message || json?.error || text.substring(0, 80);
       console.error(`JSONBin ${options.method||'GET'} ${url} → ${res.status}: ${msg}`);
       setSyncStatus('error', `error ${res.status}`);
-      if (res.status === 401 || res.status === 403) {
-        // 401/403 = forbidden. On the SHARED key this almost always means the global free
-        // quota is exhausted — and NO amount of Reset/Fix Sync helps, because a new bin still
-        // uses the same dead key. The only cure is a private key. Say so explicitly.
-        if (!usingCustomKey()) {
-          toast(`Sync blocked (${res.status}) — the SHARED key is out of quota. Reset/Fix Sync won't help. Fix it for good: Settings → 🔑 Private Cloud Key → paste your own free jsonbin.io key → Save → Test → then Fix Sync.`);
-        } else {
-          toast(`Sync blocked (${res.status}) on your private key — the key may be wrong/expired or this bin belongs to a different account. Re-check the key (Test), or tap Fix Sync to make a fresh bin under it.`);
-        }
+      // Surface the REAL JSONBin reason (msg) + which call failed (method) so we stop guessing.
+      const method = options.method || 'GET';
+      if ((res.status === 401 || res.status === 403) && !usingCustomKey()) {
+        toast(`Sync blocked (${res.status}) on the SHARED key — out of quota. Set up your own jsonbin.io key in Settings → Private Cloud Key.`);
       } else {
-        toast(`Sync error ${res.status}: ${msg}`);
+        toast(`Sync ${method} → ${res.status}: ${msg || '(no message)'}`);
       }
       return null;
     }
@@ -6234,7 +6229,9 @@ async function createBin() {
 // same 100KB. It is LOSSLESS for every field any view reads — unpackDriver
 // restores the full shape with proper defaults. Reads auto-detect old vs new
 // format, so existing bins keep working.
-const CLOUD_MAX_BYTES    = 90 * 1024;   // safety budget (10KB headroom vs JSONBin 100KB cap)
+const CLOUD_MAX_BYTES    = 96 * 1024;   // TOTAL payload budget (~4KB headroom under JSONBin's 100KB
+                                        // record cap). This is the size of the WHOLE upload — history
+                                        // PLUS profiles/overrides/mappings/settings — not history alone.
 const CLOUD_DEFAULT_DAYS = 60;          // target retention if size allows (was 30)
 const CLOUD_FMT          = 'c1';        // marker written alongside khair_history
 
@@ -6307,17 +6304,19 @@ function readCloudHistory(record) {
   return isPacked ? raw.map(unpackEntry) : raw;
 }
 
-// Returns compressed history that fits under CLOUD_MAX_BYTES.
-// Tries CLOUD_DEFAULT_DAYS first; if too big, drops oldest days until it fits.
-// Logs how many days were dropped so we surface it to the user (not silent).
-function slimForCloud(history, limit = CLOUD_DEFAULT_DAYS) {
+// Returns compressed history that fits under the budget. overheadBytes = the size of
+// everything ELSE in the upload (profiles, overrides, mappings, settings, etc.), so the
+// history is trimmed to leave room for them — the WHOLE record must stay under JSONBin's
+// 100KB cap, not just the history (that was the bug behind the "record over 100kb" 403).
+function slimForCloud(history, overheadBytes = 0, limit = CLOUD_DEFAULT_DAYS) {
+  const budget = Math.max(2 * 1024, CLOUD_MAX_BYTES - overheadBytes);
   let days = Math.min(limit, history.length);
   while (days > 0) {
     const slim = history.slice(0, days).map(packEntry);
     const size = new Blob([JSON.stringify(slim)]).size;
-    if (size <= CLOUD_MAX_BYTES) {
+    if (size <= budget) {
       if (days < history.length) {
-        console.warn(`Cloud capped to ${days}/${history.length} days (~${(size/1024).toFixed(0)}KB compressed). Older days remain in local browser only.`);
+        console.warn(`Cloud capped to ${days}/${history.length} days (history ~${(size/1024).toFixed(0)}KB + ~${(overheadBytes/1024).toFixed(0)}KB other). Older days remain in local browser only.`);
       }
       return { slim, days, sizeKB: Math.round(size/1024), capped: days < history.length };
     }
@@ -6344,13 +6343,12 @@ async function syncToCloud() {
   saveHistory(merged); // full local (compressed, capped to LOCAL_MAX_DAYS)
   invalidateAlertCache();
 
-  // Slim with size guard. Returns {slim, days, sizeKB, capped}.
-  const slimResult = slimForCloud(merged);
-
-  // Write back: preserve ALL existing keys, slim khair_ fields only
-  const updated = {
-    ...record,
-    khair_history:          slimResult.slim,
+  // Build every NON-history field first, drop the old history out of ...record so we don't
+  // carry stale bulk, then measure the overhead so the history is trimmed to fit the WHOLE
+  // upload under 100KB (history + profiles + overrides + mappings + …).
+  const { khair_history: _oldHist, ...recordRest } = record;
+  const nonHistory = {
+    ...recordRest,
     khair_fmt:              CLOUD_FMT,
     khair_nameMapping:      JSON.parse(localStorage.getItem('khair_name_mapping') || '[]'),
     khair_settings:         JSON.parse(localStorage.getItem('khair_settings3')    || '{}'),
@@ -6361,6 +6359,12 @@ async function syncToCloud() {
     khair_cycle_anchor:     localStorage.getItem(CYCLE_ANCHOR_KEY) || '',
     version: 2
   };
+  const overhead = new Blob([JSON.stringify({ ...nonHistory, khair_history: [] })]).size;
+
+  // Slim history within the budget left after the other fields. {slim, days, sizeKB, capped}.
+  const slimResult = slimForCloud(merged, overhead);
+
+  const updated = { ...nonHistory, khair_history: slimResult.slim };
 
   const data = await jbFetch(`${JSONBIN_BASE}/b/${binId}`, {
     method: 'PUT',
@@ -6529,17 +6533,25 @@ function clearCustomKey() {
 async function testCloudKey() {
   if (IS_FILE_ORIGIN) { toast('Open via a web server to test the cloud.'); return; }
   const el = document.getElementById('customKeyStatus');
-  if (el) el.innerHTML = 'Testing…';
-  // A cheap authenticated call: create a tiny throwaway bin, then we know writes work.
-  const data = await jbFetch(`${JSONBIN_BASE}/b`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Master-Key': getJbKey(), 'X-Bin-Name': 'khair-key-test', 'X-Bin-Private': 'true' },
-    body: JSON.stringify({ test: 1 })
-  });
-  if (el) {
-    el.innerHTML = data && data.metadata?.id
-      ? `<span style="color:var(--bolt-green)">✓ Key works — writes succeeded.</span> ${usingCustomKey()?'(private key)':'(shared key)'}`
-      : `<span style="color:var(--red)">✗ Test failed — see the toast/console. If 403, your key is wrong or out of quota.</span>`;
+  const set = html => { if (el) el.innerHTML = html; };
+  const hdr = { 'Content-Type': 'application/json', 'X-Master-Key': getJbKey() };
+  set('Testing create…');
+  // Exercise the SAME operations Sync needs: CREATE → READ → UPDATE. Sync does all three,
+  // so testing only create gave false confidence — an Access Key (create-only) passed here
+  // but still 403'd on read/update during a real sync.
+  const created = await jbFetch(`${JSONBIN_BASE}/b`, { method:'POST', headers:{ ...hdr, 'X-Bin-Name':'khair-key-test', 'X-Bin-Private':'true' }, body: JSON.stringify({ test: 1 }) });
+  if (!created?.metadata?.id) { set(`<span style="color:var(--red)">✗ CREATE failed — key is invalid or out of quota (see toast).</span>`); return; }
+  const id = created.metadata.id;
+  set('Testing read…');
+  const read = await jbFetch(`${JSONBIN_BASE}/b/${id}/latest`, { headers: hdr });
+  set('Testing update…');
+  const upd  = await jbFetch(`${JSONBIN_BASE}/b/${id}`, { method:'PUT', headers: hdr, body: JSON.stringify({ test: 2 }) });
+  // best-effort cleanup of the throwaway bin
+  jbFetch(`${JSONBIN_BASE}/b/${id}`, { method:'DELETE', headers: hdr }).catch(()=>{});
+  if (read && upd) {
+    set(`<span style="color:var(--bolt-green)">✓ Key works — create + read + update all succeeded.</span> Sync will work. ${usingCustomKey()?'(private key)':'(shared key)'}`);
+  } else {
+    set(`<span style="color:var(--red)">✗ Key can CREATE but ${!read?'NOT READ':'NOT UPDATE'} bins — this is why Sync 403s.</span> You likely copied an <b>Access Key</b> with limited permissions. Use the <b>MASTER KEY</b> from jsonbin.io/api-keys (top of the page), which has full access.`);
   }
 }
 
