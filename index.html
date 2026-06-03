@@ -138,8 +138,12 @@ body::after {
 .progress-bar-bg  { height:4px; border-radius:2px; background:rgba(255,255,255,.06); overflow:hidden; }
 .progress-bar-fill{ height:100%; border-radius:2px; transition:width .6s; }
 .fill-green { background:var(--bolt-green); box-shadow:0 0 6px rgba(0,255,179,.5); }
+.fill-green-strong { background:var(--bolt-green); box-shadow:0 0 10px rgba(0,255,179,.95),0 0 18px rgba(0,255,179,.55); }
 .fill-amber { background:var(--amber);      box-shadow:0 0 6px rgba(255,170,0,.5); }
 .fill-red   { background:var(--red);        box-shadow:0 0 6px rgba(255,68,102,.5); }
+/* Per-day pace badge glow (Monthly Target column) — green captains earning above the
+   daily target get a brighter text glow the further above 230/day they are. */
+.pace-good.pace-glow { text-shadow:0 0 8px rgba(0,255,179,.8); }
 .target-sub { font-size:10px; color:var(--text-dim); margin-top:4px; }
 .pace-good  { color:var(--bolt-green) !important; }
 .pace-warn  { color:var(--amber)      !important; }
@@ -1344,9 +1348,10 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
     <div class="cloud-last-sync" id="lastSyncTime"></div>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
       <button class="save-btn" onclick="manualSync()">↑ Sync Now</button>
+      <button class="save-btn" style="background:var(--bolt-green);color:#021;border:none;font-weight:700;" onclick="fixSync()">🔧 Fix Sync (401/403)</button>
       <button class="save-btn" style="background:#fff;color:var(--red);border:1px solid #fca5a5;" onclick="resetCloudLink()">↺ Reset Cloud Link</button>
     </div>
-    <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Use Reset if you see a 401/403 sync error — clears the broken link and generates a fresh one on next sync.</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Seeing a 401/403 sync error? Tap <b>Fix Sync</b> — it re-links to a fresh cloud bin, re-uploads everything (history + captain profiles), and copies the new share link for you to send to the other devices.</div>
   </div>
 
   <div class="settings-section">
@@ -1403,7 +1408,7 @@ let compareSortAsc      = false;
 let compareSortDayIndex = null; // null = sort by avg; number = sort by that day column
 let compareSearch       = '';
 let comparePinnedNames  = new Set(); // drivers pinned/selected in compare filter
-let comparePeriodMode   = '7';       // 'month' | '7' | '14' | 'all' — Compare Days span
+let comparePeriodMode   = 'month';   // 'month' | '7' | '14' | 'all' — Compare Days span (defaults to the current month)
 let dailySelectedMonth = 'all';
 let dailySelectedDay   = 'all';
 let dailySortCol2      = 'net';
@@ -5632,12 +5637,16 @@ function buildCourierSummaryTable(entries, searchFilter) {
       const nb = (lookupForeignName(b.name)||b.name).toLowerCase();
       return sumCourierSortAsc ? na.localeCompare(nb) : nb.localeCompare(na);
     }
+    // 'target' sorts by daily pace (net ÷ days worked) — i.e. position vs the 230/day goal.
+    const paceOf = x => x.days > 0 ? x.net / x.days : 0;
     const va = key==='days'?a.days : key==='gross'?a.gross : key==='net'?a.net
              : key==='earnhr'?a.earnHr : key==='finish'?a.finish : key==='accept'?a.accept
-             : key==='util'?a.util : key==='rides'?a.rides : key==='dist'?a.dist : a.net;
+             : key==='util'?a.util : key==='rides'?a.rides : key==='dist'?a.dist
+             : key==='target'?paceOf(a) : a.net;
     const vb = key==='days'?b.days : key==='gross'?b.gross : key==='net'?b.net
              : key==='earnhr'?b.earnHr : key==='finish'?b.finish : key==='accept'?b.accept
-             : key==='util'?b.util : key==='rides'?b.rides : key==='dist'?b.dist : b.net;
+             : key==='util'?b.util : key==='rides'?b.rides : key==='dist'?b.dist
+             : key==='target'?paceOf(b) : b.net;
     return sumCourierSortAsc ? va - vb : vb - va;
   });
 
@@ -5708,26 +5717,34 @@ function buildCourierSummaryTable(entries, searchFilter) {
     // a working month of WORKING_DAYS (derived above from the month in view — May's 31
     // calendar days → 26 working days). A captain earning enough per WORKED day to project
     // past target reads as "on track" — not "behind". (Mirrors the driver-card concept.)
-    const pct      = target > 0 ? Math.min(100, Math.round(c.net / target * 100)) : 100;
-    const reqDaily = target > 0 ? target / WORKING_DAYS : 0;              // SAR/day needed for target
-    const perDay   = c.days > 0 ? c.net / c.days : 0;                     // their actual SAR/day
-    const projMonth= perDay * WORKING_DAYS;                              // projected month-end at this pace
-    const expected = Math.min(target, reqDaily * c.days);               // what they "should" have banked by now
-    const paceGap  = c.net - expected;                                   // + = ahead of pace, − = behind pace
-    const onPace   = paceGap >= 0;
-    const nearPace = c.net >= expected * 0.8;
-    // Bar + label colour reflect PACE, not raw % of target — so early-month captains on
-    // pace show green (short bar = early, not failing) and only true laggards show red.
-    const fillCls = onPace ? 'fill-green' : nearPace ? 'fill-amber' : 'fill-red';
-    const gapCls  = onPace ? 'pace-good'  : nearPace ? 'pace-warn'  : 'pace-bad';
+    // Colour by the captain's DAILY average vs the 6,000-in-26-working-days goal the user
+    // set: green ≥ ~230/day (target÷26), red below ~200/day (target÷30), amber in between.
+    // Captains pacing well above the goal get a brighter glow. This is forgiving — a captain
+    // hitting the daily number reads green even if their running total is still mid-month.
+    const pct       = target > 0 ? Math.min(100, Math.round(c.net / target * 100)) : 100;
+    const goalDaily = target > 0 ? target / 26 : 0;   // ~230/day → green
+    const lowDaily  = target > 0 ? target / 30 : 0;   // <200/day → red
+    const perDay    = c.days > 0 ? c.net / c.days : 0; // their actual SAR/day
+    const projMonth = perDay * WORKING_DAYS;          // projected month-end at this pace
+    const onPace    = perDay >= goalDaily;
+    let fillCls, gapCls, glow = '';
+    if (perDay >= goalDaily) {
+      gapCls = 'pace-good';
+      if (perDay >= goalDaily * 1.2) { fillCls = 'fill-green-strong'; glow = ' pace-glow'; } // well above 230/day
+      else                            { fillCls = 'fill-green'; }
+    } else if (perDay >= lowDaily) {
+      fillCls = 'fill-amber'; gapCls = 'pace-warn';
+    } else {
+      fillCls = 'fill-red';   gapCls = 'pace-bad';
+    }
     const gapLabel = target > 0
-      ? (onPace ? `✓ on track` : `${fmt(Math.ceil(-paceGap))} behind pace`)
+      ? (onPace ? `✓ on track` : `+${fmt(Math.round(goalDaily - perDay))}/day to target`)
       : '';
     const gapTitle = target > 0
-      ? `Target ${fmt(target)} over ${WORKING_DAYS} working days (${monthLabel} = ${daysInMonth} days) → needs ${fmt(Math.round(reqDaily))}/day.\n`
-        + `${c.name} worked ${c.days}d at ${fmt(Math.round(perDay))}/day → projected ${fmt(Math.round(projMonth))} by day ${WORKING_DAYS}.\n`
-        + (onPace ? `On pace: +${fmt(Math.round(paceGap))} vs the ${fmt(Math.round(expected))} expected by now.`
-                  : `Behind pace: ${fmt(Math.ceil(-paceGap))} under the ${fmt(Math.round(expected))} expected by now.`)
+      ? `Goal: ${fmt(target)} in 26 working days → ${fmt(Math.round(goalDaily))}/day (green ≥ ${fmt(Math.round(goalDaily))}, red < ${fmt(Math.round(lowDaily))}).\n`
+        + `${c.name}: ${c.days}d worked at ${fmt(Math.round(perDay))}/day → projected ${fmt(Math.round(projMonth))} for the month.\n`
+        + (onPace ? `On track — ${fmt(Math.round(perDay - goalDaily))}/day above goal.`
+                  : `Needs +${fmt(Math.round(goalDaily - perDay))}/day to reach the ${fmt(Math.round(goalDaily))}/day goal.`)
       : '';
 
     // Cash % badge
@@ -5768,7 +5785,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
       <td class="target-cell">
         <div class="target-top"><span class="target-amount">${fmt(c.net)} SAR</span><span class="target-pct">${pct}%</span></div>
         <div class="progress-bar-bg"><div class="progress-bar-fill ${fillCls}" style="width:${pct}%"></div></div>
-        ${target > 0 ? `<div class="target-sub ${gapCls}" title="${gapTitle.replace(/"/g,'&quot;')}" style="cursor:help">${gapLabel}</div>` : ''}
+        ${target > 0 ? `<div class="target-sub ${gapCls}${glow}" title="${gapTitle.replace(/"/g,'&quot;')}" style="cursor:help">${gapLabel}</div>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -5796,7 +5813,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
       ${cth('Util','util','td-r')}
       ${cth('Rides','rides','td-r')}
       ${cth('Distance','dist','td-r')}
-      <th style="text-align:center">Monthly Target</th>
+      <th class="${sumCourierSortCol==='target'?'th-sort-active':''}" style="text-align:center;cursor:pointer;user-select:none;white-space:nowrap" onclick="setSumCourierSort('target')" title="Sort by daily pace vs the ${target?fmt(Math.round(target/26)):''}/day goal">Monthly Target<span style="opacity:${sumCourierSortCol==='target'?1:.25};font-size:9px;margin-left:3px;color:${sumCourierSortCol==='target'?'var(--bolt-green)':'inherit'}">${sumCourierSortCol!=='target'?'⇅':sumCourierSortAsc?'▲':'▼'}</span></th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
@@ -6074,7 +6091,13 @@ async function jbFetch(url, options = {}) {
       const msg = json?.message || json?.error || text.substring(0, 80);
       console.error(`JSONBin ${options.method||'GET'} ${url} → ${res.status}: ${msg}`);
       setSyncStatus('error', `error ${res.status}`);
-      toast(`Sync error ${res.status}: ${msg}`);
+      if (res.status === 401 || res.status === 403) {
+        // The shared bin is owned by a different key/account, or the free-tier quota is
+        // exhausted — writes are forbidden. Guide the user to re-link rather than silently fail.
+        toast(`Sync blocked (${res.status}). The shared cloud link is owned by a different key or out of quota. In Settings → Sync, tap "Reset cloud link", press Sync, then re-share the new link to all devices.`);
+      } else {
+        toast(`Sync error ${res.status}: ${msg}`);
+      }
       return null;
     }
     return json;
@@ -6134,7 +6157,7 @@ function packDriver(d) {
   const o = {};
   const putS = (k, v) => { if (v) o[k] = v; };                 // omit '' / null
   const putN = (k, v) => { const r = _r2(v); if (r) o[k] = r; }; // omit 0
-  putS('n', d.name); putS('i', d.driverId); putS('ph', d.phone);
+  putS('n', d.name); putS('i', d.driverId); putS('ph', d.phone); putS('em', d.email);
   putN('o', d.orders); putN('h', d.hoursOnline); putN('ne', d.netEarnings); putN('ge', d.grossEarnings);
   putN('ac', d.acceptance); putN('ra', d.rating); putN('sc', d.score); putN('dt', d.distanceTotal); putN('da', d.distanceAvg);
   putN('cg', d.cashGap); putN('pg', d.payoutGap); putN('pp', d.projectedPayout); putN('ap', d.actualPayout);
@@ -6154,7 +6177,7 @@ function packDriver(d) {
 
 function unpackDriver(o) {
   return {
-    name: o.n || '', driverId: o.i || '', phone: o.ph || '',
+    name: o.n || '', driverId: o.i || '', phone: o.ph || '', email: o.em || '',
     tier: { level: o.tl ?? -1, englishName: o.tn || '' },
     orders: o.o || 0, hoursOnline: o.h || 0, netEarnings: o.ne || 0, grossEarnings: o.ge || 0,
     acceptance: o.ac || 0, rating: o.ra || 0, score: o.sc || 0, distanceTotal: o.dt || 0, distanceAvg: o.da || 0,
@@ -6313,12 +6336,12 @@ async function fetchFromCloud() {
   // silently rejected cloud data when the cloud value was an empty object, preventing
   // intentional clears from propagating to other devices.
   if ('khair_courier_profiles' in r) {
-    const local = loadCourierProfiles();
-    saveCourierProfiles({ ...r.khair_courier_profiles, ...local });
+    // Newest-wins per captain so another device's profile/model/referrer edit propagates
+    // here instead of being clobbered by our stale local copy.
+    saveCourierProfiles(mergeStampedByKey(r.khair_courier_profiles, loadCourierProfiles()));
   }
   if ('khair_courier_overrides' in r) {
-    const local = loadOverrides();
-    saveOverrides({ ...r.khair_courier_overrides, ...local });
+    saveOverrides(mergeStampedByKey(r.khair_courier_overrides, loadOverrides()));
   }
   if ('khair_cycle_receipts' in r) {
     const local = loadCycleReceipts();
@@ -6390,6 +6413,26 @@ function resetCloudLink() {
   setSyncStatus('offline', 'not synced');
   const inp = document.getElementById('shareInput'); if (inp) inp.value = '';
   toast('Cloud link reset — sync to generate new one');
+}
+
+// One-click recovery for a 401/403 (shared bin owned by a different key, or quota dead).
+// Drops the broken bin link, creates a fresh bin under the current key, pushes EVERYTHING
+// (history + profiles + overrides + mappings), and copies the new share URL to share out.
+async function fixSync() {
+  if (IS_FILE_ORIGIN) { toast('Open via a web server (localhost / Live Server) to sync.'); return; }
+  if (!confirm('Fix Sync?\n\nThis re-links this device to a NEW cloud bin and uploads all of your current data (history + captain profiles).\n\nRun this on the device that has the most complete data, then send the new link it copies to your other devices.')) return;
+  // 1) drop the broken link so syncToCloud creates a fresh bin under the current key
+  localStorage.removeItem('khair_bin_id');
+  setSyncStatus('syncing', 're-linking…');
+  // 2) push everything to the new bin
+  await syncToCloud();
+  const binId = getBinId();
+  if (!binId) { toast('Could not create a new cloud bin — check the console for the error.'); return; }
+  // 3) copy the fresh share link
+  const url = getShareUrl(binId);
+  const inp = document.getElementById('shareInput'); if (inp) inp.value = url;
+  try { await navigator.clipboard.writeText(url); toast('✓ Sync fixed & re-linked. New share link copied — send it to your other devices.'); }
+  catch(_) { toast('✓ Sync fixed & re-linked. Copy the new share link above and send it to your other devices.'); }
 }
 function manualConnectBin() {
   const id = prompt('Paste bin ID (from your manager):');
@@ -6562,14 +6605,30 @@ function getProratedTarget(driverName, baseTarget, pInfo) {
 function loadCourierProfiles() { try{return JSON.parse(localStorage.getItem(COURIER_PROFILES_KEY)||'{}');}catch(e){return{};} }
 function saveCourierProfiles(o) { localStorage.setItem(COURIER_PROFILES_KEY, JSON.stringify(o)); }
 function getCourierProfile(name) { return loadCourierProfiles()[driverKey(name)] || defaultProfile(); }
-function upsertCourierProfile(name, profile) { const p = loadCourierProfiles(); p[driverKey(name)] = profile; saveCourierProfiles(p); }
+function upsertCourierProfile(name, profile) { const p = loadCourierProfiles(); p[driverKey(name)] = { ...profile, _t: Date.now() }; saveCourierProfiles(p); }
+
+// Per-key newest-wins merge. Used so an edit made on another device (carrying a newer
+// _t timestamp) actually overrides this device's stale copy — the old `{...cloud,...local}`
+// merge let local always win, so remote profile/referrer/model edits never propagated.
+// Entries without _t (older builds) count as time 0, so a stamped remote edit beats an
+// unstamped local one; if neither is stamped, local wins (unchanged old behaviour).
+function mergeStampedByKey(cloud, local) {
+  const out = { ...(cloud || {}) };
+  for (const k of Object.keys(local || {})) {
+    const c = out[k], l = local[k];
+    if (c === undefined) { out[k] = l; continue; }
+    const ct = (c && c._t) || 0, lt = (l && l._t) || 0;
+    out[k] = (lt >= ct) ? l : c;
+  }
+  return out;
+}
 function loadOverrides() { try{return JSON.parse(localStorage.getItem(COURIER_OVERRIDES_KEY)||'{}');}catch(e){return{};} }
 function saveOverrides(o) { localStorage.setItem(COURIER_OVERRIDES_KEY, JSON.stringify(o)); }
 function getOverride(name, monthKey) { return loadOverrides()[driverKey(name)+'::'+monthKey] || null; }
 function upsertOverride(name, monthKey, override) {
   const all = loadOverrides();
   const k = driverKey(name) + '::' + monthKey;
-  if (override && Object.keys(override).length) all[k] = override; else delete all[k];
+  if (override && Object.keys(override).length) all[k] = { ...override, _t: Date.now() }; else delete all[k];
   saveOverrides(all);
 }
 function getEffectiveProfile(name, monthKey) {
@@ -7979,7 +8038,7 @@ function exportFinanceCSV() {
       lines.push([escCsv(d.name), d.expected.toFixed(2), (d.actual===null||d.actual===undefined?'':d.actual.toFixed(2)), d.variance.toFixed(2), d.status].join(','));
     });
   }
-  const blob = new Blob([lines.join('\n')], { type:'text/csv;charset=utf-8' });
+  const blob = new Blob(['﻿' + lines.join('\n')], { type:'text/csv;charset=utf-8' }); // UTF-8 BOM for Excel
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = `bolt_finance_${monthKey}.csv`;
@@ -8001,18 +8060,24 @@ function getDriverFirstTripDateInMonth(driverName, monthKey) {
   const [y, m] = monthKey.split('-').map(Number);
   const targetMonth = m - 1, targetYear = y;
   const seen = new Set();
-  let earliest = null;
+  let earliestTrip = null;   // earliest day with orders > 0 (a real trip)
+  let earliestEarn = null;   // fallback: earliest day they earned / were active
   for (const h of getHistory()) {
     if (!entryInMonth(h, targetMonth, targetYear) || seen.has(h.period)) continue;
     seen.add(h.period);
     const d = (h.drivers || []).find(x => driverKey(x.name) === nk);
-    if (!d || !(d.orders > 0)) continue;
+    if (!d) continue;
     const sk = periodSortKey(h.period);
-    if (earliest === null || sk < earliest.sk) earliest = { sk, period: h.period };
+    if (d.orders > 0 && (earliestTrip === null || sk < earliestTrip.sk)) earliestTrip = { sk, period: h.period };
+    // Fallback so a captain who earned (cash/campaign) but has no counted "finished ride"
+    // still gets a date instead of a dash.
+    if ((d.isActive || sN(d.netEarnings) > 0 || sN(d.grossEarnings) > 0) &&
+        (earliestEarn === null || sk < earliestEarn.sk)) earliestEarn = { sk, period: h.period };
   }
-  if (!earliest) return '—';
-  const mx = earliest.period.match(/(\d{1,2})\s(\w{3})\s(\d{4})/);
-  return mx ? `${parseInt(mx[1])} ${mx[2]} ${mx[3]}` : earliest.period;
+  const pick = earliestTrip || earliestEarn;
+  if (!pick) return '-';
+  const mx = pick.period.match(/(\d{1,2})\s(\w{3})\s(\d{4})/);
+  return mx ? `${parseInt(mx[1])} ${mx[2]} ${mx[3]}` : pick.period;
 }
 
 // Returns email + phone for a driver, preferring data from the selected month,
@@ -8153,7 +8218,9 @@ function exportEomReportCSV() {
   const total = data.reduce((s, r) => s + r.net, 0);
   lines.push(['', 'TOTAL', '', '', total.toFixed(2), ''].join(','));
 
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  // Prepend a UTF-8 BOM so Excel reads it as UTF-8 — otherwise "—" and Arabic names
+  // get mangled into "â€"" mojibake.
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
@@ -8597,11 +8664,16 @@ document.addEventListener('DOMContentLoaded', () => {
       renderHistory();
       updateShareUI(binId);
     });
-    // Auto-refresh from cloud every 4 minutes so team members see new uploads
-    // without needing to manually refresh the page
+    // Auto-refresh from cloud so team members see new uploads. Interval is deliberately
+    // long: JSONBin's free tier caps at ~10,000 requests/month, and a single device
+    // polling every 4 min burned ~10,800/month BY ITSELF — which is what kept exhausting
+    // the quota and throwing recurring 401/403 errors. This dashboard is shared across 7+
+    // devices, so at 60 min each device uses only ~720 requests/month → ~7,200/month even
+    // with 10 devices, comfortably under the cap. Only foreground tabs poll, and a page
+    // refresh (or the Pull button) always forces an instant fetch for anyone who needs it now.
     setInterval(() => {
       if (!document.hidden && getBinId()) fetchFromCloud();
-    }, 4 * 60 * 1000);
+    }, 60 * 60 * 1000);
   } else {
     autoLoadLatest();
     renderHistory();
