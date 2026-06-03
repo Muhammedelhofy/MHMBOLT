@@ -1389,6 +1389,36 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
       </div>
       <div id="customKeyStatus" style="font-size:11px;margin-top:6px;color:var(--text-muted)"></div>
     </div>
+
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(52,211,153,.25)">
+      <div style="font-weight:700;font-size:13px;color:#34D399">🟢 Supabase (recommended — no 100KB limit, scales with your fleet)</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;line-height:1.5">
+        JSONBin's free plan caps each upload at 100KB (~2–3 weeks of data). <b>Supabase free</b> stores years of data and full history for the whole team. One-time setup:
+        <b>1)</b> sign up free at <span style="color:var(--cyan)">supabase.com</span> → New project →
+        <b>2)</b> open <b>SQL Editor</b> and run the snippet below (creates the table + opens team access) →
+        <b>3)</b> Project Settings → <b>API</b> → copy the <b>Project URL</b> and the <b>anon public</b> key →
+        <b>4)</b> paste both below → Save → Test → then <b>Fix Sync</b>. The share link carries both, so other devices auto-configure.
+      </div>
+      <details style="margin-top:8px">
+        <summary style="cursor:pointer;color:var(--cyan);font-size:11px">▸ Show the SQL to paste into Supabase (one time)</summary>
+        <pre style="white-space:pre-wrap;background:#020A14;border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:11px;color:#9FE7C9;margin-top:6px;user-select:all">create table if not exists fleet_data (
+  id text primary key,
+  data jsonb,
+  updated_at timestamptz default now()
+);
+alter table fleet_data enable row level security;
+create policy "team access" on fleet_data
+  for all using (true) with check (true);</pre>
+      </details>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
+        <input type="text" id="sbUrlInput"  placeholder="https://xxxx.supabase.co  (Project URL)" style="flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--mono);background:var(--bg);box-sizing:border-box">
+        <input type="text" id="sbKeyInput"  placeholder="anon public key (eyJ…)" style="flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--mono);background:var(--bg);box-sizing:border-box">
+        <button class="save-btn" onclick="saveSupabaseConfig()">Save</button>
+        <button class="save-btn" onclick="testSupabase()">Test</button>
+        <button class="save-btn" style="background:#fff;color:var(--text-muted);border:1px solid var(--border)" onclick="clearSupabaseConfig()">Disable</button>
+      </div>
+      <div id="sbStatus" style="font-size:11px;margin-top:6px;color:var(--text-muted)"></div>
+    </div>
   </div>
 
   <div class="settings-section">
@@ -1499,6 +1529,7 @@ function initSettingsUI() {
   const s = loadSettings();
   Object.keys(s).forEach(k => { const el = document.getElementById(k); if (el) el.value = s[k]; });
   if (typeof renderKeyStatus === 'function') renderKeyStatus();
+  if (typeof renderSbStatus === 'function') renderSbStatus();
 }
 
 // ═══════════════════════════════════════════
@@ -6090,7 +6121,7 @@ function clearAllData() {
 // don't see this exact string, your browser is serving a cached old HTML.
 // Force-refresh with Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac).
 // ═══════════════════════════════════════════
-const BUILD_VERSION = 'v3.9 — 2026-06-03 — FIX: cloud upload now budgets the WHOLE payload <100KB (was "record over 100kb" 403)';
+const BUILD_VERSION = 'v4.0 — 2026-06-03 — Supabase backend (no 100KB limit, full history for the team) + JSONBin fallback';
 console.log('%cBolt Dashboard ' + BUILD_VERSION, 'color:#34d186;font-weight:bold');
 
 // ═══════════════════════════════════════════
@@ -6114,9 +6145,60 @@ function usingCustomKey() {
   return !!k && !isSharedKey(k);
 }
 
+// ═══════════════════════════════════════════
+// SUPABASE backend (free, scalable, private) — preferred when configured.
+// One Postgres row (table fleet_data, id='fleet') holds the whole record as JSONB, so there
+// is NO 100KB cap like JSONBin — it grows with the fleet. The team shares one Project URL +
+// anon key (embedded in the share link). Falls back to JSONBin automatically when not set up.
+// ═══════════════════════════════════════════
+const SB_URL_STORE = 'khair_sb_url';
+const SB_KEY_STORE = 'khair_sb_key';
+const SB_ROW_ID    = 'fleet';
+function getSbUrl() { return (localStorage.getItem(SB_URL_STORE) || '').trim().replace(/\/+$/, ''); }
+function getSbKey() { return (localStorage.getItem(SB_KEY_STORE) || '').trim(); }
+function supabaseOn() { return !!getSbUrl() && !!getSbKey(); }
+function sbHeaders(extra) { return { apikey: getSbKey(), Authorization: 'Bearer ' + getSbKey(), ...(extra || {}) }; }
+
+// Unified cloud read/write — dispatch to Supabase if configured, else JSONBin.
+// cloudRead() → the record object (or null on failure). cloudWrite(record) → true/false.
+async function cloudRead() {
+  if (supabaseOn()) {
+    const rows = await jbFetch(`${getSbUrl()}/rest/v1/fleet_data?id=eq.${SB_ROW_ID}&select=data`, { headers: sbHeaders() });
+    if (rows === null) return null;                 // request failed
+    return (Array.isArray(rows) && rows[0]) ? (rows[0].data || {}) : {}; // empty array = no row yet → blank record
+  }
+  const binId = getBinId();
+  if (!binId) return null;
+  const res = await jbFetch(`${JSONBIN_BASE}/b/${binId}/latest`, { headers: { 'X-Master-Key': getJbKey() } });
+  return res ? (res.record || {}) : null;
+}
+async function cloudWrite(record) {
+  if (supabaseOn()) {
+    const ok = await jbFetch(`${getSbUrl()}/rest/v1/fleet_data`, {
+      method: 'POST',
+      headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ id: SB_ROW_ID, data: record, updated_at: new Date().toISOString() })
+    });
+    return ok !== null;
+  }
+  let binId = getBinId();
+  if (!binId) binId = await createBin();
+  if (!binId) return false;
+  const ok = await jbFetch(`${JSONBIN_BASE}/b/${binId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-Master-Key': getJbKey() },
+    body: JSON.stringify(record)
+  });
+  if (ok) localStorage.setItem('khair_bin_id', binId);
+  return !!ok;
+}
+
 function getBinId() {
   const params = new URLSearchParams(window.location.search);
-  // A share link can carry the private key (base64) so other devices auto-configure from one link.
+  // A share link can carry the Supabase config (?sb=) so a teammate auto-configures from one link.
+  const sb = params.get('sb');
+  if (sb) { try { const [u, key] = atob(decodeURIComponent(sb)).split('|'); if (u && key) { localStorage.setItem(SB_URL_STORE, u); localStorage.setItem(SB_KEY_STORE, key); } } catch(_) {} }
+  // …or the JSONBin private key (?k=) for the legacy JSONBin backend.
   const k = params.get('k');
   if (k) { try { const dec = atob(k); if (dec && !isSharedKey(dec)) localStorage.setItem(JB_KEY_STORE, dec); } catch(_) {} }
   const p = params.get('bin');
@@ -6125,8 +6207,12 @@ function getBinId() {
 }
 
 function getShareUrl(binId) {
-  // Embed the private key (if set) so a teammate who opens the link is auto-linked AND
-  // auto-keyed in one step — no manual key entry on each device.
+  // Supabase: one link carries the Project URL + anon key (base64) so teammates auto-configure.
+  if (supabaseOn()) {
+    const cfg = encodeURIComponent(btoa(getSbUrl() + '|' + getSbKey()));
+    return `${location.origin}${location.pathname}?sb=${cfg}`;
+  }
+  // JSONBin: embed the private key (if set) so the teammate is auto-linked AND auto-keyed.
   const base = `${location.origin}${location.pathname}?bin=${binId}`;
   return usingCustomKey() ? `${base}&k=${btoa(getJbKey())}` : base;
 }
@@ -6182,7 +6268,9 @@ async function jbFetch(url, options = {}) {
       }
       return null;
     }
-    return json;
+    // 2xx with an empty body (e.g. Supabase POST return=minimal → 201 no content) is a SUCCESS.
+    // Return a truthy sentinel so callers that check `!== null` treat it as success, not failure.
+    return json === null ? { _ok: true } : json;
   } catch(e) {
     clearTimeout(tid);
     const msg = e.name === 'AbortError' ? 'request timed out' : e.message;
@@ -6327,25 +6415,15 @@ function slimForCloud(history, overheadBytes = 0, limit = CLOUD_DEFAULT_DAYS) {
 
 async function syncToCloud() {
   setSyncStatus('syncing', 'syncing…');
-  let binId = getBinId();
-  if (!binId) binId = await createBin();
-  if (!binId) return;
+  // Read the existing cloud record (Supabase or JSONBin), merge, write back.
+  const record = await cloudRead();
+  if (record === null) { localStorage.setItem('khair_last_sync_ok', '0'); return; }
 
-  // Fetch full bin first — preserve original fleet data, only update khair_ keys
-  const fetchData = await jbFetch(`${JSONBIN_BASE}/b/${binId}/latest`, {
-    headers: { 'X-Master-Key': getJbKey() }
-  });
-  if (!fetchData) return;
-
-  const record = fetchData.record || {};
   const cloudKhairHistory = readCloudHistory(record);
   const merged = mergeHistories(getHistory(), cloudKhairHistory);
   saveHistory(merged); // full local (compressed, capped to LOCAL_MAX_DAYS)
   invalidateAlertCache();
 
-  // Build every NON-history field first, drop the old history out of ...record so we don't
-  // carry stale bulk, then measure the overhead so the history is trimmed to fit the WHOLE
-  // upload under 100KB (history + profiles + overrides + mappings + …).
   const { khair_history: _oldHist, ...recordRest } = record;
   const nonHistory = {
     ...recordRest,
@@ -6359,50 +6437,51 @@ async function syncToCloud() {
     khair_cycle_anchor:     localStorage.getItem(CYCLE_ANCHOR_KEY) || '',
     version: 2
   };
-  const overhead = new Blob([JSON.stringify({ ...nonHistory, khair_history: [] })]).size;
 
-  // Slim history within the budget left after the other fields. {slim, days, sizeKB, capped}.
-  const slimResult = slimForCloud(merged, overhead);
+  let updated, days, sizeKB, capped;
+  if (supabaseOn()) {
+    // Supabase has no 100KB cap → store the FULL history (all days kept locally).
+    const slim = merged.map(packEntry);
+    updated = { ...nonHistory, khair_history: slim };
+    days = merged.length; capped = false;
+    sizeKB = Math.round(new Blob([JSON.stringify(updated)]).size / 1024);
+  } else {
+    // JSONBin: trim the WHOLE payload under 100KB (history + the other fields).
+    const overhead = new Blob([JSON.stringify({ ...nonHistory, khair_history: [] })]).size;
+    const slimResult = slimForCloud(merged, overhead);
+    updated = { ...nonHistory, khair_history: slimResult.slim };
+    days = slimResult.days; sizeKB = slimResult.sizeKB; capped = slimResult.capped;
+  }
 
-  const updated = { ...nonHistory, khair_history: slimResult.slim };
-
-  const data = await jbFetch(`${JSONBIN_BASE}/b/${binId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'X-Master-Key': getJbKey() },
-    body: JSON.stringify(updated)
-  });
-
-  if (data) {
-    localStorage.setItem('khair_bin_id', binId);
+  const ok = await cloudWrite(updated);
+  if (ok) {
     localStorage.setItem('khair_last_sync', new Date().toISOString());
     localStorage.setItem('khair_last_sync_ok', '1');
-    if (slimResult.capped) {
-      setSyncStatus('synced', `synced ✓ — cloud capped to ${slimResult.days} days (${slimResult.sizeKB}KB)`);
-      toast(`Cloud (shared link) holds the latest ${slimResult.days} days — JSONBin 100KB limit. This browser keeps all ${merged.length} days.`);
+    const backend = supabaseOn() ? 'Supabase' : 'JSONBin';
+    if (capped) {
+      setSyncStatus('synced', `synced ✓ — cloud capped to ${days} days (${sizeKB}KB)`);
+      toast(`Cloud holds the latest ${days} days — JSONBin 100KB limit. This browser keeps all ${merged.length} days. Switch to Supabase to store them all.`);
     } else {
-      setSyncStatus('synced', `synced ✓ — ${slimResult.days} days (${slimResult.sizeKB}KB)`);
+      setSyncStatus('synced', `synced ✓ — ${days} days (${sizeKB}KB · ${backend})`);
     }
-    updateShareUI(binId);
+    updateShareUI(getBinId());
   } else {
     localStorage.setItem('khair_last_sync_ok', '0');
-    // jbFetch already toasted + set error dot; nothing more to do here.
+    // jbFetch already toasted + set error dot.
   }
 }
 
 async function fetchFromCloud() {
-  const binId = getBinId();
-  if (!binId) return;
+  if (!supabaseOn() && !getBinId()) return;
   setSyncStatus('syncing', 'loading…');
-  const data = await jbFetch(`${JSONBIN_BASE}/b/${binId}/latest`, {
-    headers: { 'X-Master-Key': getJbKey() }
-  });
-  if (!data) return;
-  const khairHistory = readCloudHistory(data.record);
+  const r = await cloudRead();
+  if (r === null) return;
+  const khairHistory = readCloudHistory(r);
   if (khairHistory && khairHistory.length) {
     const merged = mergeHistories(getHistory(), khairHistory);
     saveHistory(merged);
   }
-  const cloudMapping = data.record?.khair_nameMapping;
+  const cloudMapping = r.khair_nameMapping;
   // Apply cloud mappings whenever they contain valid {saudi, foreign} entries —
   // regardless of local count. The old ">= local.length" guard caused corrupted
   // local entries to block clean cloud data from being applied.
@@ -6418,7 +6497,6 @@ async function fetchFromCloud() {
     localStorage.setItem('khair_name_mapping', JSON.stringify(nameMapping));
   }
   // Restore settings — cloud is source of truth for shared config
-  const r = data.record || {};
   if (r.khair_settings && Object.keys(r.khair_settings).length) {
     localStorage.setItem('khair_settings3', JSON.stringify(r.khair_settings));
   }
@@ -6448,7 +6526,7 @@ async function fetchFromCloud() {
   }
   setSyncStatus('synced', 'synced ✓');
   localStorage.setItem('khair_last_sync', new Date().toISOString());
-  updateShareUI(binId);
+  updateShareUI(getBinId());
   renderMappingList();
   const activePanel = document.querySelector('.panel.active')?.id;
   if (activePanel === 'captains')  renderCaptains();
@@ -6496,6 +6574,55 @@ async function manualPull() {
   const after = getHistory().length;
   const added = after - before;
   toast(added > 0 ? `✓ Pulled ${added} new day(s) from cloud` : '✓ Already up to date');
+}
+
+// ── Supabase backend config ──
+function renderSbStatus() {
+  const el = document.getElementById('sbStatus'); if (!el) return;
+  const urlI = document.getElementById('sbUrlInput'); const keyI = document.getElementById('sbKeyInput');
+  if (urlI && !urlI.value) urlI.value = getSbUrl();
+  if (keyI && !keyI.value) keyI.value = getSbKey();
+  el.innerHTML = supabaseOn()
+    ? `<span style="color:#34D399">✓ Using Supabase</span> — full history, no 100KB limit. (This overrides JSONBin.)`
+    : `<span style="color:var(--text-muted)">Not set up — using JSONBin (100KB / ~2–3 weeks).</span>`;
+}
+function saveSupabaseConfig() {
+  const url = (document.getElementById('sbUrlInput').value || '').trim().replace(/\/+$/, '');
+  const key = (document.getElementById('sbKeyInput').value || '').trim();
+  if (!url || !key) { toast('Paste both the Project URL and the anon key.'); return; }
+  if (!/^https:\/\/.+\.supabase\.co/i.test(url)) { if (!confirm('That URL does not look like a Supabase Project URL (https://xxxx.supabase.co). Save anyway?')) return; }
+  localStorage.setItem(SB_URL_STORE, url);
+  localStorage.setItem(SB_KEY_STORE, key);
+  renderSbStatus();
+  toast('Supabase saved — tap Test, then Fix Sync to push your data.');
+}
+function clearSupabaseConfig() {
+  if (!confirm('Disable Supabase and go back to JSONBin (100KB limit)?')) return;
+  localStorage.removeItem(SB_URL_STORE);
+  localStorage.removeItem(SB_KEY_STORE);
+  renderSbStatus();
+  toast('Supabase disabled — using JSONBin again.');
+}
+async function testSupabase() {
+  if (IS_FILE_ORIGIN) { toast('Open via a web server to test the cloud.'); return; }
+  const el = document.getElementById('sbStatus');
+  const set = h => { if (el) el.innerHTML = h; };
+  if (!supabaseOn()) { set('<span style="color:var(--red)">Enter the URL + anon key and Save first.</span>'); return; }
+  set('Testing write…');
+  // Upsert a probe row, then read it back — exercises the same insert+select Sync needs.
+  const wrote = await jbFetch(`${getSbUrl()}/rest/v1/fleet_data`, {
+    method: 'POST',
+    headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
+    body: JSON.stringify({ id: '__test__', data: { ok: 1 }, updated_at: new Date().toISOString() })
+  });
+  if (wrote === null) { set('<span style="color:var(--red)">✗ Write failed — see the toast. Likely the table/policy isn\'t set up (run the SQL), or the URL/key is wrong.</span>'); return; }
+  set('Testing read…');
+  const read = await jbFetch(`${getSbUrl()}/rest/v1/fleet_data?id=eq.__test__&select=data`, { headers: sbHeaders() });
+  if (read !== null && Array.isArray(read)) {
+    set('<span style="color:#34D399">✓ Supabase works — read + write succeeded.</span> Tap Fix Sync to push your data, then share the link.');
+  } else {
+    set('<span style="color:var(--red)">✗ Could write but not read — check the team-access policy (run the SQL snippet).</span>');
+  }
 }
 
 // ── Private cloud key (per-fleet quota) ──
@@ -6581,6 +6708,16 @@ function scrubBinFromUrl() {
 }
 async function fixSync() {
   if (IS_FILE_ORIGIN) { toast('Open via a web server (localhost / Live Server) to sync.'); return; }
+  // On Supabase there is no "bin" — just push the data and copy the share link.
+  if (supabaseOn()) {
+    setSyncStatus('syncing', 'syncing…');
+    await syncToCloud();
+    const url = getShareUrl(null);
+    const inp = document.getElementById('shareInput'); if (inp) inp.value = url;
+    try { await navigator.clipboard.writeText(url); toast('✓ Synced to Supabase. Share link copied — send it to your other devices.'); }
+    catch(_) { toast('✓ Synced to Supabase. Copy the share link above and send it to your other devices.'); }
+    return;
+  }
   if (!confirm('Fix Sync?\n\nThis re-links this device to a NEW cloud bin and uploads all of your current data (history + captain profiles).\n\nRun this on the device that has the most complete data, then send the new link it copies to your other devices.')) return;
   // 1) drop the broken link AND scrub it from the URL so a fresh bin is actually created
   localStorage.removeItem('khair_bin_id');
@@ -8900,27 +9037,24 @@ document.addEventListener('DOMContentLoaded', () => {
   initSettingsUI();
   renderMappingList();
   updateDiagnostics();
-  const binId = getBinId();
+  const binId = getBinId();             // also parses ?sb= / ?k= / ?bin= from the share link
+  const cloudReady = supabaseOn() || !!binId;
   if (IS_FILE_ORIGIN) {
     setSyncStatus('offline', 'open via server for sync');
     autoLoadLatest();
     renderHistory();
-    if (binId) updateShareUI(binId);
-  } else if (binId) {
+    if (cloudReady) updateShareUI(binId);
+  } else if (cloudReady) {
     fetchFromCloud().then(() => {
       autoLoadLatest();
       renderHistory();
       updateShareUI(binId);
     });
-    // Auto-refresh from cloud so team members see new uploads. Interval is deliberately
-    // long: JSONBin's free tier caps at ~10,000 requests/month, and a single device
-    // polling every 4 min burned ~10,800/month BY ITSELF — which is what kept exhausting
-    // the quota and throwing recurring 401/403 errors. This dashboard is shared across 7+
-    // devices, so at 60 min each device uses only ~720 requests/month → ~7,200/month even
-    // with 10 devices, comfortably under the cap. Only foreground tabs poll, and a page
-    // refresh (or the Pull button) always forces an instant fetch for anyone who needs it now.
+    // Auto-refresh from cloud so team members see new uploads. 60 min keeps JSONBin's free
+    // request count low (Supabase has no such limit). Only foreground tabs poll; a page
+    // refresh or the Pull button forces an instant fetch.
     setInterval(() => {
-      if (!document.hidden && getBinId()) fetchFromCloud();
+      if (!document.hidden && (supabaseOn() || getBinId())) fetchFromCloud();
     }, 60 * 60 * 1000);
   } else {
     autoLoadLatest();
