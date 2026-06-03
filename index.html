@@ -177,8 +177,13 @@ body::after {
 
 /* ── Driver-row hover scan ── */
 .driver-row { position:relative; overflow:hidden; }
-.driver-row::after { content:''; position:absolute; top:0; left:-120%; width:60%; height:100%; background:linear-gradient(90deg,transparent,rgba(0,255,179,.06),rgba(0,255,179,.1),rgba(0,255,179,.06),transparent); pointer-events:none; transition:none; }
-.driver-row:hover::after { animation:row-scan .55s ease forwards; }
+/* Hosted on the 2nd cell (NOT the row): generated content on a display:table-row
+   spawns an anonymous table-cell — a phantom column that shifts every <td> right
+   and breaks header/row alignment. A static <td> hosts it cleanly; its absolute
+   box still uses the position:relative <tr> as containing block, so it spans the
+   full row. (td:first-child is position:sticky, so it can't host a row-wide overlay.) */
+.driver-row td:nth-child(2)::after { content:''; position:absolute; top:0; left:-120%; width:60%; height:100%; background:linear-gradient(90deg,transparent,rgba(0,255,179,.06),rgba(0,255,179,.1),rgba(0,255,179,.06),transparent); pointer-events:none; transition:none; }
+.driver-row:hover td:nth-child(2)::after { animation:row-scan .55s ease forwards; }
 @keyframes row-scan { from{left:-60%} to{left:120%} }
 
 /* ── M8 neural idle shimmer (orb ring when no data) ── */
@@ -354,9 +359,10 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 .table-wrap { overflow-x:auto !important; }
 .driver-table td:first-child { position:sticky; left:0; background:var(--bg-card); z-index:1; border-right:1px solid rgba(0,212,255,.06); }
 .driver-table th:first-child { position:sticky; left:0; background:var(--bg-card2); z-index:2; }
-/* Fleet captain table — center all headers */
-.cap-table th { text-align:center !important; }
-.cap-table th .th-inner { justify-content:center !important; }
+/* Fleet captain table — headers align with their data:
+   numeric columns (td-r) right-align, Captain left, Monthly Target stays centered. */
+.cap-table th.td-r { text-align:right !important; }
+.cap-table th.td-r .th-inner { justify-content:flex-end !important; }
 .driver-table tr.driver-row:hover td:first-child { background:rgba(0,16,32,.95); }
 .driver-table tr.inactive-row td:first-child { background:var(--bg-card); }
 
@@ -842,14 +848,15 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
              inset 0 0 1px rgba(0,212,255,.15);
 }
 
-/* ── B: Driver row — HUD targeting line (::before is free; ::after is the scan) ── */
-.driver-row::before {
+/* ── B: Driver row — HUD targeting line (hosted on the 2nd cell, not the row, to
+   avoid the anonymous-table-cell phantom column that misaligns header vs rows) ── */
+.driver-row td:nth-child(2)::before {
   content:'';
   position:absolute; top:0; left:0; right:0; height:1px;
   background:linear-gradient(90deg,rgba(0,212,255,.9) 0%,rgba(0,255,179,.5) 45%,transparent 100%);
   opacity:0; pointer-events:none; z-index:3; transition:opacity .1s;
 }
-.driver-row:hover::before { opacity:1; }
+.driver-row:hover td:nth-child(2)::before { opacity:1; }
 .driver-row:hover td:first-child { box-shadow:inset 2px 0 0 rgba(0,212,255,.7); }
 
 /* ── C: Full-viewport upload scan beam ── */
