@@ -5059,6 +5059,18 @@ let captainSearch       = '';
 let summarySelectedDays = null;      // Set of selected period strings; null = all
 let sumPeriodMode       = 'all';     // 'all' | '7' | '14' | 'month' | 'custom'
 let sumMonthFilter      = 'all';     // 'all' or 'YYYY-MM' — unified month filter
+let sumMonthInitDone    = false;     // one-time: default the month filter to the current month on first render
+
+// Default month for the Captains tab: the month we're currently in (if it has data),
+// otherwise the most recent month on record, otherwise 'all'. Keeps the default focused
+// on "now" instead of dumping every month together.
+function defaultSumMonth() {
+  const months = getAvailableMonths();              // 'YYYY-MM', newest-first
+  const now    = new Date();
+  const cur    = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  if (months.includes(cur)) return cur;
+  return months[0] || 'all';
+}
 let sumModelFilter      = 'all';     // 'all' | 'A' | 'B' | 'C' | 'D' | 'E' | 'none'
 let sumFleetSortCol     = 'date';    // sort column for By Day table
 let sumFleetSortAsc     = true;
@@ -5130,6 +5142,12 @@ function renderCaptains() {
   if (!history.length) {
     el.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">No data loaded</div><div class="empty-sub">Upload a Bolt earnings CSV to get started</div></div>`;
     return;
+  }
+
+  // One-time default: focus the current month on first render (data is now available).
+  if (!sumMonthInitDone) {
+    sumMonthInitDone = true;
+    sumMonthFilter   = defaultSumMonth();
   }
 
   // Pool = all history sorted oldest→newest, filtered by month
@@ -5349,7 +5367,16 @@ function setSumPeriod(mode) {
 }
 
 function setSumDay(period) {
-  if (!period) return;
+  if (!period) {
+    // "All days" chosen → clear the single-day pin and revert to the full month/period.
+    // (Previously this early-returned, leaving the view stuck on the one selected day —
+    // the user had to switch months and back to recover. summarySelectedDays=null makes
+    // renderCaptains repopulate from the month-filtered pool.)
+    sumPeriodMode = 'all';
+    summarySelectedDays = null;
+    renderCaptains();
+    return;
+  }
   sumPeriodMode = 'custom';
   summarySelectedDays = new Set([period]);
   renderCaptains();
@@ -5972,7 +5999,7 @@ function clearAllData() {
   if (!confirm('Clear all history? Cannot be undone.')) return;
   localStorage.removeItem('khair_perf_history');
   currentDrivers=null; currentPeriod=''; currentPeriodInfo=null;
-  summarySelectedDays=null; captainSearch=''; sumPeriodMode='all'; sumMonthFilter='all'; sumModelFilter='all';
+  summarySelectedDays=null; captainSearch=''; sumPeriodMode='all'; sumMonthFilter='all'; sumModelFilter='all'; sumMonthInitDone=false;
   document.getElementById('headerPeriod').textContent='No data loaded';
   renderCaptains();
   renderHistory();
