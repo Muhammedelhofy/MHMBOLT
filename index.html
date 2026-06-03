@@ -357,12 +357,21 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 
 /* ── Sticky first column in fleet table ── */
 .table-wrap { overflow-x:auto !important; }
+/* Captain table uses proportional (%) column widths so the leftover width on wide
+   screens spreads evenly across all columns instead of dumping into the Captain
+   column. Fixed layout makes the % widths exact; min-width keeps it readable +
+   scrollable on narrow screens rather than crushing the data columns. */
+.cap-table { table-layout:fixed; min-width:1100px; }
 .driver-table td:first-child { position:sticky; left:0; background:var(--bg-card); z-index:1; border-right:1px solid rgba(0,212,255,.06); }
 .driver-table th:first-child { position:sticky; left:0; background:var(--bg-card2); z-index:2; }
 /* Fleet captain table — headers align with their data:
    numeric columns (td-r) right-align, Captain left, Monthly Target stays centered. */
 .cap-table th.td-r { text-align:right !important; }
 .cap-table th.td-r .th-inner { justify-content:flex-end !important; }
+/* Per request: center the Captain (1st) and Net SAR (3rd) header labels in their columns. */
+.cap-table thead th:nth-child(1),
+.cap-table thead th:nth-child(3) { text-align:center !important; }
+.cap-table thead th:nth-child(3) .th-inner { justify-content:center !important; }
 .driver-table tr.driver-row:hover td:first-child { background:rgba(0,16,32,.95); }
 .driver-table tr.inactive-row td:first-child { background:var(--bg-card); }
 
@@ -5705,16 +5714,16 @@ function buildCourierSummaryTable(entries, searchFilter) {
 
   return `<div class="table-wrap"><table class="driver-table cap-table">
     <colgroup>
-      <col style="min-width:260px">
-      <col style="width:70px">
-      <col style="width:200px">
-      <col style="width:90px">
-      <col style="width:80px">
-      <col style="width:90px">
-      <col style="width:80px">
-      <col style="width:70px">
-      <col style="width:100px">
-      <col style="width:180px">
+      <col style="width:20%">
+      <col style="width:6%">
+      <col style="width:13%">
+      <col style="width:9%">
+      <col style="width:8%">
+      <col style="width:9%">
+      <col style="width:8%">
+      <col style="width:6%">
+      <col style="width:9%">
+      <col style="width:12%">
     </colgroup>
     <thead><tr>
       ${cth('Captain','name')}
