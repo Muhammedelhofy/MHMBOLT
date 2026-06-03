@@ -6167,9 +6167,14 @@ async function jbFetch(url, options = {}) {
       console.error(`JSONBin ${options.method||'GET'} ${url} → ${res.status}: ${msg}`);
       setSyncStatus('error', `error ${res.status}`);
       if (res.status === 401 || res.status === 403) {
-        // The shared bin is owned by a different key/account, or the free-tier quota is
-        // exhausted — writes are forbidden. Guide the user to re-link rather than silently fail.
-        toast(`Sync blocked (${res.status}). The shared cloud link is owned by a different key or out of quota. In Settings → Sync, tap "Reset cloud link", press Sync, then re-share the new link to all devices.`);
+        // 401/403 = forbidden. On the SHARED key this almost always means the global free
+        // quota is exhausted — and NO amount of Reset/Fix Sync helps, because a new bin still
+        // uses the same dead key. The only cure is a private key. Say so explicitly.
+        if (!usingCustomKey()) {
+          toast(`Sync blocked (${res.status}) — the SHARED key is out of quota. Reset/Fix Sync won't help. Fix it for good: Settings → 🔑 Private Cloud Key → paste your own free jsonbin.io key → Save → Test → then Fix Sync.`);
+        } else {
+          toast(`Sync blocked (${res.status}) on your private key — the key may be wrong/expired or this bin belongs to a different account. Re-check the key (Test), or tap Fix Sync to make a fresh bin under it.`);
+        }
       } else {
         toast(`Sync error ${res.status}: ${msg}`);
       }
@@ -6526,6 +6531,7 @@ async function testCloudKey() {
 function resetCloudLink() {
   if (!confirm('Reset cloud link?\n\nThis clears the current bin ID and generates a new share URL on next sync. Send the new URL to your manager.')) return;
   localStorage.removeItem('khair_bin_id');
+  scrubBinFromUrl(); // also strip ?bin= from the URL, else getBinId() resurrects the old bin
   setSyncStatus('offline', 'not synced');
   const inp = document.getElementById('shareInput'); if (inp) inp.value = '';
   toast('Cloud link reset — sync to generate new one');
@@ -6534,11 +6540,24 @@ function resetCloudLink() {
 // One-click recovery for a 401/403 (shared bin owned by a different key, or quota dead).
 // Drops the broken bin link, creates a fresh bin under the current key, pushes EVERYTHING
 // (history + profiles + overrides + mappings), and copies the new share URL to share out.
+// Removes ?bin= (and ?k=) from the address bar. CRITICAL for recovery: getBinId() reads the
+// bin from the URL first, so if the page was opened at "...?bin=DELETED", clearing localStorage
+// isn't enough — the next getBinId() resurrects the dead bin straight from the URL, and you can
+// never re-link to a fresh one. Scrubbing the URL lets createBin() actually run.
+function scrubBinFromUrl() {
+  try {
+    const u = new URL(location.href);
+    let changed = false;
+    if (u.searchParams.has('bin')) { u.searchParams.delete('bin'); changed = true; }
+    if (changed) history.replaceState(null, '', u.pathname + (u.search || '') + u.hash);
+  } catch (_) {}
+}
 async function fixSync() {
   if (IS_FILE_ORIGIN) { toast('Open via a web server (localhost / Live Server) to sync.'); return; }
   if (!confirm('Fix Sync?\n\nThis re-links this device to a NEW cloud bin and uploads all of your current data (history + captain profiles).\n\nRun this on the device that has the most complete data, then send the new link it copies to your other devices.')) return;
-  // 1) drop the broken link so syncToCloud creates a fresh bin under the current key
+  // 1) drop the broken link AND scrub it from the URL so a fresh bin is actually created
   localStorage.removeItem('khair_bin_id');
+  scrubBinFromUrl();
   setSyncStatus('syncing', 're-linking…');
   // 2) push everything to the new bin
   await syncToCloud();
