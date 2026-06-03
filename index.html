@@ -144,6 +144,26 @@ body::after {
 /* Per-day pace badge glow (Monthly Target column) — green captains earning above the
    daily target get a brighter text glow the further above 230/day they are. */
 .pace-good.pace-glow { text-shadow:0 0 8px rgba(0,255,179,.8); }
+
+/* ── Bonus-tier colours (4k/5k/6k). Used by BOTH the By-Captain Monthly Target bar
+   and the Compare-Days net-earnings cells, so a driver's projected tier reads the same
+   everywhere: red = below 4k, amber = 4k, cyan = 5k, green(glow) = 6k. ── */
+.fill-tier3 { background:var(--bolt-green); box-shadow:0 0 10px rgba(0,255,179,.95),0 0 18px rgba(0,255,179,.55); }
+.fill-tier2 { background:var(--cyan);       box-shadow:0 0 8px rgba(0,212,255,.6); }
+.fill-tier1 { background:var(--amber);      box-shadow:0 0 6px rgba(255,170,0,.5); }
+.fill-tier0 { background:var(--red);        box-shadow:0 0 6px rgba(255,68,102,.5); }
+.tier-txt-3 { color:var(--bolt-green) !important; }
+.tier-txt-2 { color:var(--cyan)       !important; }
+.tier-txt-1 { color:var(--amber)      !important; }
+.tier-txt-0 { color:var(--red)        !important; }
+.tier-txt-3.pace-glow { text-shadow:0 0 8px rgba(0,255,179,.85); }
+/* Compare-days cell fills (tinted background + matching text) */
+.cmp-tier3 { background:rgba(0,255,179,.15); color:#7CFFD8; box-shadow:inset 0 0 0 1px rgba(0,255,179,.25); }
+.cmp-tier2 { background:rgba(0,212,255,.14); color:#86E3FF; box-shadow:inset 0 0 0 1px rgba(0,212,255,.25); }
+.cmp-tier1 { background:rgba(255,170,0,.14); color:#FFD27F; box-shadow:inset 0 0 0 1px rgba(255,170,0,.22); }
+.cmp-tier0 { background:rgba(255,68,102,.15);color:#FF9DB0; box-shadow:inset 0 0 0 1px rgba(255,68,102,.30); }
+/* "Stretch" hint — flags captains projecting ABOVE the 6k top tier (7k/8k/9k/10k+). */
+.tier-over { display:inline-block; margin-left:5px; padding:1px 5px; border-radius:8px; font-family:var(--mono); font-size:9px; font-weight:800; letter-spacing:.03em; color:#021; background:var(--bolt-green); box-shadow:0 0 8px rgba(0,255,179,.7); vertical-align:middle; }
 .target-sub { font-size:10px; color:var(--text-dim); margin-top:4px; }
 .pace-good  { color:var(--bolt-green) !important; }
 .pace-warn  { color:var(--amber)      !important; }
@@ -409,7 +429,7 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 .owes-badge { display:inline-flex; align-items:center; font-size:9px; font-weight:700; padding:2px 6px; border-radius:2px; letter-spacing:.04em; margin-top:3px; margin-right:4px; background:rgba(255,68,102,.12); border:1px solid rgba(255,68,102,.4); color:var(--red); animation:glow-pulse 2s infinite; }
 
 /* ── Model badges — unified circles, X/Y/Z system (B/C/D stored values map here too) ── */
-.model-badge { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:50%; font-family:var(--mono); font-size:9px; font-weight:800; flex-shrink:0; letter-spacing:0; margin-left:5px; vertical-align:middle; }
+.model-badge { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; font-family:var(--mono); font-size:12px; font-weight:800; flex-shrink:0; letter-spacing:0; margin-left:6px; vertical-align:middle; }
 /* X = cyan  (was B) */
 .model-X,.model-B { background:rgba(0,212,255,.12); border:1px solid rgba(0,212,255,.45); color:#00D4FF; box-shadow:0 0 6px rgba(0,212,255,.3); }
 /* Y = purple (was C) */
@@ -424,7 +444,7 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 .model-custom,.model-none { background:rgba(148,163,184,.08); border:1px solid rgba(148,163,184,.25); color:#64748B; box-shadow:none; }
 
 /* ── Funnel source tags — circles ── */
-.funnel-badge { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; border-radius:50%; font-family:var(--mono); font-size:8px; font-weight:800; flex-shrink:0; letter-spacing:0; margin-left:4px; vertical-align:middle; }
+.funnel-badge { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; font-family:var(--mono); font-size:10px; font-weight:800; flex-shrink:0; letter-spacing:0; margin-left:5px; vertical-align:middle; }
 .funnel-N { background:rgba(0,212,255,.12);  border:1px solid rgba(0,212,255,.4);  color:#22D3EE; box-shadow:0 0 5px rgba(0,212,255,.25); }
 .funnel-M { background:rgba(139,92,246,.12); border:1px solid rgba(139,92,246,.4); color:#A78BFA; box-shadow:0 0 5px rgba(139,92,246,.25); }
 .funnel-Y { background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.4); color:#F59E0B; box-shadow:0 0 5px rgba(245,158,11,.2); }
@@ -4927,7 +4947,14 @@ function renderCompareView(sorted) {
             const cfn=lookupForeignName(row.name);
             return `<tr>
               <td class="col-driver"><div>${row.name}</div>${cfn?`<div class="d-foreign">${cfn}</div>`:''}</td>
-              ${row.vals.map((v,i)=>`<td class="${heatClass(v,row.min,row.max)}">${formatCell(v)}</td>`).join('')}
+              ${row.vals.map((v,i)=>{
+                // For Net Earnings, colour each day by the bonus tier it projects to
+                // (day × 26) so the manager sees where that day's pace would land — same
+                // tier palette as the By-Captain tab. Other KPIs keep the relative heatmap.
+                const cls = compareKPI==='netEarnings' ? (v ? paceTier(v).cmp : 'heat-zero')
+                                                       : heatClass(v,row.min,row.max);
+                return `<td class="${cls}">${formatCell(v)}</td>`;
+              }).join('')}
               <td class="col-trend ${row.trendCls}" style="text-align:center;font-size:16px">${row.trend}</td>
             </tr>`;
           }).join('')}
@@ -4940,7 +4967,9 @@ function renderCompareView(sorted) {
       </table>
     </div>
     <div style="margin-top:10px;font-size:11px;color:var(--text-muted)">
-      Colors are per-driver: 🟢 = that driver's best day &nbsp;·&nbsp; 🔴 = that driver's worst &nbsp;·&nbsp; 👑 = fleet's best day
+      ${compareKPI==='netEarnings'
+        ? (() => { const [t1,t2,t3]=bonusTiers(); return `Colour = bonus tier the day projects to (day × ${TIER_DAYS}): <span style="color:#FF9DB0">🔴 below ${fmt(t1)}</span> &nbsp;·&nbsp; <span style="color:#FFD27F">🟡 ${fmt(t1)}</span> &nbsp;·&nbsp; <span style="color:#86E3FF">🔵 ${fmt(t2)}</span> &nbsp;·&nbsp; <span style="color:#7CFFD8">🟢 ${fmt(t3)}</span> &nbsp;·&nbsp; 👑 = fleet's best day`; })()
+        : `Colors are per-driver: 🟢 = that driver's best day &nbsp;·&nbsp; 🔴 = that driver's worst &nbsp;·&nbsp; 👑 = fleet's best day`}
     </div>`;
 }
 
@@ -5567,6 +5596,30 @@ function m8UpdateBriefCard() {
   card.style.display = 'block';
 }
 
+// ── Bonus-tier model (shared by By-Captain + Compare-Days) ──
+// Monthly bonus tiers in SAR. Top tier = the aspirational monthly target (default 6,000),
+// with 5,000 and 4,000 below it. We translate a DAILY earning rate into a projected month
+// by assuming a 26-working-day month (the user's basis: 200/day × 26 = 5,200), then classify
+// that projection into a tier band. Below the 4,000 tier reads red; each tier up gets its own
+// colour so the manager can see at a glance where a driver will land if they hold the pace.
+const TIER_DAYS = 26;
+function bonusTiers() {
+  const top = loadSettings().monthlyTarget || 6000;
+  return [Math.max(0, top - 2000), Math.max(0, top - 1000), top]; // e.g. [4000, 5000, 6000]
+}
+// Classify a daily SAR rate. Returns band 0-3 + matching colour classes + the tier it lands in.
+function paceTier(perDay) {
+  const [t1, t2, t3] = bonusTiers();
+  const proj = (perDay || 0) * TIER_DAYS;
+  let band, tierAmt;
+  if      (proj >= t3) { band = 3; tierAmt = t3; }
+  else if (proj >= t2) { band = 2; tierAmt = t2; }
+  else if (proj >= t1) { band = 1; tierAmt = t1; }
+  else                 { band = 0; tierAmt = 0;  }
+  return { band, proj, tierAmt, t1, t2, t3,
+           fill: 'fill-tier' + band, txt: 'tier-txt-' + band, cmp: 'cmp-tier' + band };
+}
+
 function buildCourierSummaryTable(entries, searchFilter) {
   if (!entries.length) return `<div class="empty-state" style="padding:30px"><div class="empty-title">No days selected</div></div>`;
   const s = loadSettings();
@@ -5711,40 +5764,30 @@ function buildCourierSummaryTable(entries, searchFilter) {
       ? `onclick="(function(el){bioScanThenOpen('${esc(c.name)}',el);setTimeout(()=>openModalForEntry('${esc(c.name)}','${esc(singlePeriod)}'),0);})(this)"`
       : `onclick="bioScanThenOpen('${esc(c.name)}',this)"`;
 
-    // Target progress (c.net already includes campaign since Bolt's net = gross - fees, gross includes campaign).
-    // PACE-BASED tracking: comparing net to the FULL monthly target makes anyone mid-month
-    // read as alarmingly "behind". Instead we judge against the pace needed to reach target
-    // a working month of WORKING_DAYS (derived above from the month in view — May's 31
-    // calendar days → 26 working days). A captain earning enough per WORKED day to project
-    // past target reads as "on track" — not "behind". (Mirrors the driver-card concept.)
-    // Colour by the captain's DAILY average vs the 6,000-in-26-working-days goal the user
-    // set: green ≥ ~230/day (target÷26), red below ~200/day (target÷30), amber in between.
-    // Captains pacing well above the goal get a brighter glow. This is forgiving — a captain
-    // hitting the daily number reads green even if their running total is still mid-month.
+    // TIER-BASED projection. Translate the captain's daily pace into a projected month
+    // (×26 working days) and colour by which bonus tier it lands in: red below 4k, amber 4k,
+    // cyan 5k, green(glow) 6k. This shows the manager where each driver will END UP if they
+    // hold the current pace — so a steady 200/day reads cyan (→5,200), not alarming red,
+    // while a 100/day driver reads red (→2,600, below all tiers).
     const pct       = target > 0 ? Math.min(100, Math.round(c.net / target * 100)) : 100;
-    const goalDaily = target > 0 ? target / 26 : 0;   // ~230/day → green
-    const lowDaily  = target > 0 ? target / 30 : 0;   // <200/day → red
     const perDay    = c.days > 0 ? c.net / c.days : 0; // their actual SAR/day
-    const projMonth = perDay * WORKING_DAYS;          // projected month-end at this pace
-    const onPace    = perDay >= goalDaily;
-    let fillCls, gapCls, glow = '';
-    if (perDay >= goalDaily) {
-      gapCls = 'pace-good';
-      if (perDay >= goalDaily * 1.2) { fillCls = 'fill-green-strong'; glow = ' pace-glow'; } // well above 230/day
-      else                            { fillCls = 'fill-green'; }
-    } else if (perDay >= lowDaily) {
-      fillCls = 'fill-amber'; gapCls = 'pace-warn';
-    } else {
-      fillCls = 'fill-red';   gapCls = 'pace-bad';
-    }
-    const gapLabel = target > 0
-      ? (onPace ? `✓ on track` : `+${fmt(Math.round(goalDaily - perDay))}/day to target`)
+    const tier      = paceTier(perDay);
+    const projMonth = Math.round(tier.proj);          // projected month-end at this pace
+    const fillCls   = tier.fill;
+    const gapCls    = tier.txt;
+    const glow      = tier.band === 3 ? ' pace-glow' : '';
+    const tierName  = tier.band === 0 ? `below ${fmt(tier.t1)}` : `${fmt(tier.tierAmt)} tier`;
+    // Stretch hint: once projected above the 6k top tier, flag the next thousand milestone
+    // (7k / 8k / 9k / 10k+) so star performers stand out.
+    const stretch   = (target > 0 && projMonth >= tier.t3 + 1000)
+      ? ` <span class="tier-over" title="On pace to reach ${fmt(Math.floor(projMonth/1000)*1000)}+ SAR this month">${Math.floor(projMonth/1000)}k</span>`
       : '';
-    const gapTitle = target > 0
-      ? `Goal: ${fmt(target)} in 26 working days → ${fmt(Math.round(goalDaily))}/day (green ≥ ${fmt(Math.round(goalDaily))}, red < ${fmt(Math.round(lowDaily))}).\n`
-        + `${c.name}: ${c.days}d worked at ${fmt(Math.round(perDay))}/day → projected ${fmt(Math.round(projMonth))} for the month.\n`
-        + (onPace ? `On track — ${fmt(Math.round(perDay - goalDaily))}/day above goal.`
-                  : `Needs +${fmt(Math.round(goalDaily - perDay))}/day to reach the ${fmt(Math.round(goalDaily))}/day goal.`)
+    const gapLabel  = target > 0 ? `→ ${fmt(projMonth)}/mo${stretch}` : '';
+    const gapTitle  = target > 0
+      ? `${c.name}: ${c.days}d worked at ${fmt(Math.round(perDay))}/day.\n`
+        + `If sustained over ${TIER_DAYS} working days → projected ${fmt(projMonth)} this month → ${tierName}.\n`
+        + `Bonus tiers: ${fmt(tier.t1)} / ${fmt(tier.t2)} / ${fmt(tier.t3)} SAR.`
+        + (tier.band < 3 ? `\nNeeds ${fmt(Math.round(tier.t3 / TIER_DAYS - perDay))}/day more to reach the top ${fmt(tier.t3)} tier.` : ``)
       : '';
 
     // Cash % badge
