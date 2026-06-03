@@ -6105,13 +6105,20 @@ const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
 const IS_FILE_ORIGIN = window.location.protocol === 'file:';
 const JB_KEY_STORE = 'khair_jsonbin_key';
 function getJbKey() { return (localStorage.getItem(JB_KEY_STORE) || '').trim() || JSONBIN_KEY; }
-function usingCustomKey() { return !!(localStorage.getItem(JB_KEY_STORE) || '').trim(); }
+// A "private" key only counts if it is set AND is NOT the built-in shared key. Saving the
+// shared key as your private key (e.g. it rode in on a shared link's &k=) gives no private
+// quota and keeps the 403 — so we explicitly treat that as "still shared".
+function isSharedKey(k) { return (k || '').trim() === JSONBIN_KEY; }
+function usingCustomKey() {
+  const k = (localStorage.getItem(JB_KEY_STORE) || '').trim();
+  return !!k && !isSharedKey(k);
+}
 
 function getBinId() {
   const params = new URLSearchParams(window.location.search);
   // A share link can carry the private key (base64) so other devices auto-configure from one link.
   const k = params.get('k');
-  if (k) { try { localStorage.setItem(JB_KEY_STORE, atob(k)); } catch(_) {} }
+  if (k) { try { const dec = atob(k); if (dec && !isSharedKey(dec)) localStorage.setItem(JB_KEY_STORE, dec); } catch(_) {} }
   const p = params.get('bin');
   if (p) { localStorage.setItem('khair_bin_id', p); return p; }
   return localStorage.getItem('khair_bin_id') || null;
@@ -6491,15 +6498,23 @@ async function manualPull() {
 function renderKeyStatus() {
   const el = document.getElementById('customKeyStatus'); if (!el) return;
   const inp = document.getElementById('customKeyInput');
-  const custom = (localStorage.getItem(JB_KEY_STORE) || '').trim();
-  if (inp && !inp.value) inp.value = custom;
-  el.innerHTML = custom
-    ? `<span style="color:var(--bolt-green)">✓ Using your private key</span> — your fleet has its own quota.`
-    : `<span style="color:var(--amber)">Using the shared key</span> — fine for testing, but switch to a private key to stop the recurring 403.`;
+  const stored = (localStorage.getItem(JB_KEY_STORE) || '').trim();
+  if (inp && !inp.value && stored) inp.value = stored;
+  if (usingCustomKey()) {
+    el.innerHTML = `<span style="color:var(--bolt-green)">✓ Using your private key</span> — your fleet has its own quota.`;
+  } else if (stored && isSharedKey(stored)) {
+    el.innerHTML = `<span style="color:var(--red)">⚠ That's the SHARED key, not a private one</span> — it has no private quota, so the 403 continues. Sign up at <b>jsonbin.io</b>, open <b>jsonbin.io/api-keys</b>, copy YOUR Master Key (a different $2a$10$… string), and paste it here.`;
+  } else {
+    el.innerHTML = `<span style="color:var(--amber)">Using the shared key</span> — fine for testing, but switch to a private key to stop the recurring 403.`;
+  }
 }
 function saveCustomKey() {
   const v = (document.getElementById('customKeyInput').value || '').trim();
   if (!v) { toast('Paste your JSONBin Master Key first'); return; }
+  if (isSharedKey(v)) {
+    alert('That is the built-in SHARED key — it has no private quota, so the 403 will continue.\n\nYou need YOUR OWN key:\n1) Sign up free at jsonbin.io\n2) Open jsonbin.io/api-keys\n3) Copy your MASTER KEY (a different $2a$10$… string)\n4) Paste THAT here.');
+    return;
+  }
   if (!v.startsWith('$2')) { if (!confirm('That does not look like a JSONBin Master Key (usually starts with "$2"). Save it anyway?')) return; }
   localStorage.setItem(JB_KEY_STORE, v);
   renderKeyStatus();
