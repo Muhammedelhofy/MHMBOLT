@@ -7207,8 +7207,8 @@ function renderFinanceCourierView() {
       <td style="text-align:right">${signed(p.other)}${otherLabel?`<div style="font-size:10px;color:var(--text-muted)">${otherLabel}</div>`:''}</td>
       <td style="text-align:right">${pnlCell(p.netPnL)}</td>
       <td style="text-align:right;white-space:nowrap">
-        <button class="finance-btn finance-btn-secondary" onclick="openCourierProfileModal('${nameAttr}')">Profile</button>
-        <button class="finance-btn finance-btn-secondary" onclick="openOverrideModal('${nameAttr}','${monthKey}')">${hasOverride?'✓ Override':'+ Override'}</button>
+        <button class="finance-btn finance-btn-secondary" onclick="openCourierProfileModal('${nameAttr}')" title="Permanent deal — applies to ALL months (the default that carries everywhere unless a month-change overrides it)">Profile</button>
+        <button class="finance-btn finance-btn-secondary" onclick="openOverrideModal('${nameAttr}','${monthKey}')" title="Change a value from ${monthLabel(monthKey)} FORWARD only — earlier months keep their old value">${hasOverride?'✓ Changed':'Change ▸'}</button>
       </td>
     </tr>`;
   }).join('');
@@ -7923,6 +7923,14 @@ function setCpFleetCut(type) {
     if (btn.dataset.val === type) btn.classList.add('active-receive');
   });
 }
+// Guards the silent "amount entered but direction = None → ignored" trap. Returns true to
+// proceed. If any rent/other has a value but no IN/OUT picked, it warns so the user can fix it.
+function confirmDirNone(fields) {
+  const lost = fields.filter(f => (f.amount || 0) > 0 && (f.dir || 'NONE') === 'NONE')
+                     .map(f => `${f.label} (${fmt(f.amount)} SAR)`);
+  if (!lost.length) return true;
+  return confirm(`These have an amount but no direction picked (🟢 IN / 🔴 OUT), so they will NOT be counted:\n\n• ${lost.join('\n• ')}\n\nGo back and choose IN or OUT for each — or press OK to save and ignore them.`);
+}
 function saveCourierProfileFromModal() {
   const name = document.getElementById('cpDriverName').value;
   if (!name) { toast('Driver name missing'); return; }
@@ -7943,6 +7951,11 @@ function saveCourierProfileFromModal() {
     funnel: document.getElementById('cpFunnel').value || null,
     blocked: document.getElementById('cpBlocked').checked || false
   };
+  if (!confirmDirNone([
+    { label:'Account Rent', dir:profile.accountRent.dir, amount:profile.accountRent.amount },
+    { label:'Car Rent',     dir:profile.carRent.dir,     amount:profile.carRent.amount },
+    { label:'Other',        dir:profile.other.dir,       amount:profile.other.amount },
+  ])) return;
   upsertCourierProfile(name, profile);
   closeCourierProfileModal();
   renderFinanceTab();
@@ -7997,6 +8010,11 @@ function saveOverrideFromModal() {
   if (document.getElementById('ovUseSalary').checked)   override.salary      = parseFloat(document.getElementById('ovSalary').value) || 0;
   if (document.getElementById('ovUseFleetCut').checked) override.fleetCut    = { type: document.getElementById('ovFleetCutType').value, value: parseFloat(document.getElementById('ovFleetCutValue').value) || 0 };
   if (document.getElementById('ovUseOther').checked)    override.other       = { label: document.getElementById('ovOtherLabel').value || '', dir: document.getElementById('ovOtherDir').value, amount: parseFloat(document.getElementById('ovOtherAmount').value) || 0 };
+  if (!confirmDirNone([
+    { label:'Account Rent', dir:override.accountRent?.dir, amount:override.accountRent?.amount },
+    { label:'Car Rent',     dir:override.carRent?.dir,     amount:override.carRent?.amount },
+    { label:'Other',        dir:override.other?.dir,       amount:override.other?.amount },
+  ])) return;
   upsertOverride(name, monthKey, override);
   closeOverrideModal();
   renderFinanceTab();
