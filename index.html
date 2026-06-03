@@ -120,8 +120,10 @@ body::after {
 .tier-bronze{ background:rgba(184,115,51,.1);  border:1px solid rgba(184,115,51,.3);  color:#C8853A; }
 .tier-silver{ background:rgba(160,174,192,.1); border:1px solid rgba(160,174,192,.3); color:#A0AEC0; }
 .tier-gold  { background:rgba(255,170,0,.1);   border:1px solid rgba(255,170,0,.3);   color:var(--amber); }
-.tier-active{ background:rgba(0,255,179,.08);  border:1px solid rgba(0,255,179,.28);  color:var(--bolt-green); }
-.tier-none  { background:transparent; border:1px solid var(--border); color:var(--text-muted); }
+.tier-active   { background:rgba(0,255,179,.08);   border:1px solid rgba(0,255,179,.28);   color:var(--bolt-green); }
+.tier-platinum { background:rgba(147,197,253,.08); border:1px solid rgba(147,197,253,.35);  color:#93C5FD; }
+.tier-diamond  { background:rgba(0,212,255,.08);   border:1px solid rgba(0,212,255,.45);    color:var(--cyan); box-shadow:0 0 6px rgba(0,212,255,.2); }
+.tier-none     { background:transparent; border:1px solid var(--border); color:var(--text-muted); }
 /* model-badge classes are defined above in the unified section — no duplicates needed here */
 .kv      { font-weight:600; font-family:var(--mono); color:var(--cyan); }
 .kv-muted{ color:var(--text-muted); font-family:var(--mono); font-size:12px; }
@@ -207,7 +209,7 @@ body::after {
    box still uses the position:relative <tr> as containing block, so it spans the
    full row. (td:first-child is position:sticky, so it can't host a row-wide overlay.) */
 .driver-row td:nth-child(2)::after { content:''; position:absolute; top:0; left:-120%; width:60%; height:100%; background:linear-gradient(90deg,transparent,rgba(0,255,179,.06),rgba(0,255,179,.1),rgba(0,255,179,.06),transparent); pointer-events:none; transition:none; }
-.driver-row:hover td:nth-child(2)::after { animation:row-scan .55s ease forwards; }
+.driver-row:hover td:nth-child(2)::after { animation:row-scan 2.5s ease forwards; }
 @keyframes row-scan { from{left:-60%} to{left:120%} }
 
 /* ── M8 neural idle shimmer (orb ring when no data) ── */
@@ -428,27 +430,27 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 .cash-high { background:rgba(255,68,102,.1);  border:1px solid rgba(255,68,102,.3);  color:var(--red); }
 .owes-badge { display:inline-flex; align-items:center; font-size:9px; font-weight:700; padding:2px 6px; border-radius:2px; letter-spacing:.04em; margin-top:3px; margin-right:4px; background:rgba(255,68,102,.12); border:1px solid rgba(255,68,102,.4); color:var(--red); animation:glow-pulse 2s infinite; }
 
-/* ── Model badges — unified circles, X/Y/Z system (B/C/D stored values map here too) ── */
-.model-badge { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; font-family:var(--mono); font-size:12px; font-weight:800; flex-shrink:0; letter-spacing:0; margin-left:6px; vertical-align:middle; }
+/* ── Model badges — S/F/R system (legacy B/C/D and X/Y/Z stored values map here too) ── */
+.model-badge { font-family:var(--mono); font-size:13px; font-weight:900; flex-shrink:0; letter-spacing:.03em; margin-left:6px; vertical-align:middle; }
 /* X = cyan  (was B) */
-.model-X,.model-B { background:rgba(0,212,255,.12); border:1px solid rgba(0,212,255,.45); color:#00D4FF; box-shadow:0 0 6px rgba(0,212,255,.3); }
+.model-S,.model-X,.model-B { color:#00D4FF; text-shadow:0 0 9px rgba(0,212,255,.9),0 0 18px rgba(0,212,255,.4); }
 /* Y = purple (was C) */
-.model-Y,.model-C { background:rgba(168,85,247,.14); border:1px solid rgba(168,85,247,.45); color:#C084FC; box-shadow:0 0 6px rgba(168,85,247,.3); }
+.model-F,.model-Y,.model-C { color:#C084FC; text-shadow:0 0 9px rgba(192,132,252,.9),0 0 18px rgba(168,85,247,.4); }
 /* Z = emerald (was D) — NOT amber, reduce orange overload */
-.model-Z,.model-D { background:rgba(52,211,153,.12); border:1px solid rgba(52,211,153,.4);  color:#34D399; box-shadow:0 0 6px rgba(52,211,153,.25); }
-/* A = rose */
-.model-A { background:rgba(244,114,182,.12); border:1px solid rgba(244,114,182,.4); color:#F472B6; box-shadow:0 0 6px rgba(244,114,182,.25); }
-/* E = amber (rare, kept distinct) */
-.model-E { background:rgba(255,170,0,.12); border:1px solid rgba(255,170,0,.4); color:#FFAA00; box-shadow:0 0 6px rgba(255,170,0,.2); }
+.model-R,.model-Z,.model-D { color:#34D399; text-shadow:0 0 9px rgba(52,211,153,.9),0 0 18px rgba(52,211,153,.4); }
+.model-none { color:var(--text-muted); }
+/* A = rose, E = amber — rare codes, keep glow style consistent */
+.model-A { color:#F472B6; text-shadow:0 0 9px rgba(244,114,182,.9),0 0 18px rgba(244,114,182,.4); }
+.model-E { color:#FFAA00; text-shadow:0 0 9px rgba(255,170,0,.9),0 0 18px rgba(255,170,0,.4); }
 /* Custom / unknown */
 .model-custom,.model-none { background:rgba(148,163,184,.08); border:1px solid rgba(148,163,184,.25); color:#64748B; box-shadow:none; }
 
 /* ── Funnel source tags — circles ── */
-.funnel-badge { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; font-family:var(--mono); font-size:10px; font-weight:800; flex-shrink:0; letter-spacing:0; margin-left:5px; vertical-align:middle; }
-.funnel-N { background:rgba(0,212,255,.12);  border:1px solid rgba(0,212,255,.4);  color:#22D3EE; box-shadow:0 0 5px rgba(0,212,255,.25); }
-.funnel-M { background:rgba(139,92,246,.12); border:1px solid rgba(139,92,246,.4); color:#A78BFA; box-shadow:0 0 5px rgba(139,92,246,.25); }
-.funnel-Y { background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.4); color:#F59E0B; box-shadow:0 0 5px rgba(245,158,11,.2); }
-.funnel-H { background:rgba(236,72,153,.12); border:1px solid rgba(236,72,153,.4); color:#F472B6; box-shadow:0 0 5px rgba(236,72,153,.25); }
+.funnel-badge { font-family:var(--mono); font-size:11px; font-weight:900; flex-shrink:0; letter-spacing:.03em; margin-left:5px; vertical-align:middle; }
+.funnel-N { color:#22D3EE; text-shadow:0 0 8px rgba(0,212,255,.85),0 0 16px rgba(0,212,255,.35); }
+.funnel-M { color:#A78BFA; text-shadow:0 0 8px rgba(139,92,246,.85),0 0 16px rgba(139,92,246,.35); }
+.funnel-Y { color:#F59E0B; text-shadow:0 0 8px rgba(245,158,11,.85),0 0 16px rgba(245,158,11,.35); }
+.funnel-H { color:#F472B6; text-shadow:0 0 8px rgba(236,72,153,.85),0 0 16px rgba(236,72,153,.35); }
 
 /* ── Compare Days — sticky Driver column header (same as td) ── */
 .compare-table th.col-driver { position:sticky; left:0; z-index:3; background:var(--bg-card2); }
@@ -1801,7 +1803,7 @@ function parseTier(raw) {
   const level  = lvl !== undefined ? parseInt(lvl) : -1;
   const status = (raw.match(/Status=(\w+)/)||[])[1] || 'UNKNOWN';
   const nameAr = (raw.match(/^([^;]+)/)||[])[1]?.trim() || '';
-  return { level, nameAr, englishName: ({0:'Bronze',1:'Silver',2:'Gold'})[level] || (status==='ACTIVE'?'Active':'Unknown'), status };
+  return { level, nameAr, englishName: ({0:'Bronze',1:'Silver',2:'Gold',3:'Platinum',4:'Diamond'})[level] || (status==='ACTIVE'?'Active':'Unknown'), status };
 }
 
 // ═══════════════════════════════════════════
@@ -1902,8 +1904,10 @@ function aggregateDriverRows(rows) {
   a.score       = a._scoreN ? Math.round(a._scoreSum / a._scoreN) : 0;
   a.finishRate  = a._finN   ? Math.round(a._finSum   / a._finN)   : 0;
   a.utilization = a._utilN  ? Math.round(a._utilSum  / a._utilN)  : 0;
-  a.netPerHour  = a.hours   ? a.net / a.hours   : 0;
-  a.distanceAvg = a.orders  ? a.distance / a.orders : 0;
+  // Single-day: use CSV's pre-calculated values (avoids precision loss from stored hours being
+  // rounded to 1 decimal). Multi-day: recalculate from totals — averaging per-day rates is wrong.
+  a.netPerHour  = rows.length === 1 && sN(rows[0].d.netPerHour)  > 0 ? sN(rows[0].d.netPerHour)  : (a.hours  ? a.net      / a.hours  : 0);
+  a.distanceAvg = rows.length === 1 && sN(rows[0].d.distanceAvg) > 0 ? sN(rows[0].d.distanceAvg) : (a.orders ? a.distance / a.orders : 0);
   return a;
 }
 
@@ -2102,7 +2106,7 @@ function renderFleet(drivers, period) {
 
 function driverRow(d, target, pInfo, s, rank) {
   const init        = d.name ? d.name[0].toUpperCase() : '?';
-  const tierClass   = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Active:'tier-active'})[d.tier.englishName] || 'tier-none';
+  const tierClass   = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Platinum:'tier-platinum',Diamond:'tier-diamond',Active:'tier-active'})[d.tier.englishName] || 'tier-none';
   const accFlag     = d.acceptance < s.flagAccRed ? 'c-red' : d.acceptance < s.flagAccAmber ? 'c-amber' : 'c-green';
   const isRedFlagged = d.isActive && (d.acceptance < s.flagAccRed || (d.rating > 0 && d.rating < s.flagRatRed));
   const monthly     = d.monthlyNet || d.netEarnings;
@@ -2253,9 +2257,10 @@ function buildPagination(total, current) {
 // ═══════════════════════════════════════════
 // DRIVER DETAIL MODAL
 // ═══════════════════════════════════════════
-let modalMonthFilter = 'all';   // 'all' | 'YYYY-MM' — driver detail modal month filter
-let modalCtx         = null;    // cached context so the month filter can re-render in place
-function openModal(id) {
+let modalMonthFilter  = 'all';   // 'all' | 'YYYY-MM' — driver detail modal month filter
+let modalPeriodFilter = null;    // 'period-string' | null — single-day scope set by openModalForEntry
+let modalCtx          = null;    // cached context so the month filter can re-render in place
+function openModal(id, periodFilter) {
   // Find the driver in currentDrivers first; if missing (e.g. they didn't work on
   // the latest uploaded day), scan all history for the most recent entry for them.
   let d = (currentDrivers||[]).find(x => x.driverId===id || driverKey(x.name)===driverKey(id));
@@ -2284,7 +2289,7 @@ function openModal(id) {
   }
   const accFlag = d.acceptance<s.flagAccRed?'flag-red':d.acceptance<s.flagAccAmber?'flag-amber':'flag-green';
   const ratFlag = d.rating>0?(d.rating<s.flagRatRed?'flag-red':d.rating<s.flagRatAmber?'flag-amber':'flag-green'):'';
-  const tc      = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Active:'tier-active'})[d.tier?.englishName]||'tier-none';
+  const tc      = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Platinum:'tier-platinum',Diamond:'tier-diamond',Active:'tier-active'})[d.tier?.englishName]||'tier-none';
   // Full history for this driver (since their first working day), not just one month.
   const fullHistory = getDriverAllHistory(d.driverId, d.name);
   // Store everything the body renderer needs so the month filter can re-render
@@ -2292,6 +2297,7 @@ function openModal(id) {
   // so the card opens on the same month the list is showing (e.g. June selected → card
   // opens on June). The user can still change it inside the card; if that month has no
   // data for this driver the body renderer falls back to the full history automatically.
+  modalPeriodFilter = periodFilter || null;
   modalMonthFilter = (typeof sumMonthFilter !== 'undefined' && sumMonthFilter && sumMonthFilter !== 'all') ? sumMonthFilter : 'all';
   modalCtx = { d, s, target, effTarget, pInfo, monthly, pct, fillCls, projected, gap, paceText, paceColor, fullHistory };
 
@@ -2312,6 +2318,13 @@ function openModal(id) {
 // Change the modal's month filter and re-render the body in place.
 function setModalMonth(val) {
   modalMonthFilter = val;
+  modalPeriodFilter = null; // exit single-day view when user picks a month
+  renderModalBody();
+}
+function showModalFullMonth() {
+  const mk = modalPeriodFilter ? getMonthKey(modalPeriodFilter) : null;
+  modalPeriodFilter = null;
+  modalMonthFilter = mk || 'all';
   renderModalBody();
 }
 
@@ -2324,13 +2337,20 @@ function renderModalBody() {
   // Month options from THIS driver's own history (newest first)
   const monthKeys = [...new Set(fullHistory.map(h => getMonthKey(h.period)).filter(Boolean))]
     .sort((a,b) => b.localeCompare(a));
-  const filterActive = modalMonthFilter !== 'all' && monthKeys.includes(modalMonthFilter);
-  const rows = filterActive ? fullHistory.filter(h => getMonthKey(h.period) === modalMonthFilter) : fullHistory;
+  const singleDayActive = !!(modalPeriodFilter && fullHistory.some(h => h.period === modalPeriodFilter));
+  const filterActive = !singleDayActive && (modalMonthFilter !== 'all' && monthKeys.includes(modalMonthFilter));
+  const rows = singleDayActive
+    ? fullHistory.filter(h => h.period === modalPeriodFilter)
+    : filterActive
+      ? fullHistory.filter(h => getMonthKey(h.period) === modalMonthFilter)
+      : fullHistory;
   const agg  = aggregateDriverRows(rows);
   const lifetimeCampaign = agg.campaign;
-  const scopeLbl = filterActive ? getMonthLabel(modalMonthFilter) : null;
-  const perfScope  = filterActive ? scopeLbl : `all ${agg.days} day${agg.days!==1?'s':''}`;
-  const earnScope  = filterActive ? scopeLbl : 'all-time';
+  const multiDay = rows.length > 1;
+  const avgLbl = multiDay ? '<span style="opacity:.6">avg</span>' : '';
+  const scopeLbl = singleDayActive ? modalPeriodFilter : (filterActive ? getMonthLabel(modalMonthFilter) : null);
+  const perfScope  = singleDayActive ? modalPeriodFilter : (filterActive ? scopeLbl : `all ${agg.days} day${agg.days!==1?'s':''}`);
+  const earnScope  = singleDayActive ? modalPeriodFilter : (filterActive ? scopeLbl : 'all-time');
 
   const monthSelect = `
     <select class="kpi-select modal-month-select${filterActive?' filter-on':''}" onchange="setModalMonth(this.value)" title="Filter day-by-day by month">
@@ -2342,7 +2362,7 @@ function renderModalBody() {
     : '';
 
   document.getElementById('modalBody').innerHTML = `
-    ${filterActive?`<div class="modal-filter-banner">🔎 Filtered to <b>${scopeLbl}</b> — performance, earnings &amp; day-by-day below show this month only. <span onclick="setModalMonth('all')" style="cursor:pointer;text-decoration:underline">Show all months</span></div>`:''}
+    ${singleDayActive?`<div class="modal-filter-banner">📅 Showing <b>${scopeLbl}</b> only. <span onclick="showModalFullMonth()" style="cursor:pointer;text-decoration:underline">Show full month</span></div>`:filterActive?`<div class="modal-filter-banner">🔎 Filtered to <b>${scopeLbl}</b> — performance, earnings &amp; day-by-day below show this month only. <span onclick="setModalMonth('all')" style="cursor:pointer;text-decoration:underline">Show all months</span></div>`:''}
     <div class="target-section">
       <div class="target-section-title">Monthly Target — ${fmt(effTarget)} SAR${effTarget!==target?`<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">(prorated from ${fmt(target)})</span>`:''}<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">· current month</span></div>
       <div class="target-big">
@@ -2358,24 +2378,24 @@ function renderModalBody() {
       </div>
     </div>
 
-    <div class="section-label">Performance <span style="font-size:11px;color:${filterActive?'var(--bolt-green)':'var(--text-muted)'};font-weight:400;text-transform:none;letter-spacing:0">— ${perfScope} (${agg.activeDays} worked)</span></div>
+    <div class="section-label">Performance <span style="font-size:11px;color:${(filterActive||singleDayActive)?'var(--bolt-green)':'var(--text-muted)'};font-weight:400;text-transform:none;letter-spacing:0">— ${perfScope} (${agg.activeDays} worked)</span></div>
     <div class="kpi-grid-modal">
       <div class="kpi-card"><div class="kpi-card-label">Hours Online</div><div class="kpi-card-value">${agg.hours>0?agg.hours.toFixed(1):'0'}<span class="kpi-card-unit"> h</span></div></div>
       <div class="kpi-card"><div class="kpi-card-label">Orders Done</div><div class="kpi-card-value">${agg.orders}</div></div>
       <div class="kpi-card ${agg.acceptance>0&&agg.acceptance<s.flagAccRed?'flag-red':agg.acceptance>0&&agg.acceptance<s.flagAccAmber?'flag-amber':agg.acceptance>0?'flag-green':''}">
-        <div class="kpi-card-label">Acceptance <span style="opacity:.6">eff. avg</span></div>
+        <div class="kpi-card-label">Acceptance <span style="opacity:.6">eff.${multiDay?' avg':''}</span></div>
         <div class="kpi-card-value">${agg.acceptance>0?Math.round(agg.acceptance)+'%':'—'}</div>
         ${agg.acceptanceTotal>0?`<div style="font-size:10px;color:var(--text-muted);margin-top:2px">Total: ${Math.round(agg.acceptanceTotal)}%${agg.acceptanceTotal>0&&agg.acceptance>0&&(agg.acceptanceTotal-agg.acceptance)>15?` <span style="color:var(--amber)" title="Large gap — driver may be going offline to avoid ride assignments">⚠ ${Math.round(agg.acceptanceTotal-agg.acceptance)}pp gap</span>`:''}</div>`:''}
       </div>
-      <div class="kpi-card ${agg.rating>0&&agg.rating<s.flagRatRed?'flag-red':agg.rating>0&&agg.rating<s.flagRatAmber?'flag-amber':agg.rating>0?'flag-green':''}"><div class="kpi-card-label">Rating <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.rating>0?agg.rating.toFixed(2)+'★':'—'}</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Driver Score <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.score>0?agg.score+'%':'—'}</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Finish Rate <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.finishRate>0?agg.finishRate+'%':'—'}</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Utilisation <span style="opacity:.6">avg</span></div><div class="kpi-card-value">${agg.utilization>0?agg.utilization+'%':'—'}</div></div>
+      <div class="kpi-card ${agg.rating>0&&agg.rating<s.flagRatRed?'flag-red':agg.rating>0&&agg.rating<s.flagRatAmber?'flag-amber':agg.rating>0?'flag-green':''}"><div class="kpi-card-label">Rating ${avgLbl}</div><div class="kpi-card-value">${agg.rating>0?agg.rating.toFixed(2)+'★':'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Driver Score ${avgLbl}</div><div class="kpi-card-value">${agg.score>0?agg.score+'%':'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Finish Rate ${avgLbl}</div><div class="kpi-card-value">${agg.finishRate>0?agg.finishRate+'%':'—'}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Utilisation ${avgLbl}</div><div class="kpi-card-value">${agg.utilization>0?agg.utilization+'%':'—'}</div></div>
       <div class="kpi-card"><div class="kpi-card-label">Avg Trip</div><div class="kpi-card-value">${agg.distanceAvg>0?agg.distanceAvg.toFixed(1)+' km':'—'}</div></div>
       <div class="kpi-card"><div class="kpi-card-label">Total KM</div><div class="kpi-card-value">${agg.distance>0?fmt(agg.distance)+' km':'—'}</div></div>
     </div>
 
-    <div class="section-label">Earnings <span style="font-size:11px;color:${filterActive?'var(--bolt-green)':'var(--text-muted)'};font-weight:400;text-transform:none;letter-spacing:0">— ${earnScope} total</span></div>
+    <div class="section-label">Earnings <span style="font-size:11px;color:${(filterActive||singleDayActive)?'var(--bolt-green)':'var(--text-muted)'};font-weight:400;text-transform:none;letter-spacing:0">— ${earnScope} total</span></div>
     <div class="kpi-grid-modal">
       <div class="kpi-card"><div class="kpi-card-label">Gross</div><div class="kpi-card-value">${fmt(agg.gross)} SAR</div></div>
       <div class="kpi-card"><div class="kpi-card-label">Commission</div><div class="kpi-card-value">${fmt(agg.commission)} SAR</div></div>
@@ -2393,6 +2413,7 @@ function renderModalBody() {
         { label:'In-App Gross',          v: agg.grossInApp,              color:'var(--cyan)' },
         { label:'Cash Gross',            v: agg.cashEarnings,            color:'var(--amber)' },
         { label:'Cash Not Collected',    v: agg.cashGap,                 color: agg.cashGap>0?'var(--red)':'var(--text-muted)' },
+        { label:'Booking Fees',          v: agg.bookingFees,             color:'var(--text)' },
         { label:'Cancellation Fees',     v: agg.cancellationFees,        color:'var(--text)' },
         { label:'Toll Fees',             v: agg.tollFees,                color:'var(--text)' },
         { label:'Expense Reimbursements',v: agg.expenseReimbursements,   color:'var(--green)' },
@@ -2410,7 +2431,7 @@ function renderModalBody() {
     })()}
 
     <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-      <span>Day-by-Day <span style="font-size:11px;color:${filterActive?'var(--bolt-green)':'var(--text-muted)'};font-weight:400;text-transform:none;letter-spacing:0">— ${filterActive?scopeLbl:'full history'} (${rows.length} day${rows.length!==1?'s':''})</span></span>
+      <span>Day-by-Day <span style="font-size:11px;color:${(filterActive||singleDayActive)?'var(--bolt-green)':'var(--text-muted)'};font-weight:400;text-transform:none;letter-spacing:0">— ${singleDayActive?scopeLbl:filterActive?scopeLbl:'full history'} (${rows.length} day${rows.length!==1?'s':''})</span></span>
       <span style="display:flex;align-items:center;gap:8px">${filterPill}${monthSelect}</span>
     </div>
     ${rows.length>=1?`
@@ -3403,10 +3424,12 @@ let smWarpFrom=[];  // previous star positions for warp animation
 let smWarpT=1;      // 0→1 warp progress (1=done)
 
 const SM_ARMS={
-  'B':{deg:0,   rgb:[60,160,120],  label:'B — Own Car'},          // Earth teal-green
-  'C':{deg:120, rgb:[200,140,60],  label:'C — Salaried'},         // Jupiter amber-orange
-  'D':{deg:240, rgb:[180,70,50],   label:'D — Saudi Own'},        // Mars rust-red
+  'S':{deg:120, rgb:[200,140,60],  label:'S — Salaried'},
+  'F':{deg:0,   rgb:[60,160,120],  label:'F — Foreigner & Saudi'},
+  'R':{deg:240, rgb:[180,70,50],   label:'R — Rent Model'},
 };
+// Legacy aliases so old stored B/C/D profiles still appear in the radar
+SM_ARMS['C']=SM_ARMS['S']; SM_ARMS['B']=SM_ARMS['F']; SM_ARMS['D']=SM_ARMS['R'];
 const SM_CATCOLS={
   'blaze':[190,50,255], 'grocery':[30,190,255],
   'flash food':[255,100,20], 'food':[255,150,30],
@@ -3416,7 +3439,7 @@ const SM_CATCOLS={
 function smGetModel(name){
   try{
     const p=JSON.parse(localStorage.getItem('khair_driver_profiles')||'{}');
-    return p[(name||'').trim().toLowerCase()]?.model||'C';
+    return p[(name||'').trim().toLowerCase()]?.model||'S';
   }catch{return 'C';}
 }
 function smCatRgb(catStr){
@@ -3462,7 +3485,7 @@ function smBuildStars(drivers, W, H){
 
   const stars=[];
   Object.entries(byModel).forEach(([m,grp])=>{
-    const arm=SM_ARMS[m]||SM_ARMS['C'];
+    const arm=SM_ARMS[m]||SM_ARMS['S'];
     const ringR=MODEL_RING_R[m]||MODEL_RING_R['C'];
     // All drivers in same model share ONE orbit ring, evenly spaced in angle
     const orbitMs=70000+MODEL_KEYS.indexOf(m)*20000; // very slow — outermost slowest
@@ -3543,12 +3566,13 @@ function smBuildCatBar(drivers){
 }
 function smBuildArmLegend(){
   const el=document.getElementById('smArmLegend'); if(!el) return;
-  el.innerHTML=Object.entries(SM_ARMS).map(([k,a])=>{
+  el.innerHTML=['S','F','R'].map(k=>{
+    const a=SM_ARMS[k];
     const active=smHighlightModel===k;
-    const cnt=smStars.filter(s=>s.model===k).length;
+    const cnt=smStars.filter(s=>resolveModelDisplay(s.model)===k).length;
     return `<span class="sm-arm-dot" style="${active?`color:rgb(${a.rgb})`:''}">
       <b style="background:rgb(${a.rgb});${active?'box-shadow:0 0 8px rgba('+a.rgb+',.9)':''}"></b>
-      <span onclick="smToggleArmHighlight('${k}')">${k}: ${a.label.split('—')[1].trim()} (${cnt})</span>
+      <span onclick="smToggleArmHighlight('${k}')">${a.label} (${cnt})</span>
       <span onclick="smOpenModelPanel('${k}')" style="color:rgba(${a.rgb},.7);font-size:9px;margin-left:3px;border:1px solid rgba(${a.rgb},.3);padding:1px 4px;border-radius:2px;cursor:pointer" title="View model details">ℹ</span>
     </span>`;
   }).join('');
@@ -3718,8 +3742,8 @@ function renderStarMap(skipPopulate){
     smStars.forEach((s,i)=>(modelGroups[s.model]=modelGroups[s.model]||[]).push(i));
     Object.entries(modelGroups).forEach(([m,idxs])=>{
       if(idxs.length<2) return;
-      const arm=SM_ARMS[m]||SM_ARMS['C'];
-      const dimmed=smHighlightModel&&smHighlightModel!==m;
+      const arm=SM_ARMS[m]||SM_ARMS['S'];
+      const dimmed=smHighlightModel&&smHighlightModel!==resolveModelDisplay(m);
       smCtx.strokeStyle=`rgba(${arm.rgb},${dimmed?0.04:0.12})`; smCtx.lineWidth=0.7; smCtx.setLineDash([3,6]);
       for(let i=0;i<idxs.length-1;i++){
         const a=smStars[idxs[i]],b=smStars[idxs[i+1]];
@@ -3732,7 +3756,7 @@ function renderStarMap(skipPopulate){
     smStars.forEach((s,i)=>{
       s.twinkle+=0.035;
       const filtered = smCategoryFilter && !smCatRgb(s.d.activeCategories||'')?.toString().includes(smCategoryFilter);
-      const dimmed   = (smCategoryFilter&&filtered)||(smHighlightModel&&smHighlightModel!==s.model);
+      const dimmed   = (smCategoryFilter&&filtered)||(smHighlightModel&&smHighlightModel!==resolveModelDisplay(s.model));
       const perf     = s.perf||0;
       const alpha    = dimmed?0.1 : Math.max(0.12, 0.15+perf*0.5+s.accept*0.2);
       const glowMult = 1+perf*0.8;
@@ -3825,7 +3849,7 @@ function openSmPopup(d, cx, cy, model) {
   const fn=lookupForeignName(d.name);
   const tier=d.tier?.englishName||'Active';
   const tierCol=tier==='Gold'?'#FFD700':tier==='Silver'?'#C0C0C0':tier==='Bronze'?'#CD7F32':d.isActive?'var(--bolt-green)':'var(--text-muted)';
-  const m=model||smGetModel(d.name); const arm=SM_ARMS[m]||SM_ARMS['C'];
+  const m=model||smGetModel(d.name); const arm=SM_ARMS[m]||SM_ARMS['S'];
   const armCol=`rgb(${arm.rgb})`;
   const catRgb=smCatRgb(d.activeCategories||'');
   // Truncate long name to fit circle width
@@ -4181,13 +4205,13 @@ function renderSmOpsView(){
   const profiles=JSON.parse(localStorage.getItem('khair_driver_profiles')||'{}');
   const ORBIT_R=[75,120,170,225,285];
   const ORBIT_MS=[60000,85000,115000,150000,190000]; // very slow drift
-  smOpsPlanets=Object.entries(SM_ARMS).map(([m,arm],i)=>{
-    const mDrivers=allDrivers.filter(d=>(profiles[(d.name||'').trim().toLowerCase()]?.model||'C')===m);
+  const PRIMARY_MODELS=['S','F','R']; // iterate only primary codes, not legacy aliases
+  smOpsPlanets=PRIMARY_MODELS.map((m,i)=>{ const arm=SM_ARMS[m];
+    const mDrivers=allDrivers.filter(d=>resolveModelDisplay(profiles[(d.name||'').trim().toLowerCase()]?.model||'S')===m);
     const totalNet=mDrivers.reduce((a,d)=>a+(d.netEarnings||0),0);
     const activeCount=mDrivers.filter(d=>d.isActive).length;
     const avgAccept=mDrivers.length?mDrivers.reduce((a,d)=>a+(d.acceptance||0),0)/mDrivers.length:0;
-    // Fixed rational sizes: C is 20% larger than others
-    const planetSize = m==='C' ? 19 : 16;
+    const planetSize = m==='S' ? 19 : 16;
     return {
       m, arm, info:SM_MODEL_INFO[m]||{title:m,sub:'',fields:[]},
       orbitR: Math.min(ORBIT_R[i], Math.min(cx,cy)-planetSize-8),
@@ -4210,7 +4234,7 @@ function renderSmOpsView(){
 
   // Legend
   const legEl=document.getElementById('smOpsLegend');
-  if(legEl) legEl.innerHTML=Object.entries(SM_ARMS).map(([m,a])=>`<span style="color:rgb(${a.rgb});margin-right:10px">⬤ ${m}</span>`).join('');
+  if(legEl) legEl.innerHTML=['S','F','R'].map(m=>{ const a=SM_ARMS[m]; return `<span style="color:rgb(${a.rgb});margin-right:10px">⬤ ${m}</span>`; }).join('');
 
   smOpsWarpDone=false;
   const warpStart=performance.now();
@@ -4402,20 +4426,22 @@ function renderSmOpsView(){
 
 // ── Cinematic Model Info Panel ──
 const SM_MODEL_INFO={
-  'B':{ title:'Own Car (Account Rent)', sub:'Foreigner brings own vehicle, rents account only',
+  'S':{ title:'Salaried (S)', sub:'Fleet operates everything — driver on fixed salary',
+    desc:'Full employment model. Fleet owns the account and vehicle. Driver receives a fixed monthly salary regardless of earnings. Fleet bears all risk and all upside.',
+    fields:[{l:'Salary',c:'#FF4466',dir:'OUT',d:'Fixed monthly payment to driver'},{l:'Car Cost',c:'#FF4466',dir:'OUT',d:'Vehicle depreciation/rent absorbed by fleet'},{l:'Fleet Earnings',c:'#00FFB3',dir:'IN',d:'All Bolt revenue goes to fleet'}] },
+  'F':{ title:'Foreigner & Saudi (F)', sub:'Driver brings own car, rents the Bolt account',
     desc:'Driver owns or has arranged their vehicle. Fleet provides the Bolt account only. Lower overhead — one rental stream. Driver has more independence.',
     fields:[{l:'Account Rent',c:'#00D4FF',dir:'IN',d:'Monthly fee for account access'},{l:'Fleet Cut',c:'#00FFB3',dir:'IN',d:'Optional commission on earnings'}] },
-  'C':{ title:'Salaried Driver', sub:'Fleet operates everything — driver on fixed salary',
-    desc:'Full employment model. Fleet owns the account and vehicle. Driver receives a fixed monthly salary regardless of how much they earn. Fleet bears all risk and all upside.',
-    fields:[{l:'Salary',c:'#FF4466',dir:'OUT',d:'Fixed monthly payment to driver'},{l:'Car Cost',c:'#FF4466',dir:'OUT',d:'Vehicle depreciation/rent absorbed by fleet'},{l:'Fleet Earnings',c:'#00FFB3',dir:'IN',d:'All Bolt revenue goes to fleet'}] },
-  'D':{ title:'Saudi Own', sub:'Saudi national — owns account & vehicle',
-    desc:'Saudi citizen who owns their own Bolt account and car. Partners with fleet for management, admin, and operational support only. Fleet takes a management cut.',
+  'R':{ title:'Rent Model (R)', sub:'Driver owns account & vehicle — pays fleet cut',
+    desc:'Driver owns their own Bolt account and car. Partners with fleet for management, admin, and operational support only. Fleet takes a management cut from earnings.',
     fields:[{l:'Fleet Cut',c:'#00FFB3',dir:'IN',d:'% of earnings for management services'}] },
 };
+// Legacy key aliases so old B/C/D stored values still open the panel
+SM_MODEL_INFO['B']=SM_MODEL_INFO['F']; SM_MODEL_INFO['C']=SM_MODEL_INFO['S']; SM_MODEL_INFO['D']=SM_MODEL_INFO['R'];
 
 function smOpenModelPanel(m){
   const info=SM_MODEL_INFO[m]; if(!info) return;
-  const arm=SM_ARMS[m]||SM_ARMS['C'];
+  const arm=SM_ARMS[m]||SM_ARMS['S'];
   const col=`rgb(${arm.rgb})`;
   const colA=`rgba(${arm.rgb},.15)`;
   // Live stats from current stars
@@ -4781,7 +4807,7 @@ function renderSingleDay(sorted) {
   // Build rows separately to avoid deep template nesting
   const rowsHtml = pageDrivers.map(d => {
     const accF    = d.acceptance < s.flagAccRed ? 'c-red' : d.acceptance < s.flagAccAmber ? 'c-amber' : 'c-green';
-    const tc      = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Active:'tier-active'})[d.tier.englishName] || 'tier-none';
+    const tc      = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Platinum:'tier-platinum',Diamond:'tier-diamond',Active:'tier-active'})[d.tier.englishName] || 'tier-none';
     const fn      = lookupForeignName(d.name);
     const clickFn = !isAgg
       ? `openModalForEntry('${d.driverId||d.name}','${dailySelectedDay}')`
@@ -5130,7 +5156,7 @@ function openModalForEntry(id, period) {
   if (!h) return;
   const prev = { drivers:currentDrivers, period:currentPeriod, info:currentPeriodInfo };
   currentDrivers=h.drivers; currentPeriod=h.period; currentPeriodInfo=h.periodInfo||null;
-  openModal(id);
+  openModal(id, period);
   currentDrivers=prev.drivers; currentPeriod=prev.period; currentPeriodInfo=prev.info;
 }
 
@@ -5154,7 +5180,8 @@ function defaultSumMonth() {
   if (months.includes(cur)) return cur;
   return months[0] || 'all';
 }
-let sumModelFilter      = 'all';     // 'all' | 'A' | 'B' | 'C' | 'D' | 'E' | 'none'
+let sumModelFilter      = 'all';     // 'all' | 'S' | 'F' | 'R' (display codes)
+let sumFunnelFilter     = 'all';     // 'all' | 'N' | 'M' | 'Y' | 'H'
 let sumFleetSortCol     = 'date';    // sort column for By Day table
 let sumFleetSortAsc     = true;
 let sumCourierSortCol   = 'gross';   // sort column for By Captain table
@@ -5210,6 +5237,7 @@ function setCaptainSearch(q) {
   if (inp) { inp.value = captainSearch; inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
 }
 function setSumModelFilter(m) { sumModelFilter = m; renderCaptains(); }
+function setSumFunnelFilter(f) { sumFunnelFilter = f; renderCaptains(); }
 function m8OpenDriverReport() {
   const q = (document.getElementById('m8ReportDriver')?.value || '').trim();
   if (!q) return;
@@ -5329,18 +5357,36 @@ function renderCaptains() {
     <span class="compare-note" style="font-size:11px;color:var(--text-muted)">🟢 Best &nbsp;🟡 Avg &nbsp;🔴 Worst — per driver · Click column to sort</span>
   ` : '';
 
-  // ── Search bar + model filter (captain view only) ──
-  const modelFilterBar = captainView === 'captain' ? `
-    <div class="ctrl-group">
-      <span class="ctrl-group-label">Model</span>
-      <button class="sort-btn ${sumModelFilter==='all'?'active':''}" onclick="setSumModelFilter('all')" style="font-size:10px;padding:4px 9px">All</button>
-      ${['X','Y','Z'].map(m=>`<button class="${modelCircleClass(m)} ${resolveModelDisplay(sumModelFilter)===m?'active':''}" onclick="setSumModelFilter('${m}')" style="width:26px;height:26px;padding:0;cursor:pointer;font-size:10px;font-weight:800" title="Filter Model ${m}">${m}</button>`).join('')}
-    </div>
-  ` : '';
+  // ── Filter + sort controls + search (captain view only) ──
+  const modelFilterBar = '';  // merged into filterSortBar below
   const searchBar = captainView === 'captain' ? `
     <input class="search-input" type="text" dir="ltr" placeholder="🔍 Search captain…"
       value="${captainSearch.replace(/"/g,'&quot;')}" oninput="setCaptainSearch(this.value)"
-      id="captainSearchInput" style="margin-left:auto;min-width:160px">
+      id="captainSearchInput" style="margin-left:auto;min-width:150px">
+  ` : '';
+
+  const isSortModel  = sumCourierSortCol === 'model';
+  const isSortFunnel = sumCourierSortCol === 'funnel';
+  const isSortCombo  = sumCourierSortCol === 'combo';
+  const filterSortBar = captainView === 'captain' ? `
+    <div class="ctrl-group" style="flex-direction:column;align-items:flex-start;gap:3px;padding:0 8px;border-left:1px solid rgba(0,212,255,.1)">
+      <div style="display:flex;align-items:center;gap:5px">
+        <span style="font-size:8px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;min-width:28px">Model</span>
+        <button class="sort-btn ${sumModelFilter==='all'?'active':''}" onclick="setSumModelFilter('all')" style="font-size:9px;padding:2px 7px">All</button>
+        ${['S','F','R'].map(m=>`<span class="model-badge model-${m}" onclick="setSumModelFilter(sumModelFilter==='${m}'?'all':'${m}')" style="cursor:pointer;opacity:${resolveModelDisplay(sumModelFilter)===m||sumModelFilter==='all'?1:.35};transition:opacity .15s" title="Filter model ${m}">${m}</span>`).join('')}
+      </div>
+      <div style="display:flex;align-items:center;gap:5px">
+        <span style="font-size:8px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;min-width:28px">Ref</span>
+        <button class="sort-btn ${sumFunnelFilter==='all'?'active':''}" onclick="setSumFunnelFilter('all')" style="font-size:9px;padding:2px 7px">All</button>
+        ${['N','M','Y','H'].map(f=>`<span class="funnel-badge funnel-${f}" onclick="setSumFunnelFilter(sumFunnelFilter==='${f}'?'all':'${f}')" style="cursor:pointer;opacity:${sumFunnelFilter===f||sumFunnelFilter==='all'?1:.35};transition:opacity .15s" title="Filter referral ${f}">${f}</span>`).join('')}
+      </div>
+    </div>
+    <div class="ctrl-group" style="gap:4px;padding:0 8px;border-left:1px solid rgba(0,212,255,.1)">
+      <span style="font-size:8px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Sort</span>
+      <button class="sort-btn ${isSortModel?'active':''}"  onclick="setSumCourierSort('model')"  style="font-size:9px;padding:3px 7px" title="Sort by model (S/F/R)">Model</button>
+      <button class="sort-btn ${isSortFunnel?'active':''}" onclick="setSumCourierSort('funnel')" style="font-size:9px;padding:3px 7px" title="Sort by referral (N/M/Y/H)">Ref</button>
+      <button class="sort-btn ${isSortCombo?'active':''}"  onclick="setSumCourierSort('combo')"  style="font-size:9px;padding:3px 7px" title="Sort by model then referral">M+R</button>
+    </div>
   ` : '';
 
   // ── KPI cards ──
@@ -5352,9 +5398,8 @@ function renderCaptains() {
     { label:'Avg Utilisation', value:pctOrDash(kpis.avgUtil),      sub:`of online time`,                 cls:'' },
     { label:'Avg Finish Rate', value:pctOrDash(kpis.avgFinish),    sub:`accepted → finished`,            cls:'' },
     { label:'Total Rides',     value:`${fmt(kpis.totalRides)}`,    sub:`${Math.round(kpis.totalDist).toLocaleString('en-US')} km`, cls:'' },
-    { label:'Cash Gap ⚠',      value:`${fmt(kpis.totalCashGap)} SAR`,
-      sub: kpis.totalCashGap > 0 ? 'uncollected cash' : 'all cash collected',
-      cls: kpis.totalCashGap > 0 ? 's-red' : '' },
+    { label:'Hours Online',     value:`${kpis.totalHours.toFixed(1)} h`,
+      sub: selected.length === 1 ? 'this day' : `${selected.length} days total`, cls:'' },
   ].map(c=>`<div class="summary-card ${c.cls}"><div class="s-label">${c.label}</div><div class="s-value">${c.value}</div><div class="s-sub">${c.sub}</div></div>`).join('') : '';
 
   // ── Table content (compare view fills captainsInner after render) ──
@@ -5382,8 +5427,8 @@ function renderCaptains() {
       </div>
       ${monthDrop}
       ${periodBar}
-      ${modelFilterBar}
       ${compareBar}
+      ${filterSortBar}
       ${searchBar}
     </div>
     ${kpiCardsHtml ? `<div class="summary-grid" style="margin-bottom:16px">${kpiCardsHtml}</div>` : ''}
@@ -5401,7 +5446,7 @@ function renderCaptains() {
 // Safe number accessor — returns 0 for undefined, null, NaN
 function sN(v) { return (typeof v === 'number' && !isNaN(v)) ? v : 0; }
 // Use effective acceptance rate (d.acceptance) as primary; fall back to total acceptance
-function accVal(d) { return sN(d.acceptanceTotal) || sN(d.acceptance); }
+function accVal(d) { return sN(d.acceptance) || sN(d.acceptanceTotal); }
 // Display helper: show '—' if value is 0 (means data missing), else show with suffix
 function pctOrDash(v, dec=1) { return v > 0 ? v.toFixed(dec) + '%' : '—'; }
 function earnHrOrDash(v)     { return v > 0 ? fmt(v) + '/h' : '—'; }
@@ -5409,7 +5454,7 @@ function earnHrOrDash(v)     { return v > 0 ? fmt(v) + '/h' : '—'; }
 function sumKPIs(entries) {
   // Only include active drivers (orders > 0) — excludes drivers who didn't work that day
   const active = entries.flatMap(h => h.drivers.filter(d => d.isActive));
-  if (!active.length) return { totalGross:0, totalNet:0, totalRides:0, totalDist:0, earnHr:0, avgAccept:0, avgUtil:0, avgFinish:0, totalCashGap:0 };
+  if (!active.length) return { totalGross:0, totalNet:0, totalRides:0, totalDist:0, totalHours:0, earnHr:0, avgAccept:0, avgUtil:0, avgFinish:0, totalCashGap:0 };
   const totalHrs   = active.reduce((a,d)=>a+sN(d.hoursOnline),0);
   const totalGross = active.reduce((a,d)=>a+sN(d.grossEarnings),0);
   // Only average rates from drivers where at least acceptance or utilisation is available
@@ -5421,6 +5466,7 @@ function sumKPIs(entries) {
     totalNet:      active.reduce((a,d)=>a+sN(d.netEarnings),0),
     totalRides:    active.reduce((a,d)=>a+sN(d.orders),0),
     totalDist:     active.reduce((a,d)=>a+sN(d.distanceTotal),0),
+    totalHours:    totalHrs,
     earnHr:        totalHrs > 0 ? totalGross / totalHrs : 0,
     avgAccept:     withRates.length ? withRates.reduce((a,d)=>a+accVal(d),0)         / withRates.length : 0,
     avgUtil:       withRates.length ? withRates.reduce((a,d)=>a+sN(d.utilization),0) / withRates.length : 0,
@@ -5741,12 +5787,18 @@ function buildCourierSummaryTable(entries, searchFilter) {
     }
     // 'target' sorts by daily pace (net ÷ days worked) — i.e. position vs the 230/day goal.
     const paceOf = x => x.days > 0 ? x.net / x.days : 0;
+    // String-based sort keys (model/funnel/combo) need localeCompare; numeric keys use subtraction
+    if (key === 'model' || key === 'funnel' || key === 'combo') {
+      const sa = key==='model' ? getModel(a.name) : key==='funnel' ? getFunnel(a.name) : getModel(a.name)+getFunnel(a.name);
+      const sb = key==='model' ? getModel(b.name) : key==='funnel' ? getFunnel(b.name) : getModel(b.name)+getFunnel(b.name);
+      return sumCourierSortAsc ? sa.localeCompare(sb) : sb.localeCompare(sa);
+    }
     const va = key==='days'?a.days : key==='gross'?a.gross : key==='net'?a.net
-             : key==='earnhr'?a.earnHr : key==='finish'?a.finish : key==='accept'?a.accept
+             : key==='earnhr'?a.earnHr : key==='hrs'?a.hrs : key==='accept'?a.accept
              : key==='util'?a.util : key==='rides'?a.rides : key==='dist'?a.dist
              : key==='target'?paceOf(a) : a.net;
     const vb = key==='days'?b.days : key==='gross'?b.gross : key==='net'?b.net
-             : key==='earnhr'?b.earnHr : key==='finish'?b.finish : key==='accept'?b.accept
+             : key==='earnhr'?b.earnHr : key==='hrs'?b.hrs : key==='accept'?b.accept
              : key==='util'?b.util : key==='rides'?b.rides : key==='dist'?b.dist
              : key==='target'?paceOf(b) : b.net;
     return sumCourierSortAsc ? va - vb : vb - va;
@@ -5767,31 +5819,17 @@ function buildCourierSummaryTable(entries, searchFilter) {
     return `<th class="${cls} ${isActive?'th-sort-active':''}" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setSumCourierSort('${col}')">${inner}</th>`;
   };
 
-  // Model filter — get each courier's model from their profile (resolved to X/Y/Z)
-  const getModel = name => {
-    const p = getCourierProfile(name);
-    const raw = p.model === 'Custom' ? (p.modelCustom || 'Custom') : (p.model || 'none');
-    return resolveModelDisplay(raw);
-  };
-  const modelBadge = name => {
-    const m = getModel(name);
-    return `<span class="${modelCircleClass(m)}" title="Model ${m}">${m}</span>`;
-  };
-  const funnelBadge = name => {
-    const f = getCourierProfile(name)?.funnel;
-    if (!f) return '';
-    return `<span class="funnel-badge funnel-${f}" title="Funnel: ${f}">${f}</span>`;
-  };
+  // Model/referral helpers
+  const getModel  = name => { const p = getCourierProfile(name); const raw = p.model === 'Custom' ? (p.modelCustom||'Custom') : (p.model||'none'); return resolveModelDisplay(raw); };
+  const getFunnel = name => getCourierProfile(name)?.funnel || '';
+  const modelBadge  = name => { const m = getModel(name);  return `<span class="${modelCircleClass(m)}" title="Model ${m}">${m}</span>`; };
+  const funnelBadge = name => { const f = getFunnel(name); return f ? `<span class="funnel-badge funnel-${f}" title="Referral ${f}">${f}</span>` : ''; };
 
-  // Apply model filter (X/Y/Z display codes, also accept legacy B/C/D in filter state)
+  // Apply model + funnel filters
   let filtered = couriers;
-  if (sumModelFilter !== 'all') {
-    const filterTarget = resolveModelDisplay(sumModelFilter);
-    filtered = couriers.filter(c => getModel(c.name) === filterTarget);
-  }
-  if (!filtered.length && sumModelFilter !== 'all') {
-    filtered = couriers; // graceful fallback if nobody matches
-  }
+  if (sumModelFilter !== 'all') { const t = resolveModelDisplay(sumModelFilter); filtered = filtered.filter(c => getModel(c.name) === t); }
+  if (sumFunnelFilter !== 'all') { filtered = filtered.filter(c => getFunnel(c.name) === sumFunnelFilter); }
+  if (!filtered.length && (sumModelFilter !== 'all' || sumFunnelFilter !== 'all')) filtered = couriers;
 
   const singlePeriod = summarySelectedDays?.size === 1 ? [...summarySelectedDays][0] : null;
   const esc = s => (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
@@ -5869,7 +5907,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
       <td class="td-r"><span style="font-family:var(--mono);font-weight:700;color:#00D4FF;text-shadow:0 0 8px rgba(0,212,255,.7);font-size:12px">${c.days}d</span></td>
       <td class="td-r">${earningsHtml} <span style="font-size:11px;color:var(--text-muted)">/ ${fmt(c.gross)} gross</span></td>
       <td class="td-r">${earnHrOrDash(c.earnHr)}</td>
-      <td class="td-r ${c.finish>0?pctCol(c.finish,80,70):''}">${pctOrDash(c.finish)}</td>
+      <td class="td-r kv">${c.hrs > 0 ? c.hrs.toFixed(1)+'h' : '—'}</td>
       <td class="td-r ${c.accept>0?pctCol(c.accept,80,70):''}">${pctOrDash(c.accept)}${accDropBadge}</td>
       <td class="td-r ${c.util>0?pctCol(c.util,70,55):''}">${pctOrDash(c.util)}</td>
       <td class="td-r">${c.rides}</td>
@@ -5900,7 +5938,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
       ${cth('Days','days','td-r')}
       ${cth('Net SAR','net','td-r')}
       ${cth('Earn/hr','earnhr','td-r')}
-      ${cth('Finish','finish','td-r')}
+      ${cth('Hours','hrs','td-r')}
       ${cth('Accept','accept','td-r')}
       ${cth('Util','util','td-r')}
       ${cth('Rides','rides','td-r')}
@@ -6108,7 +6146,7 @@ function clearAllData() {
   if (!confirm('Clear all history? Cannot be undone.')) return;
   localStorage.removeItem('khair_perf_history');
   currentDrivers=null; currentPeriod=''; currentPeriodInfo=null;
-  summarySelectedDays=null; captainSearch=''; sumPeriodMode='all'; sumMonthFilter='all'; sumModelFilter='all'; sumMonthInitDone=false;
+  summarySelectedDays=null; captainSearch=''; sumPeriodMode='all'; sumMonthFilter='all'; sumModelFilter='all'; sumFunnelFilter='all'; sumMonthInitDone=false;
   document.getElementById('headerPeriod').textContent='No data loaded';
   renderCaptains();
   renderHistory();
@@ -6878,7 +6916,7 @@ let financeSortCol  = 'netPnL';
 let financeSortAsc  = false;
 function driverKey(name) { return (name||'').trim().toLowerCase(); }
 function defaultProfile() {
-  return { model:'Y', modelCustom:null,
+  return { model:'F', modelCustom:null,
     accountRent:{dir:'NONE',amount:0}, carRent:{dir:'NONE',amount:0},
     salary:0, fleetCut:{type:'NONE',value:0},
     // Auto-salary: when on, the driver's salary scales with their NET earnings —
@@ -7292,28 +7330,27 @@ function cycleLabel(ymd) {
 function modelDescription(m) {
   const map = {
     A:'Foreigner rents acct + car',
-    X:'Foreigner brings own car', B:'Foreigner brings own car',
-    Y:'Salaried (fleet operates)',  C:'Salaried (fleet operates)',
-    Z:'Saudi self-driving',         D:'Saudi self-driving',
+    S:'Salaried (fleet operates)', X:'Salaried (fleet operates)', Y:'Salaried (fleet operates)', C:'Salaried (fleet operates)',
+    F:'Foreigner & Saudi (own car)', B:'Foreigner & Saudi (own car)', D:'Foreigner & Saudi (own car)',
+    R:'Rent model (own everything)', Z:'Rent model (own everything)',
     E:'Foreigner w/ own Saudi acct'
   };
   return map[m] || 'Custom';
 }
 // Maps stored legacy codes (B/C/D) → display codes (X/Y/Z). Idempotent for new codes.
 function resolveModelDisplay(m) {
-  const map = { B:'X', C:'Y', D:'Z' };
+  // Legacy B/C/D and old X/Y/Z codes both map to new S/F/R display codes
+  const map = { B:'S', C:'F', D:'R', X:'S', Y:'F', Z:'R' };
   return map[m] || m || '—';
 }
-// Finance table: pill badge with tier padding (shows label text X/Y/Z clearly)
 function modelBadgeClass(m) {
   const display = resolveModelDisplay(m);
-  const valid = ['X','Y','Z','A','E'];
+  const valid = ['S','F','R','A','E'];
   return 'tier ' + (valid.includes(display) ? `model-${display}` : 'model-none');
 }
-// Captains tab: compact CIRCLE badge — NO tier padding, exact 20×20 circle
 function modelCircleClass(m) {
   const display = resolveModelDisplay(m);
-  const valid = ['X','Y','Z','A','E'];
+  const valid = ['S','F','R','A','E'];
   return 'model-badge ' + (valid.includes(display) ? `model-${display}` : 'model-none');
 }
 function setFinanceMonth(m) { financeMonth = m; finShowAllCycles = false; renderFinanceTab(); }
@@ -7896,9 +7933,9 @@ function buildFinanceModals() {
       </div>
       <div class="fin-form-row"><label>Model</label>
         <select id="cpModel" onchange="onCpModelChange(this.value)">
-          <option value="X">X — Foreigner brings own car (rents account)</option>
-          <option value="Y">Y — Salaried (fleet operates everything)</option>
-          <option value="Z">Z — Saudi drives himself (own everything)</option>
+          <option value="S">S — Salaried (fleet operates everything)</option>
+          <option value="F">F — Foreigner &amp; Saudi (brings own car, rents account)</option>
+          <option value="R">R — Rent model (own everything)</option>
           <option value="Custom">Custom…</option>
         </select>
         <input type="text" id="cpModelCustom" placeholder="Type custom model name" style="margin-top:6px;display:none;width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box">
@@ -8001,8 +8038,8 @@ function buildFinanceModals() {
       </div>
       <div class="fin-form-row"><label><input type="checkbox" id="ovUseModel" class="checkbox-toggle"> Override Model</label>
         <select id="ovModel" style="margin-top:6px">
-          <option value="A">A</option><option value="X">X</option><option value="Y">Y</option>
-          <option value="Z">Z</option><option value="E">E</option><option value="Custom">Custom</option>
+          <option value="A">A</option><option value="S">S</option><option value="F">F</option>
+          <option value="R">R</option><option value="E">E</option><option value="Custom">Custom</option>
         </select>
       </div>
       <div class="fin-form-row"><label><input type="checkbox" id="ovUseAcctRent" class="checkbox-toggle"> Override Account Rent</label>
@@ -8119,7 +8156,7 @@ function openCourierProfileModal(name) {
   const profile = getCourierProfile(name);
   document.getElementById('cpDriverName').value = name;
   document.getElementById('cpDriverDisplay').textContent = name + (lookupForeignName(name) ? ` (${lookupForeignName(name)})` : '');
-  document.getElementById('cpModel').value = resolveModelDisplay(profile.model) || 'Y';
+  document.getElementById('cpModel').value = resolveModelDisplay(profile.model) || 'F';
   onCpModelChange(profile.model);
   document.getElementById('cpModelCustom').value = profile.modelCustom || '';
   setCpDir('accountRent', profile.accountRent?.dir || 'NONE');
@@ -9069,28 +9106,28 @@ document.addEventListener('DOMContentLoaded', () => {
 // SCI-FI FEATURE 1 — MISSION CLOCK
 // ═══════════════════════════════════════════
 function initMissionClock() {
+  const MON = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
   function tick() {
-    const now   = new Date();
-    const hh    = String(now.getHours()).padStart(2,'0');
-    const mm    = String(now.getMinutes()).padStart(2,'0');
-    const ss    = String(now.getSeconds()).padStart(2,'0');
-    const dayOfMonth = now.getDate();
-    const daysInMonth= new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+    const now  = new Date();
+    const hh   = String(now.getHours()).padStart(2,'0');
+    const mm   = String(now.getMinutes()).padStart(2,'0');
+    const day  = now.getDate();
+    const mon  = MON[now.getMonth()];
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
 
-    // Days until next payout cycle (Sun=0, Wed=3)
     const dow = now.getDay();
-    const daysToSun = (7 - dow) % 7 || 7;
-    const daysToWed = (3 - dow + 7) % 7 || 7;
+    const daysToSun  = (7 - dow) % 7 || 7;
+    const daysToWed  = (3 - dow + 7) % 7 || 7;
     const daysToNext = Math.min(daysToSun, daysToWed);
     const cycleLabel = daysToNext === 0 ? '⚡ CYCLE TODAY' : `CYCLE IN ${daysToNext}D`;
 
     const el  = document.getElementById('mcTime');
     const sub = document.getElementById('mcSub');
-    if (el)  el.textContent  = `${hh}:${mm}:${ss}`;
-    if (sub) sub.textContent = `DAY ${dayOfMonth}/${daysInMonth} · ${cycleLabel}`;
+    if (el)  el.textContent  = `${hh}:${mm}`;
+    if (sub) sub.textContent = `${day} ${mon} · ${daysInMonth}D · ${cycleLabel}`;
   }
   tick();
-  setInterval(tick, 1000);
+  setInterval(tick, 10000); // seconds gone — update every 10 s is plenty
 }
 
 // ═══════════════════════════════════════════
