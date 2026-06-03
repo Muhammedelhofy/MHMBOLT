@@ -6625,7 +6625,20 @@ function defaultProfile() {
   return { model:'Y', modelCustom:null,
     accountRent:{dir:'NONE',amount:0}, carRent:{dir:'NONE',amount:0},
     salary:0, fleetCut:{type:'NONE',value:0},
+    // Auto-salary: when on, the driver's salary scales with their NET earnings —
+    // salaryBase at salaryThreshold net, ± salaryPerK per full 1,000 net above/below it.
+    autoSalary:false, salaryBase:2000, salaryThreshold:6000, salaryPerK:500,
     other:{label:'',dir:'NONE',amount:0}, notes:'', startDate: null, funnel: null, blocked: false };
+}
+// Computes a salaried driver's pay from their net earnings: base at threshold, stepping
+// ±perK for each FULL 1,000 SAR above/below the threshold, clamped at 0 (no negative pay).
+// e.g. base 2000 @ 6000: 8000→3000, 7000→2500, 6000→2000, 5000→1500, 4000→1000.
+function autoSalaryFor(net, p) {
+  const base = p.salaryBase      != null ? p.salaryBase      : 2000;
+  const thr  = p.salaryThreshold != null ? p.salaryThreshold : 6000;
+  const perK = p.salaryPerK      != null ? p.salaryPerK      : 500;
+  const steps = Math.floor(((net || 0) - thr) / 1000);
+  return Math.max(0, base + steps * perK);
 }
 // Returns the effective monthly target for a driver, prorated if they started mid-month
 function getProratedTarget(driverName, baseTarget, pInfo) {
@@ -6674,20 +6687,30 @@ function upsertOverride(name, monthKey, override) {
   if (override && Object.keys(override).length) all[k] = { ...override, _t: Date.now() }; else delete all[k];
   saveOverrides(all);
 }
+// Effective-dated profile resolution. The base profile is the driver's starting deal
+// (applies from day one). Each monthly override is a CHANGE that takes effect from its
+// month FORWARD — so a car-rent change entered in Feb applies Feb, Mar, Apr… until a later
+// month overrides it again, while Jan keeps the old value. We apply every override with
+// month ≤ the viewed month in chronological order, so the most recent change per field wins.
+// Only fields the user actually changed are present in an override, so untouched fields keep
+// carrying over from the last update — "only change what changed."
+const OVERRIDABLE_FIELDS = ['model','modelCustom','accountRent','carRent','salary','fleetCut',
+  'other','notes','autoSalary','salaryBase','salaryThreshold','salaryPerK'];
 function getEffectiveProfile(name, monthKey) {
   const base = getCourierProfile(name);
-  const ov = getOverride(name, monthKey);
-  if (!ov) return base;
-  return {
-    model:       ov.model !== undefined ? ov.model : base.model,
-    modelCustom: ov.modelCustom !== undefined ? ov.modelCustom : base.modelCustom,
-    accountRent: ov.accountRent || base.accountRent,
-    carRent:     ov.carRent     || base.carRent,
-    salary:      ov.salary !== undefined ? ov.salary : base.salary,
-    fleetCut:    ov.fleetCut    || base.fleetCut,
-    other:       ov.other       || base.other,
-    notes:       ov.notes !== undefined ? ov.notes : base.notes
-  };
+  if (!monthKey) return base;
+  const nk  = driverKey(name);
+  const all = loadOverrides();
+  const keys = Object.keys(all)
+    .filter(k => k.startsWith(nk + '::') && k.slice(nk.length + 2) <= monthKey) // 'YYYY-MM' string compare
+    .sort((a, b) => a.slice(nk.length + 2) < b.slice(nk.length + 2) ? -1 : 1);  // oldest → newest
+  const eff = { ...base };
+  for (const k of keys) {
+    const ov = all[k];
+    if (!ov) continue;
+    OVERRIDABLE_FIELDS.forEach(f => { if (ov[f] !== undefined) eff[f] = ov[f]; });
+  }
+  return eff;
 }
 function loadCycleReceipts() { try{return JSON.parse(localStorage.getItem(CYCLE_RECEIPTS_KEY)||'{}');}catch(e){return{};} }
 function saveCycleReceipts(o) { localStorage.setItem(CYCLE_RECEIPTS_KEY, JSON.stringify(o)); }
@@ -6861,7 +6884,9 @@ function computeDriverPnL(name, monthKey) {
   const sign = (dir, amt) => dir === 'IN' ? +amt : dir === 'OUT' ? -amt : 0;
   const acctRent = sign(p.accountRent?.dir, p.accountRent?.amount || 0);
   const carRent  = sign(p.carRent?.dir,     p.carRent?.amount || 0);
-  const salary   = -(p.salary || 0);
+  // Auto-salary scales the pay with the driver's net earnings; otherwise use the fixed salary.
+  const salaryOut = p.autoSalary ? autoSalaryFor(income, p) : (p.salary || 0);
+  const salary   = -salaryOut;
   const fc       = p.fleetCut || {};
   const fleetCut = fc.type === 'FLAT' ? -(fc.value || 0)
                  : fc.type === 'PCT'  ? -(income * (fc.value || 0) / 100)
@@ -7640,8 +7665,25 @@ function buildFinanceModals() {
         <input type="hidden" id="cpCarRentDir" value="NONE">
         <input type="number" id="cpCarRentAmount" placeholder="Amount (SAR)" style="margin-top:8px;width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box">
       </div>
-      <div class="fin-form-row"><label>Salary OUT (SAR — 0 if none)</label>
-        <input type="number" id="cpSalary" placeholder="0">
+      <div class="fin-form-row"><label>Salary (paid to driver)</label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:2px 0 6px">
+          <input type="checkbox" id="cpAutoSalary" class="checkbox-toggle" onchange="onCpAutoSalaryToggle()">
+          <span>⚙️ Auto-calculate from net earnings</span>
+        </label>
+        <div id="cpSalaryManualWrap">
+          <input type="number" id="cpSalary" placeholder="Fixed salary OUT (SAR — 0 if none)">
+        </div>
+        <div id="cpSalaryAutoWrap" style="display:none">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+            <div><label style="font-size:10px;color:var(--text-muted)">Base salary</label>
+              <input type="number" id="cpSalaryBase" placeholder="2000" oninput="updateCpSalaryPreview()" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box"></div>
+            <div><label style="font-size:10px;color:var(--text-muted)">…at Net (SAR)</label>
+              <input type="number" id="cpSalaryThreshold" placeholder="6000" oninput="updateCpSalaryPreview()" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box"></div>
+            <div><label style="font-size:10px;color:var(--text-muted)">+SAR per +1k</label>
+              <input type="number" id="cpSalaryPerK" placeholder="500" oninput="updateCpSalaryPreview()" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box"></div>
+          </div>
+          <div id="cpSalaryPreview" style="font-size:11px;color:var(--text-muted);margin-top:6px"></div>
+        </div>
       </div>
       <div class="fin-form-row"><label>Fleet Cut</label>
         <div class="fin-direction-toggle" style="grid-template-columns:1fr 1fr 1fr">
@@ -7695,11 +7737,11 @@ function buildFinanceModals() {
   <!-- Monthly Override Modal -->
   <div class="fin-modal-overlay" id="overrideModal" onclick="if(event.target===this)closeOverrideModal()">
     <div class="fin-modal">
-      <h3>Monthly Override</h3>
+      <h3>Change from this month</h3>
       <input type="hidden" id="ovDriverName"><input type="hidden" id="ovMonthKey">
       <div class="fin-form-row">
         <div id="ovDriverDisplay" style="font-weight:600;font-size:14px;padding:8px 10px;background:var(--bg-card2);border-radius:6px"></div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Check a box to override that field for this month only. Unchecked = use profile default.</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Check a box to change that field <b>from this month forward</b> — earlier months keep their old value, and later months inherit this change until you change it again. Unchecked = keep whatever was in effect last.</div>
       </div>
       <div class="fin-form-row"><label><input type="checkbox" id="ovUseModel" class="checkbox-toggle"> Override Model</label>
         <select id="ovModel" style="margin-top:6px">
@@ -7829,6 +7871,11 @@ function openCourierProfileModal(name) {
   setCpDir('carRent', profile.carRent?.dir || 'NONE');
   document.getElementById('cpCarRentAmount').value = profile.carRent?.amount || '';
   document.getElementById('cpSalary').value = profile.salary || '';
+  document.getElementById('cpAutoSalary').checked   = !!profile.autoSalary;
+  document.getElementById('cpSalaryBase').value      = profile.salaryBase      != null ? profile.salaryBase      : 2000;
+  document.getElementById('cpSalaryThreshold').value = profile.salaryThreshold != null ? profile.salaryThreshold : 6000;
+  document.getElementById('cpSalaryPerK').value      = profile.salaryPerK      != null ? profile.salaryPerK      : 500;
+  onCpAutoSalaryToggle();
   setCpFleetCut(profile.fleetCut?.type || 'NONE');
   document.getElementById('cpFleetCutValue').value = profile.fleetCut?.value || '';
   document.getElementById('cpOtherLabel').value = profile.other?.label || '';
@@ -7842,6 +7889,23 @@ function openCourierProfileModal(name) {
 }
 function closeCourierProfileModal() { document.getElementById('courierProfileModal').classList.remove('open'); }
 function onCpModelChange(m) { document.getElementById('cpModelCustom').style.display = (m === 'Custom') ? 'block' : 'none'; }
+function onCpAutoSalaryToggle() {
+  const on = document.getElementById('cpAutoSalary').checked;
+  document.getElementById('cpSalaryManualWrap').style.display = on ? 'none' : 'block';
+  document.getElementById('cpSalaryAutoWrap').style.display   = on ? 'block' : 'none';
+  if (on) updateCpSalaryPreview();
+}
+function updateCpSalaryPreview() {
+  const el = document.getElementById('cpSalaryPreview'); if (!el) return;
+  const p = {
+    salaryBase:      parseFloat(document.getElementById('cpSalaryBase').value)      || 2000,
+    salaryThreshold: parseFloat(document.getElementById('cpSalaryThreshold').value) || 6000,
+    salaryPerK:      parseFloat(document.getElementById('cpSalaryPerK').value)       || 500,
+  };
+  const ex = [p.salaryThreshold - 2000, p.salaryThreshold, p.salaryThreshold + 1000, p.salaryThreshold + 2000]
+    .map(net => `${fmt(net)}→${fmt(autoSalaryFor(net, p))}`).join(' · ');
+  el.innerHTML = `Net→Salary: ${ex}`;
+}
 function setCpDir(field, val) {
   const idMap = { accountRent:'cpAcctRentDir', carRent:'cpCarRentDir', other:'cpOtherDir' };
   document.getElementById(idMap[field]).value = val;
@@ -7868,6 +7932,10 @@ function saveCourierProfileFromModal() {
     accountRent: { dir: document.getElementById('cpAcctRentDir').value, amount: parseFloat(document.getElementById('cpAcctRentAmount').value) || 0 },
     carRent:     { dir: document.getElementById('cpCarRentDir').value,  amount: parseFloat(document.getElementById('cpCarRentAmount').value)  || 0 },
     salary: parseFloat(document.getElementById('cpSalary').value) || 0,
+    autoSalary: document.getElementById('cpAutoSalary').checked || false,
+    salaryBase:      parseFloat(document.getElementById('cpSalaryBase').value)      || 2000,
+    salaryThreshold: parseFloat(document.getElementById('cpSalaryThreshold').value) || 6000,
+    salaryPerK:      parseFloat(document.getElementById('cpSalaryPerK').value)       || 500,
     fleetCut: { type: document.getElementById('cpFleetCutType').value, value: parseFloat(document.getElementById('cpFleetCutValue').value) || 0 },
     other: { label: document.getElementById('cpOtherLabel').value || '', dir: document.getElementById('cpOtherDir').value, amount: parseFloat(document.getElementById('cpOtherAmount').value) || 0 },
     notes: document.getElementById('cpNotes').value || '',
