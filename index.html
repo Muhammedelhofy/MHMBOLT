@@ -2214,8 +2214,11 @@ function openModal(id) {
   // Full history for this driver (since their first working day), not just one month.
   const fullHistory = getDriverAllHistory(d.driverId, d.name);
   // Store everything the body renderer needs so the month filter can re-render
-  // without re-deriving the driver lookup. Reset filter to 'all' on each open.
-  modalMonthFilter = 'all';
+  // without re-deriving the driver lookup. Inherit the Captains screen's month filter
+  // so the card opens on the same month the list is showing (e.g. June selected → card
+  // opens on June). The user can still change it inside the card; if that month has no
+  // data for this driver the body renderer falls back to the full history automatically.
+  modalMonthFilter = (typeof sumMonthFilter !== 'undefined' && sumMonthFilter && sumMonthFilter !== 'all') ? sumMonthFilter : 'all';
   modalCtx = { d, s, target, effTarget, pInfo, monthly, pct, fillCls, projected, gap, paceText, paceColor, fullHistory };
 
   const modalForeignName = lookupForeignName(d.name);
@@ -5537,6 +5540,18 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const s = loadSettings();
   const target = s.monthlyTarget;
 
+  // Working-month basis for pace tracking, derived from the actual month in view.
+  // Model: a captain takes ~1 day off per week, so a working month is ≈ 6/7 of the
+  // calendar month. This is the LOOSE basis the user asked for — it scales naturally
+  // with month length instead of a fixed 26 (May 31→27, Apr 30→26, Feb 28→24) so short
+  // months aren't unfairly penalised. We anchor on the most-recent selected day's month
+  // so a single-month view uses that month exactly, and track from the 1st of the month.
+  const repPeriod   = entries.reduce((a, b) => periodSortKey(a.period) >= periodSortKey(b.period) ? a : b, entries[0]);
+  const repInfo     = parsePeriodInfo(repPeriod.period);
+  const daysInMonth = repInfo?.daysInMonth || 31;
+  const monthLabel  = repInfo ? MONTH_NAMES?.[repInfo.end.month] || '' : '';
+  const WORKING_DAYS = Math.max(1, Math.round(daysInMonth * 6 / 7)); // ~1 day off/week: 31→27, 30→26, 28→24
+
   const map = {};
   const blank = name => ({ name, days:0, gross:0, net:0, campaign:0, rides:0, dist:0, hrs:0, frSum:0, acSum:0, utSum:0, rDays:0, cashEarnings:0, cashGap:0, minActualPayout:Infinity });
   entries.forEach(h => {
@@ -5660,13 +5675,32 @@ function buildCourierSummaryTable(entries, searchFilter) {
       ? `onclick="(function(el){bioScanThenOpen('${esc(c.name)}',el);setTimeout(()=>openModalForEntry('${esc(c.name)}','${esc(singlePeriod)}'),0);})(this)"`
       : `onclick="bioScanThenOpen('${esc(c.name)}',this)"`;
 
-    // Target progress (c.net already includes campaign since Bolt's net = gross - fees, gross includes campaign)
-    const pct     = target > 0 ? Math.min(100, Math.round(c.net / target * 100)) : 100;
-    const fillCls = pct >= 85 ? 'fill-green' : pct >= 55 ? 'fill-amber' : 'fill-red';
-    const gap     = target - c.net;
-    const gapCls  = gap <= 0 ? 'pace-good' : (pct >= 55 ? 'pace-warn' : 'pace-bad');
+    // Target progress (c.net already includes campaign since Bolt's net = gross - fees, gross includes campaign).
+    // PACE-BASED tracking: comparing net to the FULL monthly target makes anyone mid-month
+    // read as alarmingly "behind". Instead we judge against the pace needed to reach target
+    // a working month of WORKING_DAYS (derived above from the month in view — May's 31
+    // calendar days → 26 working days). A captain earning enough per WORKED day to project
+    // past target reads as "on track" — not "behind". (Mirrors the driver-card concept.)
+    const pct      = target > 0 ? Math.min(100, Math.round(c.net / target * 100)) : 100;
+    const reqDaily = target > 0 ? target / WORKING_DAYS : 0;              // SAR/day needed for target
+    const perDay   = c.days > 0 ? c.net / c.days : 0;                     // their actual SAR/day
+    const projMonth= perDay * WORKING_DAYS;                              // projected month-end at this pace
+    const expected = Math.min(target, reqDaily * c.days);               // what they "should" have banked by now
+    const paceGap  = c.net - expected;                                   // + = ahead of pace, − = behind pace
+    const onPace   = paceGap >= 0;
+    const nearPace = c.net >= expected * 0.8;
+    // Bar + label colour reflect PACE, not raw % of target — so early-month captains on
+    // pace show green (short bar = early, not failing) and only true laggards show red.
+    const fillCls = onPace ? 'fill-green' : nearPace ? 'fill-amber' : 'fill-red';
+    const gapCls  = onPace ? 'pace-good'  : nearPace ? 'pace-warn'  : 'pace-bad';
     const gapLabel = target > 0
-      ? (gap <= 0 ? `+${fmt(Math.abs(gap))} ahead` : `${fmt(Math.ceil(gap))} behind`)
+      ? (onPace ? `✓ on track` : `${fmt(Math.ceil(-paceGap))} behind pace`)
+      : '';
+    const gapTitle = target > 0
+      ? `Target ${fmt(target)} over ${WORKING_DAYS} working days (${monthLabel} = ${daysInMonth} days) → needs ${fmt(Math.round(reqDaily))}/day.\n`
+        + `${c.name} worked ${c.days}d at ${fmt(Math.round(perDay))}/day → projected ${fmt(Math.round(projMonth))} by day ${WORKING_DAYS}.\n`
+        + (onPace ? `On pace: +${fmt(Math.round(paceGap))} vs the ${fmt(Math.round(expected))} expected by now.`
+                  : `Behind pace: ${fmt(Math.ceil(-paceGap))} under the ${fmt(Math.round(expected))} expected by now.`)
       : '';
 
     // Cash % badge
@@ -5707,7 +5741,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
       <td class="target-cell">
         <div class="target-top"><span class="target-amount">${fmt(c.net)} SAR</span><span class="target-pct">${pct}%</span></div>
         <div class="progress-bar-bg"><div class="progress-bar-fill ${fillCls}" style="width:${pct}%"></div></div>
-        ${target > 0 ? `<div class="target-sub ${gapCls}">${gapLabel}</div>` : ''}
+        ${target > 0 ? `<div class="target-sub ${gapCls}" title="${gapTitle.replace(/"/g,'&quot;')}" style="cursor:help">${gapLabel}</div>` : ''}
       </td>
     </tr>`;
   }).join('');
