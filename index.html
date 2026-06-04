@@ -6914,6 +6914,10 @@ let financeCycle     = '';
 let finShowAllCycles = false;
 let financeSortCol  = 'netPnL';
 let financeSortAsc  = false;
+// Transfer Log sub-mode state
+let finTransferSubMode    = 'date';    // 'date' | 'driver'
+let finTransferDrivers    = new Set(); // selected drivers in by-driver mode
+let finTransferMonth      = '';        // '' = all history, 'YYYY-MM' = filtered month
 function driverKey(name) { return (name||'').trim().toLowerCase(); }
 function defaultProfile() {
   return { model:'F', modelCustom:null,
@@ -7263,15 +7267,16 @@ function computeCycleReconciliation(transferDate) {
 }
 function cycleStatusBadge(status) {
   const colors = {
-    FULL:     { bg:'#d1fae5', fg:'#065f46', icon:'🟢' },
-    PARTIAL:  { bg:'#fef3c7', fg:'#92400e', icon:'🟡' },
-    PENDING:  { bg:'#fef3c7', fg:'#92400e', icon:'🟡' },
-    REVERSED: { bg:'#fee2e2', fg:'#991b1b', icon:'🔴' },
-    NOT_PAID: { bg:'#fee2e2', fg:'#991b1b', icon:'🔴' },
-    NONE:     { bg:'#f3f4f6', fg:'#6b7280', icon:'➖' }
+    FULL:     { bg:'rgba(0,255,179,.12)',  fg:'var(--green)', icon:'✅' },
+    PARTIAL:  { bg:'rgba(255,170,0,.12)',  fg:'var(--amber)', icon:'🟡' },
+    PENDING:  { bg:'rgba(255,170,0,.10)',  fg:'var(--amber)', icon:'⏳' },
+    REVERSED: { bg:'rgba(255,68,102,.12)', fg:'var(--red)',   icon:'🔴' },
+    NOT_PAID: { bg:'rgba(255,68,102,.12)', fg:'var(--red)',   icon:'⛔' },
+    NONE:     { bg:'rgba(255,255,255,.04)',fg:'var(--text-muted)', icon:'—' }
   };
   const c = colors[status] || colors.NONE;
-  return '<span style="display:inline-block;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.05em;background:' + c.bg + ';color:' + c.fg + '">' + c.icon + ' ' + status + '</span>';
+  const label = { FULL:'Paid', PARTIAL:'Partial', PENDING:'Pending', REVERSED:'Reversed', NOT_PAID:'Not Paid', NONE:'—' }[status] || status;
+  return '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:3px;font-size:10px;font-weight:700;letter-spacing:.06em;background:' + c.bg + ';color:' + c.fg + '">' + c.icon + ' ' + label + '</span>';
 }
 function getAvailableMonths() {
   const set = new Set();
@@ -7357,6 +7362,20 @@ function setFinanceMonth(m) { financeMonth = m; finShowAllCycles = false; render
 function setFinanceCycle(c) { financeCycle = c; renderFinanceTab(); }
 function setFinanceView(v)  { financeViewMode = v; renderFinanceTab(); }
 function setFinShowAllCycles(v) { finShowAllCycles = v; renderFinanceTab(); }
+// Transfer Log sub-mode setters (update financeMainContent only — no full tab re-render)
+function setTransferSubMode(mode) { finTransferSubMode = mode; renderFinanceTransferView(); }
+function setTransferDriverMonth(m) { finTransferMonth = m; renderFinanceTransferView(); }
+function toggleTransferDriver(name) {
+  if (finTransferDrivers.has(name)) finTransferDrivers.delete(name);
+  else finTransferDrivers.add(name);
+  renderFinanceTransferView();
+}
+function selectAllTransferDrivers() {
+  const log = loadTransferLog();
+  Object.values(log).forEach(entries => (entries||[]).forEach(e => { if (e.name) finTransferDrivers.add(e.name); }));
+  renderFinanceTransferView();
+}
+function clearAllTransferDrivers() { finTransferDrivers.clear(); renderFinanceTransferView(); }
 function cycleInMonth(transferDate, monthKey) {
   if (!monthKey) return true;
   const win = deriveCycleWindow(transferDate);
@@ -7391,7 +7410,10 @@ function renderFinanceTab() {
     : `<option value="${financeMonth}">${monthLabel(financeMonth)} (no CSV data)</option>`;
   const visibleCycles = finShowAllCycles ? cycles : cycles.filter(c => cycleInMonth(c, financeMonth));
   const cycleOpts = visibleCycles.map(c => `<option value="${c}" ${c===financeCycle?'selected':''}>${cycleLabel(c)}</option>`).join('');
-  const anchorBanner = !anchor
+  // Cycle + anchor controls are only relevant for By Captain / By Model / Cycle Reconciliation.
+  // Transfer Log has its own date navigation inside — hide the shared controls there.
+  const isTransfers = financeViewMode === 'transfers';
+  const anchorBanner = isTransfers ? '' : (!anchor
     ? `<div style="background:rgba(255,193,7,0.12);border:1px solid var(--amber,#f59e0b);border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <span style="font-size:13px;color:var(--text)">📅 <strong>Set a starting cycle date</strong> — pick any Sunday or Wednesday to activate the fixed payment calendar.</span>
         <input type="date" id="anchorDatePicker" value="2026-05-10" style="padding:4px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:13px">
@@ -7400,18 +7422,8 @@ function renderFinanceTab() {
     : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">
         📅 Cycle calendar anchored from <strong>${anchor}</strong>
         <button class="finance-btn finance-btn-secondary" onclick="resetCycleAnchor()" style="margin-left:8px;padding:2px 8px;font-size:11px">Change start date</button>
-      </div>`;
-  el.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
-      <div style="font-size:18px;font-weight:700;color:var(--text)">Fleet Finance — v2</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="finance-btn finance-btn-secondary" onclick="exportFinanceCSV()">⬇ Export CSV</button>
-        <button class="finance-btn finance-btn-primary" onclick="exportFinanceReport()">🖨 Print Report</button>
-        <button class="finance-btn finance-btn-primary" style="background:rgba(0,255,179,.14);border-color:rgba(0,255,179,.55);color:var(--bolt-green);font-weight:700" onclick="openEomReportModal()">📊 End of Month Report</button>
-      </div>
-    </div>
-    ${anchorBanner}
-    <div class="fin-period-bar">
+      </div>`);
+  const periodControls = isTransfers ? '' : `
       <div class="fin-period-controls">
         <label>Month</label>
         <select class="kpi-select" onchange="setFinanceMonth(this.value)">${monthOpts}</select>
@@ -7424,7 +7436,19 @@ function renderFinanceTab() {
           <input type="checkbox" ${finShowAllCycles?'checked':''} onchange="setFinShowAllCycles(this.checked)"> Show all cycles
         </label>
         <button class="finance-btn finance-btn-secondary" onclick="openCycleReceiptModal(financeCycle)" style="margin-left:8px">✎ Cycle Receipt</button>
+      </div>`;
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+      <div style="font-size:18px;font-weight:700;color:var(--text)">Fleet Finance</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="finance-btn finance-btn-secondary" onclick="exportFinanceCSV()">⬇ Export CSV</button>
+        <button class="finance-btn finance-btn-primary" onclick="exportFinanceReport()">🖨 Print Report</button>
+        <button class="finance-btn finance-btn-primary" style="background:rgba(0,255,179,.14);border-color:rgba(0,255,179,.55);color:var(--bolt-green);font-weight:700" onclick="openEomReportModal()">📊 End of Month Report</button>
       </div>
+    </div>
+    ${anchorBanner}
+    <div class="fin-period-bar">
+      ${periodControls}
       <div class="view-toggle">
         <button class="view-toggle-btn ${financeViewMode==='courier'?'active':''}" onclick="setFinanceView('courier')">By Captain</button>
         <button class="view-toggle-btn ${financeViewMode==='model'?'active':''}" onclick="setFinanceView('model')">By Model</button>
@@ -7433,20 +7457,21 @@ function renderFinanceTab() {
       </div>
     </div>
     <div id="financeMainContent"></div>
+    ${!isTransfers ? `
     <div class="finance-section" style="margin-top:18px">
       <div class="finance-section-header">
         <span class="finance-section-title">Captain Bonuses</span>
         <span style="font-size:11px;color:var(--text-muted)">Bolt campaign bonuses — paid in full to each captain</span>
       </div>
       <div id="finBonusContent"></div>
-    </div>
+    </div>` : ''}
     ${buildFinanceModals()}
   `;
   if (financeViewMode === 'courier')         renderFinanceCourierView();
   else if (financeViewMode === 'model')      renderFinanceModelView();
   else if (financeViewMode === 'cycle')      renderFinanceCycleView();
   else if (financeViewMode === 'transfers')  renderFinanceTransferView();
-  renderFinBonus();
+  if (!isTransfers) renderFinBonus();
 }
 
 function renderFinanceCourierView() {
@@ -7541,7 +7566,7 @@ function renderFinanceCourierView() {
       </table></div>
       <div class="finance-kpi-row">
         <div class="finance-kpi"><div class="finance-kpi-label">Total Income</div><div class="finance-kpi-value">${fmt(tot.income)} SAR</div></div>
-        <div class="finance-kpi"><div class="finance-kpi-label">Active Drivers</div><div class="finance-kpi-value">${pls.length}</div></div>
+        <div class="finance-kpi"><div class="finance-kpi-label">Drivers on Roster</div><div class="finance-kpi-value">${pls.length}</div></div>
         <div class="finance-kpi"><div class="finance-kpi-label">Fleet Net P&L</div><div class="finance-kpi-value ${tot.netPnL>=0?'positive':'negative'}">${tot.netPnL>=0?'+':''}${fmt(tot.netPnL)} SAR</div></div>
       </div>
     </div>
@@ -7699,13 +7724,14 @@ function deleteTransferLogEntry(dateYMD) {
   toast('Transfer log entry deleted');
 }
 
+// ── Transfer Log: top-level router ──────────────────────────────────────────
 function renderFinanceTransferView() {
-  const log = loadTransferLog();
-  const el  = document.getElementById('financeMainContent');
+  const el = document.getElementById('financeMainContent');
   if (!el) return;
-  const cycleDates = Object.keys(log).sort().reverse(); // newest first
+  const log = loadTransferLog();
 
-  if (!cycleDates.length) {
+  // Empty state — same for both sub-modes
+  if (!Object.keys(log).length) {
     el.innerHTML = `
       <div class="finance-section">
         <div class="finance-section-header">
@@ -7720,11 +7746,29 @@ function renderFinanceTransferView() {
     return;
   }
 
+  // Sub-mode toggle header
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px">
+      <span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-right:4px">View</span>
+      <button class="view-toggle-btn ${finTransferSubMode==='date'?'active':''}" onclick="setTransferSubMode('date')">📅 By Date</button>
+      <button class="view-toggle-btn ${finTransferSubMode==='driver'?'active':''}" onclick="setTransferSubMode('driver')">👤 By Driver</button>
+    </div>
+    <div id="transferSubContent"></div>`;
+
+  const sub = document.getElementById('transferSubContent');
+  if (finTransferSubMode === 'date') renderTransferByDate(sub, log);
+  else renderTransferByDriver(sub, log);
+}
+
+// ── Transfer Log: By Date (original view) ────────────────────────────────────
+function renderTransferByDate(el, log) {
+  const cycleDates = Object.keys(log).sort().reverse(); // newest first
+
   // Prefer financeCycle if it's a logged date, else fall back to newest
   const selectedCycle = log[financeCycle] ? financeCycle : cycleDates[0];
   const entries       = log[selectedCycle] || [];
 
-  // Enrich with auto-computed status + backlog hint
+  // Enrich with auto-computed status
   const enriched = entries.map(e => {
     const status = e.amount < 0 ? 'REVERSED' : computeTransferStatus(e.name, selectedCycle, log);
     return { ...e, status, isBacklog: false };
@@ -7739,7 +7783,7 @@ function renderFinanceTransferView() {
   const reversedPositive = enriched.filter(e => e.amount > 0 && e.status === 'REVERSED').reduce((s, e) => s + e.amount, 0);
   const negativePostings = enriched.filter(e => e.amount < 0).reduce((s, e) => s + Math.abs(e.amount), 0);
   const reversedTotal    = reversedPositive + negativePostings;
-  const totalTransferred = grossTransferred - reversedPositive; // real cash delivered
+  const totalTransferred = grossTransferred - reversedPositive;
   const countConfirmed   = enriched.filter(e => e.amount > 0 && e.status === 'CONFIRMED').length;
   const countPending     = enriched.filter(e => e.amount > 0 && e.status === 'PENDING').length;
   const countReversed    = enriched.filter(e => e.status === 'REVERSED').length;
@@ -7771,17 +7815,13 @@ function renderFinanceTransferView() {
       } else if (e.isBacklog) {
         notes.push('<span style="color:var(--text-muted);font-size:11px">📦 includes backlog from prior cycles</span>');
       }
-      // Roster-integrity check: was this driver even on the fleet on/before this
-      // transfer date? If their first-ever activity is AFTER the transfer date,
-      // the entry is almost certainly from a mis-dated or multi-day CSV.
+      // Roster-integrity check: flag transfers that predate the driver's first recorded activity
       const firstSeen = driverFirstSeenMs(e.name);
       const transMs   = parseLocalDate(selectedCycle).getTime();
       if (firstSeen !== null && firstSeen > transMs) {
         const fs = new Date(firstSeen);
         notes.push(`<span style="color:var(--amber);font-size:11px">⚠ No fleet activity until ${fs.getDate()} ${MONTH_NAMES[fs.getMonth()]} — verify this date/CSV</span>`);
       }
-      // A reversed positive transfer is money that did NOT stay — show it struck
-      // through in red, not as a healthy green "+".
       const reversedPos = e.amount > 0 && e.status === 'REVERSED';
       const amtColor  = (e.amount < 0 || reversedPos) ? 'var(--red)' : 'var(--text)';
       const amtSign   = e.amount < 0 ? '−' : '+';
@@ -7866,6 +7906,157 @@ function renderFinanceTransferView() {
         </table>
       </div>
     </div>
+  `;
+}
+
+// ── Transfer Log: By Driver (new search view) ─────────────────────────────────
+function renderTransferByDriver(el, log) {
+  // Collect all unique driver names + all months from the log
+  const allDriversSet = new Set();
+  const allMonthsSet  = new Set();
+  Object.entries(log).forEach(([date, entries]) => {
+    allMonthsSet.add(date.slice(0, 7)); // YYYY-MM
+    (entries || []).forEach(e => { if (e.name) allDriversSet.add(e.name); });
+  });
+  const allDrivers = [...allDriversSet].sort((a, b) => a.localeCompare(b));
+  const allMonths  = [...allMonthsSet].sort().reverse(); // newest first
+
+  // Month filter pills
+  const monthPills = ['', ...allMonths].map(m => {
+    const lbl    = m ? monthLabel(m) : 'All History';
+    const active = m === finTransferMonth;
+    return `<button class="sort-btn${active?' active':''}" onclick="setTransferDriverMonth('${m}')">${lbl}</button>`;
+  }).join('');
+
+  // Driver selector chips
+  const driverChips = allDrivers.map(name => {
+    const sel  = finTransferDrivers.has(name);
+    const safe = encodeURIComponent(name);
+    return `<button class="sort-btn${sel?' active':''}"
+      style="font-size:12px;padding:5px 11px"
+      onclick="toggleTransferDriver(decodeURIComponent('${safe}'))">${name}</button>`;
+  }).join('');
+
+  // Build results per selected driver
+  let resultsHtml = '';
+  if (finTransferDrivers.size === 0) {
+    resultsHtml = `<div style="text-align:center;padding:36px 20px;color:var(--text-muted);font-size:13px">
+      Select one or more drivers above to see their full transfer history.
+    </div>`;
+  } else {
+    resultsHtml = [...finTransferDrivers].map(driverName => {
+      // Gather + filter transfers for this driver
+      const xfers = [];
+      Object.entries(log).forEach(([date, entries]) => {
+        if (finTransferMonth && !date.startsWith(finTransferMonth)) return;
+        (entries || []).forEach(e => {
+          if (driverKey(e.name) !== driverKey(driverName)) return;
+          const status = e.amount < 0 ? 'REVERSED' : computeTransferStatus(e.name, date, log);
+          xfers.push({ date, amount: e.amount, netEarnings: e.netEarnings || 0, status });
+        });
+      });
+      xfers.sort((a, b) => b.date.localeCompare(a.date)); // newest first
+
+      const grossAmt    = xfers.filter(x => x.amount > 0).reduce((s, x) => s + x.amount, 0);
+      const revAmt      = xfers.filter(x => x.amount > 0 && x.status === 'REVERSED').reduce((s, x) => s + x.amount, 0);
+      const netAmt      = grossAmt - revAmt;
+      const cntPending  = xfers.filter(x => x.amount > 0 && x.status === 'PENDING').length;
+      const cntReversed = xfers.filter(x => x.status === 'REVERSED').length;
+
+      const rows = xfers.map(x => {
+        const dt      = parseLocalDate(x.date);
+        const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()];
+        const dateLbl = `${dayName} ${dt.getDate()} ${MONTH_NAMES[dt.getMonth()]} ${dt.getFullYear()}`;
+        const isPayDay = dt.getDay() === 0 || dt.getDay() === 3;
+        const revPos  = x.amount > 0 && x.status === 'REVERSED';
+        const amtClr  = (x.amount < 0 || revPos) ? 'var(--red)' : 'var(--green)';
+        const amtSign = x.amount < 0 ? '−' : '+';
+        const amtDecor = revPos ? 'text-decoration:line-through;' : '';
+        const netCell = x.netEarnings > 0
+          ? `<span style="font-family:var(--mono);color:var(--text-muted)">${fmt(x.netEarnings)}</span>`
+          : `<span style="color:var(--text-dim)">—</span>`;
+        const noteParts = [];
+        if (!isPayDay && x.amount > 0) noteParts.push(`<span style="color:var(--amber);font-size:11px">⚠ Not a pay day</span>`);
+        if (x.status === 'REVERSED')   noteParts.push(`<span style="color:var(--red);font-size:11px">⚠ Reversed by Bolt</span>`);
+        if (x.amount < 0)              noteParts.push(`<span style="color:var(--red);font-size:11px">⚠ Negative posting</span>`);
+        return `<tr>
+          <td style="font-family:var(--mono);font-size:12px;white-space:nowrap">${dateLbl}</td>
+          <td style="text-align:right;font-family:var(--mono);font-weight:700;color:${amtClr};${amtDecor}">${amtSign}${fmt(Math.abs(x.amount))}</td>
+          <td style="text-align:right">${netCell}</td>
+          <td><span style="${transferStatusStyle(x.status)}">${transferStatusBadge(x.status)}</span></td>
+          <td style="font-size:11px">${noteParts.join(' ')}</td>
+        </tr>`;
+      }).join('');
+
+      const foreign = lookupForeignName(driverName);
+      return `
+        <div class="finance-section" style="margin-bottom:14px">
+          <div class="finance-section-header">
+            <div>
+              <span class="finance-section-title">👤 ${driverName}</span>
+              ${foreign ? `<span class="d-foreign" style="margin-left:8px">${foreign}</span>` : ''}
+            </div>
+            <div style="display:flex;gap:18px;font-size:12px;align-items:center">
+              <span style="font-family:var(--mono);font-weight:700;color:var(--green)">${fmt(netAmt)} SAR net</span>
+              ${revAmt > 0 ? `<span style="color:var(--red)">−${fmt(revAmt)} reversed</span>` : ''}
+              ${cntPending > 0 ? `<span style="color:var(--amber)">⏳ ${cntPending} pending</span>` : ''}
+              <span style="color:var(--text-muted)">${xfers.length} payment${xfers.length!==1?'s':''}</span>
+            </div>
+          </div>
+          ${xfers.length ? `
+            <div style="overflow-x:auto">
+              <table class="finance-table">
+                <thead><tr>
+                  <th>Transfer Date</th>
+                  <th style="text-align:right">Amount (SAR)</th>
+                  <th style="text-align:right">Day Net Earnings</th>
+                  <th>Status</th>
+                  <th>Note</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+                <tfoot>
+                  <tr style="background:var(--bg-card2)">
+                    <td style="font-weight:600;color:var(--text-muted);font-size:11px">TOTAL</td>
+                    <td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--green)">${fmt(netAmt)} SAR</td>
+                    <td colspan="3" style="font-size:11px;color:var(--text-muted)">
+                      ${revAmt > 0 ? `gross ${fmt(grossAmt)} · reversed −${fmt(revAmt)}` : 'all payments landed'}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          ` : `<div class="finance-empty" style="padding:24px">No transfers found for this period.</div>`}
+        </div>`;
+    }).join('');
+  }
+
+  el.innerHTML = `
+    <!-- Driver selector panel -->
+    <div class="finance-section" style="margin-bottom:14px">
+      <div class="finance-section-header">
+        <span class="finance-section-title">👤 Driver Transfer Search</span>
+        <div style="font-size:11px;color:var(--text-muted)">${allDrivers.length} driver${allDrivers.length!==1?'s':''} in log</div>
+      </div>
+
+      <!-- Month filter -->
+      <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-right:2px">Month</span>
+        ${monthPills}
+      </div>
+
+      <!-- Driver chips -->
+      <div style="padding:12px 18px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+          <span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em">Driver${finTransferDrivers.size > 0 ? ' · ' + finTransferDrivers.size + ' selected' : 's'}</span>
+          <button class="sort-btn" onclick="selectAllTransferDrivers()" style="font-size:9px;padding:3px 8px">Select All</button>
+          <button class="sort-btn" onclick="clearAllTransferDrivers()" style="font-size:9px;padding:3px 8px">Clear</button>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${driverChips}</div>
+      </div>
+    </div>
+
+    <!-- Per-driver results -->
+    ${resultsHtml}
   `;
 }
 
