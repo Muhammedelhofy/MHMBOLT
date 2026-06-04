@@ -1250,9 +1250,33 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
 .cmd-tx-body { line-height:1.5; }
 .cmd-tx-sub  { font-size:10px; opacity:.55; margin-top:1px; }
 
+.cmd-row { cursor:pointer; }
+.cmd-row.selected { background:rgba(0,212,255,.07) !important; border-color:rgba(0,212,255,.4) !important; }
+
+/* Captain briefing panel */
+.cmd-briefing {
+  position:relative; overflow:hidden;
+  border:1px solid rgba(0,212,255,.22);
+  background:rgba(0,8,20,.55);
+  padding:16px 20px;
+  margin-bottom:20px;
+}
+.cmd-briefing::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,transparent,rgba(0,212,255,.6),var(--bolt-green),rgba(0,212,255,.6),transparent);
+  box-shadow:0 0 8px rgba(0,212,255,.35);
+}
+.cmd-brief-name { font-family:var(--mono); font-size:16px; font-weight:700; letter-spacing:.06em; }
+.cmd-brief-stats { display:grid; grid-template-columns:repeat(6,1fr); border-top:1px solid rgba(0,212,255,.1); margin-top:14px; }
+.cmd-brief-stat  { padding:10px 0; text-align:center; border-right:1px solid rgba(0,212,255,.08); }
+.cmd-brief-stat:last-child { border-right:none; }
+.cmd-brief-sv { font-family:var(--mono); font-size:18px; font-weight:700; }
+.cmd-brief-sl { font-family:var(--mono); font-size:8px; letter-spacing:.15em; color:rgba(0,212,255,.38); text-transform:uppercase; margin-top:3px; }
+
 @media(max-width:860px){
   .cmd-row { grid-template-columns:26px 1fr 1fr 80px; }
   .cmd-row > .cmd-badges { display:none; }
+  .cmd-brief-stats { grid-template-columns:repeat(3,1fr); }
 }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1724,6 +1748,8 @@ function showTab(id, el) {
     openCerebroLock();
     return;
   }
+  // Re-lock whenever leaving Star Map
+  if (id !== 'starmap') { _starmapUnlocked = false; smSelectedCaptain = null; }
   _doShowTab(id, el);
 }
 function _doShowTab(id, el) {
@@ -10401,6 +10427,30 @@ function m8SmartCommand(arg) {
 
 // ── Fleet Command Bridge ─────────────────────────────────────────────────────
 let smCommandMonth = '';
+let smSelectedCaptain = null;
+
+function smSelectCaptain(encoded) {
+  const name = encoded ? decodeURIComponent(encoded) : null;
+  smSelectedCaptain = (smSelectedCaptain && name && driverKey(smSelectedCaptain) === driverKey(name)) ? null : name;
+  renderCommandBridge(); // toggle: clicking same row again closes briefing
+}
+
+function getDriverMonthStats(name, monthKey) {
+  const [y, m] = monthKey.split('-').map(Number);
+  const nk = driverKey(name);
+  let trips = 0, hours = 0, days = 0, accSum = 0, accCount = 0;
+  getHistory().forEach(h => {
+    if (!entryInMonth(h, m - 1, y)) return;
+    const d = (h.drivers||[]).find(x => driverKey(x.name) === nk);
+    if (!d || !d.isActive) return;
+    trips += sN(d.trips);
+    hours += sN(d.hoursOnline);
+    days++;
+    const ar = sN(d.acceptance);
+    if (ar > 0) { accSum += ar; accCount++; }
+  });
+  return { trips, hours, days, acceptance: accCount > 0 ? Math.round(accSum / accCount) : 0 };
+}
 
 function renderCommandBridge() {
   const el = document.getElementById('smCommandView');
@@ -10450,6 +10500,59 @@ function renderCommandBridge() {
   }
   const tcCol = { t3:'var(--bolt-green)', t2:'var(--cyan)', t1:'var(--amber)', t0:'var(--red)', tb:'rgba(255,68,102,.5)' };
 
+  // ── Captain briefing panel (shown when a row is selected) ─
+  let briefingHTML = '';
+  if (smSelectedCaptain) {
+    const bp = pls.find(x => driverKey(x.name) === driverKey(smSelectedCaptain));
+    if (bp) {
+      const btier  = tc(bp);
+      const bcol   = tcCol[btier];
+      const bpct   = bp.income > 0 ? Math.min(100, Math.round(bp.income / t3 * 100)) : 0;
+      const bfor   = lookupForeignName(bp.name);
+      const bstats = getDriverMonthStats(bp.name, monthKey);
+      const bmodel = bp.model === 'Custom' ? (bp.modelCustom||'Custom') : resolveModelDisplay(bp.model);
+      const bblocks = '▓'.repeat(Math.round(bpct/10)) + '░'.repeat(10 - Math.round(bpct/10));
+      const bspd   = bstats.days > 0 ? Math.round(bp.income / bstats.days) : 0;
+      let bstatus;
+      if (bp.profile?.blocked) bstatus = 'BLOCKED';
+      else if (bp.income === 0) bstatus = 'DARK';
+      else if (bp.income >= t3) bstatus = 'TARGET MET';
+      else if (bp.income >= t2) bstatus = 'CLOSE';
+      else if (bp.income >= t1) bstatus = 'TRACKING';
+      else bstatus = 'BELOW TARGET';
+      briefingHTML = `
+        <div class="cmd-briefing">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">
+            <div>
+              <div style="font-family:var(--mono);font-size:8px;letter-spacing:.22em;color:rgba(0,212,255,.4);margin-bottom:5px">◈ CAPTAIN BRIEFING</div>
+              <div class="cmd-brief-name" style="color:${bcol}">${bp.name}</div>
+              ${bfor ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${bfor}</div>` : ''}
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+              ${bmodel&&bmodel!=='none'?`<span class="${modelBadgeClass(bp.model)}">${bmodel}</span>`:''}
+              <span class="tier" style="color:${bcol};border-color:${bcol}">${bstatus}</span>
+              <button onclick="smSelectCaptain(null)" style="font-family:var(--mono);font-size:9px;letter-spacing:.1em;padding:4px 10px;background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.2);color:rgba(0,212,255,.5);cursor:pointer">✕</button>
+            </div>
+          </div>
+          <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:${bcol}">${fmt(bp.income)}<span style="font-size:11px;color:var(--text-muted);margin-left:6px">SAR NET</span></div>
+          <div style="margin-top:7px">
+            <div style="height:4px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:4px">
+              <div style="height:100%;width:${bpct}%;background:linear-gradient(90deg,rgba(0,255,179,.4),${bcol})"></div>
+            </div>
+            <div style="font-family:var(--mono);font-size:10px;color:${bcol}">${bblocks}&nbsp;&nbsp;${bpct}% of ${fmt(t3)} SAR target</div>
+          </div>
+          <div class="cmd-brief-stats">
+            <div class="cmd-brief-stat"><div class="cmd-brief-sv">${bstats.trips}</div><div class="cmd-brief-sl">Orders</div></div>
+            <div class="cmd-brief-stat"><div class="cmd-brief-sv">${bstats.acceptance}%</div><div class="cmd-brief-sl">Acceptance</div></div>
+            <div class="cmd-brief-stat"><div class="cmd-brief-sv">${bstats.hours.toFixed(1)}</div><div class="cmd-brief-sl">Hours</div></div>
+            <div class="cmd-brief-stat"><div class="cmd-brief-sv">${bstats.days}</div><div class="cmd-brief-sl">Days</div></div>
+            <div class="cmd-brief-stat"><div class="cmd-brief-sv" style="color:${bcol}">${bspd}</div><div class="cmd-brief-sl">SAR / Day</div></div>
+            <div class="cmd-brief-stat"><div class="cmd-brief-sv" style="color:${bcol};font-size:12px">${fmt(bp.netPnL)}</div><div class="cmd-brief-sl">Fleet P&amp;L</div></div>
+          </div>
+        </div>`;
+    }
+  }
+
   // ── Signal matrix rows ──────────────────────────────────
   const rows = pls.map((p, i) => {
     const tier     = tc(p);
@@ -10458,6 +10561,7 @@ function renderCommandBridge() {
     const foreign  = lookupForeignName(p.name);
     const pendAmt  = pendingByDriver[driverKey(p.name)] || 0;
     const modelLbl = p.model === 'Custom' ? (p.modelCustom||'Custom') : resolveModelDisplay(p.model);
+    const isSel    = smSelectedCaptain && driverKey(smSelectedCaptain) === driverKey(p.name);
 
     let statusTag;
     if      (p.profile?.blocked) statusTag = `<span class="tier tier-none" style="color:var(--red);border-color:rgba(255,68,102,.4)">BLOCKED</span>`;
@@ -10475,7 +10579,7 @@ function renderCommandBridge() {
     const blocks = '▓'.repeat(filledBlocks) + '░'.repeat(5 - filledBlocks);
 
     return `
-      <div class="cmd-row ${tier}" style="animation-delay:${i * 0.03}s">
+      <div class="cmd-row ${tier}${isSel?' selected':''}" style="animation-delay:${i * 0.03}s" onclick="smSelectCaptain('${encodeURIComponent(p.name)}')">
         <div class="cmd-rank">${String(i+1).padStart(2,'0')}</div>
         <div class="cmd-name-block">
           <div class="cmd-name">${p.name}</div>
@@ -10547,6 +10651,9 @@ function renderCommandBridge() {
           <div class="cmd-ts">${pendCount} captain${pendCount!==1?'s':''} pending</div>
         </div>
       </div>
+
+      <!-- Captain briefing (appears when a row is clicked) -->
+      ${briefingHTML}
 
       <!-- Signal matrix -->
       <div class="cmd-divider">CAPTAIN SIGNAL MATRIX &nbsp;·&nbsp; ${activePls.length} ACTIVE</div>
