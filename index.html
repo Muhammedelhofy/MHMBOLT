@@ -1140,6 +1140,45 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
 @keyframes cbr-flicker{ 0%,100%{opacity:1} 50%{opacity:.85} 77%{opacity:.95} 80%{opacity:.58} 83%{opacity:.95} }
 @keyframes cbr-appear { from{opacity:0;letter-spacing:.55em} to{opacity:1;letter-spacing:.26em} }
 @keyframes cbr-shake  { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)} 40%{transform:translateX(10px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
+
+/* ── Fleet Command Bridge ──────────────────────────────── */
+.cmd-bridge { padding:16px 20px 24px; }
+.cmd-kpi-row { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:22px; }
+.cmd-kpi { background:var(--bg-card2); border:1px solid var(--border); border-radius:4px; padding:14px 16px; position:relative; overflow:hidden; }
+.cmd-kpi::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; }
+.cmd-kpi.kpi-fleet::before { background:var(--cyan); }
+.cmd-kpi.kpi-net::before   { background:var(--bolt-green); }
+.cmd-kpi.kpi-pnl::before   { background:var(--amber); }
+.cmd-kpi.kpi-xfer::before  { background:rgba(245,158,11,.5); }
+.cmd-kpi-label { font-family:var(--mono); font-size:9px; letter-spacing:.15em; color:var(--text-muted); text-transform:uppercase; margin-bottom:6px; }
+.cmd-kpi-value { font-family:var(--mono); font-size:22px; font-weight:700; line-height:1.1; }
+.cmd-kpi-sub   { font-size:11px; color:var(--text-muted); margin-top:5px; }
+.cmd-section-title { font-family:var(--mono); font-size:9px; letter-spacing:.18em; color:var(--text-muted); text-transform:uppercase; margin-bottom:10px; }
+.cmd-driver-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(195px,1fr)); gap:10px; margin-bottom:22px; }
+.cmd-driver-card { background:var(--bg-card2); border:1px solid var(--border); border-radius:4px; padding:13px; position:relative; overflow:hidden; cursor:default; transition:border-color .2s; }
+.cmd-driver-card:hover { border-color:rgba(0,212,255,.28); }
+.cmd-driver-card::before { content:''; position:absolute; top:0; left:0; width:3px; bottom:0; border-radius:4px 0 0 4px; }
+.cmd-driver-card.t3::before { background:var(--bolt-green); box-shadow:0 0 10px rgba(0,255,179,.45); }
+.cmd-driver-card.t2::before { background:var(--cyan); }
+.cmd-driver-card.t1::before { background:var(--amber); }
+.cmd-driver-card.t0::before { background:var(--red); }
+.cmd-driver-card.tb::before { background:rgba(255,68,102,.4); }
+.cmd-d-name    { font-weight:700; font-size:13px; margin-bottom:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cmd-d-foreign { font-size:10px; color:var(--text-muted); margin-bottom:9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-height:15px; }
+.cmd-d-net     { font-family:var(--mono); font-size:19px; font-weight:700; margin-bottom:7px; }
+.cmd-d-bar-wrap{ height:4px; background:rgba(255,255,255,.07); border-radius:2px; margin-bottom:5px; overflow:hidden; }
+.cmd-d-bar     { height:100%; border-radius:2px; }
+.cmd-d-pct     { font-family:var(--mono); font-size:10px; color:var(--text-muted); display:flex; justify-content:space-between; margin-bottom:9px; }
+.cmd-d-badges  { display:flex; gap:4px; flex-wrap:wrap; align-items:center; min-height:20px; }
+.cmd-alert-feed{ display:flex; flex-direction:column; gap:6px; }
+.cmd-alert { display:flex; align-items:flex-start; gap:10px; background:var(--bg-card2); border:1px solid var(--border); border-radius:4px; padding:10px 14px; }
+.cmd-alert.critical { border-color:rgba(255,68,102,.3); background:rgba(255,68,102,.04); }
+.cmd-alert.warning  { border-color:rgba(245,158,11,.28);  background:rgba(245,158,11,.04); }
+.cmd-alert.info     { border-color:rgba(0,212,255,.2);    background:rgba(0,212,255,.03); }
+.cmd-alert-icon { font-size:14px; flex-shrink:0; margin-top:1px; }
+.cmd-alert-title{ font-weight:600; font-size:12px; }
+.cmd-alert-sub  { font-size:11px; color:var(--text-muted); margin-top:2px; }
+@media(max-width:640px){ .cmd-kpi-row{ grid-template-columns:1fr 1fr; } }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1293,20 +1332,17 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
 <!-- Star Map Panel -->
 <div id="starmap" class="panel">
   <!-- Navigation bar (shown in galaxy/ops views) -->
-  <div class="sm-nav-bar" id="smNavBar" style="display:none">
-    <button class="sm-back-btn" onclick="smSwitchView('home')">← HOME</button>
+  <div class="sm-nav-bar" id="smNavBar" style="display:flex">
     <div class="sm-view-toggle">
-      <button id="smBtnGalaxy" class="sm-vt-btn" onclick="smSwitchView('galaxy')">⭐ DRIVER GALAXY</button>
-      <button id="smBtnOps"    class="sm-vt-btn" onclick="smSwitchView('ops')">🛸 SOLAR COMMAND</button>
+      <button id="smBtnCommand" class="sm-vt-btn active" onclick="smSwitchView('home')">🖥 COMMAND</button>
+      <button id="smBtnGalaxy"  class="sm-vt-btn"       onclick="smSwitchView('galaxy')">⭐ GALAXY</button>
+      <button id="smBtnOps"     class="sm-vt-btn"       onclick="smSwitchView('ops')">🛸 SOLAR</button>
     </div>
   </div>
 
-  <!-- ── HOME VIEW — Earth + Sky ── -->
+  <!-- ── HOME VIEW — Fleet Command Bridge ── -->
   <div id="smHomeView">
-    <div style="position:relative;border:1px solid rgba(0,212,255,.08);border-radius:4px;overflow:hidden">
-      <canvas id="smHomeCanvas" style="display:block;width:100%;cursor:default"></canvas>
-      <div id="smHomeTip" style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:10px;color:rgba(0,212,255,.5);letter-spacing:.1em;pointer-events:none;text-align:center"></div>
-    </div>
+    <div id="smCommandView"></div>
   </div>
 
   <!-- ── GALAXY VIEW ── -->
@@ -4211,21 +4247,21 @@ function smSwitchView(mode){
   const isHome=mode==='home';
   // Show/hide sections
   document.getElementById('smHomeView').style.display   = isHome?'':'none';
-  document.getElementById('smNavBar').style.display     = isHome?'none':'flex';
   document.getElementById('smGalaxyView').style.display = mode==='galaxy'?'':'none';
   document.getElementById('smCanvasWrap').style.display = mode==='galaxy'?'':'none';
   document.getElementById('smOpsView').style.display    = mode==='ops'?'':'none';
+  document.getElementById('smBtnCommand')?.classList.toggle('active', isHome);
   document.getElementById('smBtnGalaxy')?.classList.toggle('active', mode==='galaxy');
   document.getElementById('smBtnOps')?.classList.toggle('active', mode==='ops');
   const leg=document.querySelector('.sm-bottom-legend');
   if(leg) leg.style.display=mode==='galaxy'?'flex':'none';
-  // Stop other RAFs
-  if(mode!=='ops' && smOpsRAF){ cancelAnimationFrame(smOpsRAF); smOpsRAF=null; }
-  if(mode!=='home' && smHomeRAF){ cancelAnimationFrame(smHomeRAF); smHomeRAF=null; }
+  // Stop animation loops when leaving their views
+  if(mode!=='ops'  && smOpsRAF) { cancelAnimationFrame(smOpsRAF);  smOpsRAF=null; }
+  if(smHomeRAF)                  { cancelAnimationFrame(smHomeRAF); smHomeRAF=null; }
   if(mode==='galaxy') smOpsPausedModel=null;
   // Start appropriate view
-  if(isHome)              renderSmHomeView();
-  else if(mode==='ops'){  smOpsPanX=0; smOpsPanY=0; renderSmOpsView(); }
+  if(isHome)               renderCommandBridge();
+  else if(mode==='ops'){   smOpsPanX=0; smOpsPanY=0; renderSmOpsView(); }
   else if(mode==='galaxy') renderStarMap();
 }
 
@@ -10286,6 +10322,143 @@ function m8SmartCommand(arg) {
       else m8PickShow(`<span class="vt-err">Didn't catch "<i>${text.replace(/</g,'&lt;')}</i>"</span><div class="vt-hint">Try a captain's name · "compare" · "who's offline" · "top driver" · "below target" · "finance"</div>`);
     }
   }
+}
+
+// ── Fleet Command Bridge ─────────────────────────────────────────────────────
+let smCommandMonth = '';
+
+function renderCommandBridge() {
+  const el = document.getElementById('smCommandView');
+  if (!el) return;
+  if (!smCommandMonth) smCommandMonth = defaultMonth();
+  const months = getAvailableMonths();
+  if (!months.length) {
+    el.innerHTML = `<div class="cmd-bridge" style="text-align:center;padding:60px;color:var(--text-muted);font-family:var(--mono);letter-spacing:.1em">NO DATA — UPLOAD BOLT CSVs TO ACTIVATE COMMAND BRIDGE</div>`;
+    return;
+  }
+  if (!months.includes(smCommandMonth)) smCommandMonth = months[0];
+  const monthKey = smCommandMonth;
+
+  // Gather all drivers active this month
+  const monthNames = getDriversInMonth(monthKey);
+  if (!monthNames.length) {
+    el.innerHTML = `<div class="cmd-bridge" style="text-align:center;padding:40px;color:var(--text-muted);font-size:13px">No driver activity for ${monthLabel(monthKey)}.</div>`;
+    return;
+  }
+  const pls = monthNames.map(name => computeDriverPnL(name, monthKey))
+                        .sort((a,b) => b.income - a.income);
+
+  // Pending transfers across all time
+  const log = loadTransferLog();
+  const pendingByDriver = {};
+  let totalPending = 0;
+  Object.entries(log).forEach(([date, entries]) => {
+    (entries||[]).forEach(e => {
+      if (computeTransferStatus(e.name, date, log) === 'PENDING' && e.amount > 0) {
+        const k = driverKey(e.name);
+        pendingByDriver[k] = (pendingByDriver[k]||0) + e.amount;
+        totalPending += e.amount;
+      }
+    });
+  });
+
+  const [t1, t2, t3] = bonusTiers();
+  const activePls  = pls.filter(p => p.income > 0);
+  const totalNet   = activePls.reduce((s,p) => s + p.income, 0);
+  const totalPnL   = pls.reduce((s,p) => s + p.netPnL, 0);
+  const pendCount  = Object.keys(pendingByDriver).length;
+
+  function driverTierClass(p) {
+    if (p.profile?.blocked) return 'tb';
+    if (p.income >= t3) return 't3';
+    if (p.income >= t2) return 't2';
+    if (p.income >= t1) return 't1';
+    return 't0';
+  }
+  const tierColor = { t3:'var(--bolt-green)', t2:'var(--cyan)', t1:'var(--amber)', t0:'var(--red)', tb:'var(--red)' };
+
+  // Driver cards
+  const cards = pls.map(p => {
+    const foreign   = lookupForeignName(p.name);
+    const tc        = driverTierClass(p);
+    const col       = tierColor[tc];
+    const pct       = p.income > 0 ? Math.min(100, Math.round(p.income / t3 * 100)) : 0;
+    const pendAmt   = pendingByDriver[driverKey(p.name)] || 0;
+    const modelLbl  = p.model === 'Custom' ? (p.modelCustom||'Custom') : resolveModelDisplay(p.model);
+    const isBlocked = p.profile?.blocked;
+
+    let statusBadge;
+    if      (isBlocked)       statusBadge = `<span class="tier tier-none" style="color:var(--red);border-color:rgba(255,68,102,.4)">🚫 BLOCKED</span>`;
+    else if (p.income === 0)  statusBadge = `<span class="tier tier-none">NO ACTIVITY</span>`;
+    else if (p.income >= t3)  statusBadge = `<span class="tier tier-active">✅ TARGET MET</span>`;
+    else if (p.income >= t2)  statusBadge = `<span class="tier tier-platinum">🔵 CLOSE</span>`;
+    else if (p.income >= t1)  statusBadge = `<span class="tier tier-gold">🟡 TRACKING</span>`;
+    else                      statusBadge = `<span class="tier tier-bronze">🔴 BELOW</span>`;
+
+    const pendBadge  = pendAmt > 0 ? `<span class="tier" style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);color:var(--amber)">⏳ ${fmt(pendAmt)}</span>` : '';
+    const modelBadge = modelLbl && modelLbl !== 'none' ? `<span class="${modelBadgeClass(p.model)}">${modelLbl}</span>` : '';
+
+    return `
+      <div class="cmd-driver-card ${tc}">
+        <div class="cmd-d-name">${p.name}</div>
+        <div class="cmd-d-foreign">${foreign||''}</div>
+        <div class="cmd-d-net" style="color:${col}">${p.income > 0 ? fmt(p.income)+' SAR' : '—'}</div>
+        <div class="cmd-d-bar-wrap"><div class="cmd-d-bar" style="width:${pct}%;background:${col}"></div></div>
+        <div class="cmd-d-pct"><span>${pct}%</span><span>${fmt(t3)} target</span></div>
+        <div class="cmd-d-badges">${statusBadge}${pendBadge}${modelBadge}</div>
+      </div>`;
+  }).join('');
+
+  // Alerts
+  const alerts = [];
+  pls.filter(p => p.profile?.blocked).forEach(p =>
+    alerts.push({ sev:'critical', icon:'🚫', title:`${p.name} — BLOCKED`, sub:'Captain suspended — not generating revenue' }));
+  pls.filter(p => !p.profile?.blocked && p.income > 0 && p.income < t1).forEach(p =>
+    alerts.push({ sev:'warning', icon:'⚠', title:`${p.name} — Below minimum tier (${Math.round(p.income/t3*100)}%)`, sub:`${fmt(p.income)} SAR earned · minimum tier requires ${fmt(t1)} SAR` }));
+  Object.entries(pendingByDriver).forEach(([k, amt]) => {
+    const name = pls.find(p => driverKey(p.name) === k)?.name || k;
+    alerts.push({ sev:'info', icon:'⏳', title:`Pending transfer — ${name}`, sub:`${fmt(amt)} SAR not yet confirmed` });
+  });
+  const alertHTML = alerts.length
+    ? alerts.map(a => `<div class="cmd-alert ${a.sev}"><div class="cmd-alert-icon">${a.icon}</div><div><div class="cmd-alert-title">${a.title}</div><div class="cmd-alert-sub">${a.sub}</div></div></div>`).join('')
+    : `<div style="padding:12px 14px;color:var(--text-muted);font-size:12px;font-family:var(--mono);letter-spacing:.08em;background:var(--bg-card2);border:1px solid var(--border);border-radius:4px">✅ ALL SYSTEMS NOMINAL — NO ALERTS</div>`;
+
+  const pnlCol  = totalPnL >= 0 ? 'var(--bolt-green)' : 'var(--red)';
+  const monthOpts = months.map(mo => `<option value="${mo}" ${mo===monthKey?'selected':''}>${monthLabel(mo)}</option>`).join('');
+
+  el.innerHTML = `
+    <div class="cmd-bridge">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-family:var(--mono);font-size:9px;letter-spacing:.2em;color:var(--text-muted)">FLEET COMMAND BRIDGE</div>
+        <select class="kpi-select" onchange="smCommandMonth=this.value;renderCommandBridge()">${monthOpts}</select>
+      </div>
+      <div class="cmd-kpi-row">
+        <div class="cmd-kpi kpi-fleet">
+          <div class="cmd-kpi-label">Active Captains</div>
+          <div class="cmd-kpi-value" style="color:var(--cyan)">${activePls.length}</div>
+          <div class="cmd-kpi-sub">${pls.length} on roster · ${monthLabel(monthKey)}</div>
+        </div>
+        <div class="cmd-kpi kpi-net">
+          <div class="cmd-kpi-label">Fleet Net Earnings</div>
+          <div class="cmd-kpi-value" style="color:var(--bolt-green)">${fmt(totalNet)}</div>
+          <div class="cmd-kpi-sub">SAR from Bolt</div>
+        </div>
+        <div class="cmd-kpi kpi-pnl">
+          <div class="cmd-kpi-label">Fleet P&amp;L</div>
+          <div class="cmd-kpi-value" style="color:${pnlCol}">${totalPnL>=0?'+':''}${fmt(totalPnL)}</div>
+          <div class="cmd-kpi-sub">SAR after all costs</div>
+        </div>
+        <div class="cmd-kpi kpi-xfer">
+          <div class="cmd-kpi-label">Pending Transfers</div>
+          <div class="cmd-kpi-value" style="color:${totalPending>0?'var(--amber)':'var(--text-muted)'}">${totalPending>0?fmt(totalPending):'—'}</div>
+          <div class="cmd-kpi-sub">${pendCount} driver${pendCount!==1?'s':''} awaiting</div>
+        </div>
+      </div>
+      <div class="cmd-section-title">CAPTAIN STATUS · ${activePls.length} ACTIVE SIGNALS</div>
+      <div class="cmd-driver-grid">${cards}</div>
+      <div class="cmd-section-title">COMMAND ALERTS · ${alerts.length} ITEM${alerts.length!==1?'S':''}</div>
+      <div class="cmd-alert-feed">${alertHTML}</div>
+    </div>`;
 }
 
 // ── Cerebro Lock Screen ──────────────────────────────────────────────────────
