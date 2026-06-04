@@ -7376,6 +7376,15 @@ function selectAllTransferDrivers() {
   renderFinanceTransferView();
 }
 function clearAllTransferDrivers() { finTransferDrivers.clear(); renderFinanceTransferView(); }
+function addTransferDriverFromSearch(input) {
+  const val = (input.value || '').trim();
+  if (!val) return;
+  const log = loadTransferLog();
+  const allNames = new Set();
+  Object.values(log).forEach(entries => (entries||[]).forEach(e => { if (e.name) allNames.add(e.name); }));
+  const match = [...allNames].find(d => d.toLowerCase() === val.toLowerCase());
+  if (match) { finTransferDrivers.add(match); input.value = ''; renderFinanceTransferView(); }
+}
 function cycleInMonth(transferDate, monthKey) {
   if (!monthKey) return true;
   const win = deriveCycleWindow(transferDate);
@@ -7909,43 +7918,45 @@ function renderTransferByDate(el, log) {
   `;
 }
 
-// ── Transfer Log: By Driver (new search view) ─────────────────────────────────
+// ── Transfer Log: By Driver ───────────────────────────────────────────────────
 function renderTransferByDriver(el, log) {
-  // Collect all unique driver names + all months from the log
+  // Collect all unique driver names + months from the log
   const allDriversSet = new Set();
   const allMonthsSet  = new Set();
   Object.entries(log).forEach(([date, entries]) => {
-    allMonthsSet.add(date.slice(0, 7)); // YYYY-MM
+    allMonthsSet.add(date.slice(0, 7));
     (entries || []).forEach(e => { if (e.name) allDriversSet.add(e.name); });
   });
-  const allDrivers = [...allDriversSet].sort((a, b) => a.localeCompare(b));
-  const allMonths  = [...allMonthsSet].sort().reverse(); // newest first
+  const allDrivers   = [...allDriversSet].sort((a, b) => a.localeCompare(b));
+  const allMonths    = [...allMonthsSet].sort().reverse();
+  const unselected   = allDrivers.filter(d => !finTransferDrivers.has(d));
 
-  // Month filter pills
-  const monthPills = ['', ...allMonths].map(m => {
-    const lbl    = m ? monthLabel(m) : 'All History';
-    const active = m === finTransferMonth;
-    return `<button class="sort-btn${active?' active':''}" onclick="setTransferDriverMonth('${m}')">${lbl}</button>`;
-  }).join('');
+  // Month dropdown options
+  const monthOpts = ['', ...allMonths].map(m =>
+    `<option value="${m}" ${m === finTransferMonth ? 'selected' : ''}>${m ? monthLabel(m) : 'All History'}</option>`
+  ).join('');
 
-  // Driver selector chips
-  const driverChips = allDrivers.map(name => {
-    const sel  = finTransferDrivers.has(name);
+  // Datalist for autocomplete (only unselected drivers)
+  const datalistOpts = unselected.map(d => `<option value="${d.replace(/"/g,'&quot;')}">`).join('');
+
+  // Selected driver tags (removable)
+  const selectedTags = [...finTransferDrivers].map(name => {
     const safe = encodeURIComponent(name);
-    return `<button class="sort-btn${sel?' active':''}"
-      style="font-size:12px;padding:5px 11px"
-      onclick="toggleTransferDriver(decodeURIComponent('${safe}'))">${name}</button>`;
+    return `<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(0,255,179,.12);border:1px solid rgba(0,255,179,.3);color:var(--bolt-green);padding:4px 10px;border-radius:3px;font-size:12px;font-weight:600">
+      ${name}
+      <button onclick="toggleTransferDriver(decodeURIComponent('${safe}'))"
+        style="background:none;border:none;color:var(--bolt-green);cursor:pointer;font-size:14px;line-height:1;padding:0;opacity:.7" title="Remove">×</button>
+    </span>`;
   }).join('');
 
   // Build results per selected driver
   let resultsHtml = '';
   if (finTransferDrivers.size === 0) {
-    resultsHtml = `<div style="text-align:center;padding:36px 20px;color:var(--text-muted);font-size:13px">
-      Select one or more drivers above to see their full transfer history.
+    resultsHtml = `<div style="text-align:center;padding:40px 20px;color:var(--text-muted);font-size:13px">
+      Search for a driver above and select them to see their full transfer history.
     </div>`;
   } else {
     resultsHtml = [...finTransferDrivers].map(driverName => {
-      // Gather + filter transfers for this driver
       const xfers = [];
       Object.entries(log).forEach(([date, entries]) => {
         if (finTransferMonth && !date.startsWith(finTransferMonth)) return;
@@ -7955,13 +7966,12 @@ function renderTransferByDriver(el, log) {
           xfers.push({ date, amount: e.amount, netEarnings: e.netEarnings || 0, status });
         });
       });
-      xfers.sort((a, b) => b.date.localeCompare(a.date)); // newest first
+      xfers.sort((a, b) => b.date.localeCompare(a.date));
 
       const grossAmt    = xfers.filter(x => x.amount > 0).reduce((s, x) => s + x.amount, 0);
       const revAmt      = xfers.filter(x => x.amount > 0 && x.status === 'REVERSED').reduce((s, x) => s + x.amount, 0);
       const netAmt      = grossAmt - revAmt;
       const cntPending  = xfers.filter(x => x.amount > 0 && x.status === 'PENDING').length;
-      const cntReversed = xfers.filter(x => x.status === 'REVERSED').length;
 
       const rows = xfers.map(x => {
         const dt      = parseLocalDate(x.date);
@@ -8031,28 +8041,47 @@ function renderTransferByDriver(el, log) {
   }
 
   el.innerHTML = `
-    <!-- Driver selector panel -->
     <div class="finance-section" style="margin-bottom:14px">
       <div class="finance-section-header">
         <span class="finance-section-title">👤 Driver Transfer Search</span>
-        <div style="font-size:11px;color:var(--text-muted)">${allDrivers.length} driver${allDrivers.length!==1?'s':''} in log</div>
+        <span style="font-size:11px;color:var(--text-muted)">${allDrivers.length} driver${allDrivers.length!==1?'s':''} in log</span>
       </div>
 
-      <!-- Month filter -->
-      <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-right:2px">Month</span>
-        ${monthPills}
-      </div>
+      <!-- Filters row -->
+      <div style="padding:16px 20px;display:flex;gap:20px;align-items:flex-end;flex-wrap:wrap;border-bottom:1px solid var(--border)">
 
-      <!-- Driver chips -->
-      <div style="padding:12px 18px">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap">
-          <span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em">Driver${finTransferDrivers.size > 0 ? ' · ' + finTransferDrivers.size + ' selected' : 's'}</span>
-          <button class="sort-btn" onclick="selectAllTransferDrivers()" style="font-size:9px;padding:3px 8px">Select All</button>
-          <button class="sort-btn" onclick="clearAllTransferDrivers()" style="font-size:9px;padding:3px 8px">Clear</button>
+        <!-- Month dropdown -->
+        <div>
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Month</div>
+          <select class="kpi-select" onchange="setTransferDriverMonth(this.value)" style="min-width:140px">
+            ${monthOpts}
+          </select>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${driverChips}</div>
+
+        <!-- Driver search -->
+        <div style="flex:1;min-width:220px">
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">
+            Driver${finTransferDrivers.size > 0 ? ' · <span style="color:var(--bolt-green)">' + finTransferDrivers.size + ' selected</span>' : ''}
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="transferDriverSearch" list="transfer-driver-datalist"
+              placeholder="Type name to search & select…" autocomplete="off"
+              oninput="addTransferDriverFromSearch(this)"
+              onkeydown="if(event.key==='Enter')addTransferDriverFromSearch(this)"
+              style="flex:1;background:rgba(0,255,179,.04);border:1px solid rgba(0,212,255,.2);color:var(--text);font-size:13px;padding:7px 12px;border-radius:3px;outline:none;font-family:inherit">
+            <datalist id="transfer-driver-datalist">${datalistOpts}</datalist>
+            <button class="sort-btn" onclick="selectAllTransferDrivers()" style="font-size:10px;white-space:nowrap">All</button>
+            <button class="sort-btn" onclick="clearAllTransferDrivers()" style="font-size:10px">Clear</button>
+          </div>
+        </div>
       </div>
+
+      <!-- Selected driver tags -->
+      ${finTransferDrivers.size > 0 ? `
+        <div style="padding:12px 20px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-right:4px">Selected</span>
+          ${selectedTags}
+        </div>` : ''}
     </div>
 
     <!-- Per-driver results -->
