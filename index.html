@@ -7376,57 +7376,177 @@ function selectAllTransferDrivers() {
   renderFinanceTransferView();
 }
 function clearAllTransferDrivers() { finTransferDrivers.clear(); renderFinanceTransferView(); }
-function filterDriverSuggestions(val) {
-  const dropdown = document.getElementById('transferDriverDropdown');
-  if (!dropdown) return;
-  if (!val || !val.trim()) { dropdown.style.display = 'none'; return; }
-  const q = val.trim().toLowerCase();
+// ── Driver multi-select dropdown helpers ─────────────────────────────────────
+function _transferAllDrivers() {
   const log = loadTransferLog();
-  const allNames = new Set();
-  Object.values(log).forEach(entries => (entries||[]).forEach(e => { if (e.name) allNames.add(e.name); }));
-  const matches = [...allNames]
-    .filter(d => !finTransferDrivers.has(d))
-    .filter(d => {
-      if (d.toLowerCase().includes(q)) return true;
-      const foreign = lookupForeignName(d);
-      return foreign && foreign.toLowerCase().includes(q);
-    })
-    .sort((a, b) => {
-      // exact-start matches first
-      const aStarts = a.toLowerCase().startsWith(q);
-      const bStarts = b.toLowerCase().startsWith(q);
-      if (aStarts && !bStarts) return -1;
-      if (!aStarts && bStarts) return 1;
-      return a.localeCompare(b);
-    })
-    .slice(0, 12);
-  if (!matches.length) { dropdown.style.display = 'none'; return; }
-  const hl = (text, q) => {
-    const i = text.toLowerCase().indexOf(q);
-    if (i === -1) return text;
-    return text.slice(0,i) + '<strong style="color:var(--bolt-green)">' + text.slice(i, i+q.length) + '</strong>' + text.slice(i+q.length);
-  };
-  dropdown.innerHTML = matches.map(name => {
-    const foreign = lookupForeignName(name);
-    const safe = encodeURIComponent(name);
-    return `<div onmousedown="addTransferDriverByName('${safe}')"
-      style="padding:9px 14px;cursor:pointer;border-bottom:1px solid rgba(0,212,255,.06);display:flex;flex-direction:column;gap:2px"
-      onmouseover="this.style.background='rgba(0,212,255,.1)'"
-      onmouseout="this.style.background=''">
-      <span style="font-size:13px;color:var(--text)">${hl(name, q)}</span>
-      ${foreign ? `<span style="font-size:11px;color:var(--text-muted)">${hl(foreign, q)}</span>` : ''}
-    </div>`;
-  }).join('');
-  dropdown.style.display = 'block';
+  const s = new Set();
+  Object.values(log).forEach(entries => (entries||[]).forEach(e => { if (e.name) s.add(e.name); }));
+  return [...s].sort((a,b) => a.localeCompare(b));
 }
-function addTransferDriverByName(encoded) {
-  const name = decodeURIComponent(encoded);
-  finTransferDrivers.add(name);
-  const inp = document.getElementById('transferDriverSearch');
-  if (inp) inp.value = '';
+function openTransferDriverDropdown() {
+  _renderTransferDriverList('');
   const dd = document.getElementById('transferDriverDropdown');
-  if (dd) dd.style.display = 'none';
-  renderFinanceTransferView();
+  if (dd) dd.style.display = 'block';
+}
+function filterTransferDriverList(val) {
+  _renderTransferDriverList(val || '');
+  const dd = document.getElementById('transferDriverDropdown');
+  if (dd) dd.style.display = 'block';
+}
+function _renderTransferDriverList(query) {
+  const dd = document.getElementById('transferDriverDropdown');
+  if (!dd) return;
+  const q = query.trim().toLowerCase();
+  const all = _transferAllDrivers();
+  const visible = q ? all.filter(d => {
+    if (d.toLowerCase().includes(q)) return true;
+    const f = lookupForeignName(d); return f && f.toLowerCase().includes(q);
+  }) : all;
+  const allSel = visible.length > 0 && visible.every(d => finTransferDrivers.has(d));
+  const someSel = !allSel && visible.some(d => finTransferDrivers.has(d));
+  const hl = (t, q) => { if(!q) return t; const i=t.toLowerCase().indexOf(q); if(i===-1) return t; return t.slice(0,i)+'<strong style="color:var(--bolt-green)">'+t.slice(i,i+q.length)+'</strong>'+t.slice(i+q.length); };
+  dd.innerHTML = `
+    <div onmousedown="_toggleAllVisibleTransferDrivers()" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid rgba(0,212,255,.15);display:flex;align-items:center;gap:10px;background:rgba(0,212,255,.05);position:sticky;top:0"
+      onmouseover="this.style.background='rgba(0,212,255,.12)'" onmouseout="this.style.background='rgba(0,212,255,.05)'">
+      <span style="width:15px;height:15px;flex-shrink:0;border:1px solid rgba(0,212,255,.5);border-radius:2px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:var(--bolt-green);background:${allSel?'rgba(0,255,179,.15)':''}">
+        ${allSel?'✓':someSel?'−':''}
+      </span>
+      <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em">${allSel?'Deselect All':'Select All'} (${visible.length})</span>
+    </div>
+    ${visible.map(name => {
+      const sel = finTransferDrivers.has(name);
+      const foreign = lookupForeignName(name);
+      const safe = encodeURIComponent(name);
+      return `<div onmousedown="_toggleTransferDriverInDropdown('${safe}')" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid rgba(0,212,255,.05);display:flex;align-items:center;gap:10px;background:${sel?'rgba(0,255,179,.05)':''}"
+        onmouseover="this.style.background='rgba(0,212,255,.1)'" onmouseout="this.style.background='${sel?'rgba(0,255,179,.05)':''}'">
+        <span style="width:15px;height:15px;flex-shrink:0;border:1px solid ${sel?'var(--bolt-green)':'rgba(0,212,255,.3)'};border-radius:2px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:var(--bolt-green);background:${sel?'rgba(0,255,179,.15)':''}">
+          ${sel?'✓':''}
+        </span>
+        <div>
+          <div style="font-size:13px;color:${sel?'var(--bolt-green)':'var(--text)'}">${hl(name,q)}</div>
+          ${foreign?`<div style="font-size:11px;color:var(--text-muted)">${hl(foreign,q)}</div>`:''}
+        </div>
+      </div>`;
+    }).join('')}
+    ${!visible.length?`<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px">No drivers match</div>`:''}
+  `;
+}
+function _toggleTransferDriverInDropdown(encoded) {
+  const name = decodeURIComponent(encoded);
+  if (finTransferDrivers.has(name)) finTransferDrivers.delete(name);
+  else finTransferDrivers.add(name);
+  const inp = document.getElementById('transferDriverSearch');
+  _renderTransferDriverList(inp ? inp.value : '');
+  _renderTransferTags();
+  _renderTransferResults();
+}
+function _toggleAllVisibleTransferDrivers() {
+  const inp = document.getElementById('transferDriverSearch');
+  const q = (inp ? inp.value : '').trim().toLowerCase();
+  const all = _transferAllDrivers();
+  const visible = q ? all.filter(d => { if(d.toLowerCase().includes(q)) return true; const f=lookupForeignName(d); return f&&f.toLowerCase().includes(q); }) : all;
+  const allSel = visible.every(d => finTransferDrivers.has(d));
+  if (allSel) visible.forEach(d => finTransferDrivers.delete(d));
+  else visible.forEach(d => finTransferDrivers.add(d));
+  _renderTransferDriverList(inp ? inp.value : '');
+  _renderTransferTags();
+  _renderTransferResults();
+}
+function _renderTransferTags() {
+  const el = document.getElementById('transferSelectedTags');
+  if (!el) return;
+  el.style.display = finTransferDrivers.size > 0 ? 'flex' : 'none';
+  el.innerHTML = finTransferDrivers.size === 0 ? '' : `
+    <span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;align-self:center;margin-right:4px">Selected</span>
+    ${[...finTransferDrivers].map(name => {
+      const safe = encodeURIComponent(name);
+      return `<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(0,255,179,.12);border:1px solid rgba(0,255,179,.3);color:var(--bolt-green);padding:4px 10px;border-radius:3px;font-size:12px;font-weight:600">
+        ${name}
+        <button onmousedown="_removeTransferDriver('${safe}')" style="background:none;border:none;color:var(--bolt-green);cursor:pointer;font-size:14px;line-height:1;padding:0;opacity:.7">×</button>
+      </span>`;
+    }).join('')}
+  `;
+}
+function _removeTransferDriver(encoded) {
+  finTransferDrivers.delete(decodeURIComponent(encoded));
+  _renderTransferTags();
+  _renderTransferResults();
+  _renderTransferDriverList(document.getElementById('transferDriverSearch')?.value || '');
+}
+function _renderTransferResults() {
+  const el = document.getElementById('transferResults');
+  if (!el) return;
+  const log = loadTransferLog();
+  if (finTransferDrivers.size === 0) {
+    el.innerHTML = `<div style="text-align:center;padding:40px 20px;color:var(--text-muted);font-size:13px">Select drivers above to see their full transfer history.</div>`;
+    return;
+  }
+  el.innerHTML = [...finTransferDrivers].map(driverName => {
+    const xfers = [];
+    Object.entries(log).forEach(([date, entries]) => {
+      if (finTransferMonth && !date.startsWith(finTransferMonth)) return;
+      (entries||[]).forEach(e => {
+        if (driverKey(e.name) !== driverKey(driverName)) return;
+        const status = e.amount < 0 ? 'REVERSED' : computeTransferStatus(e.name, date, log);
+        xfers.push({ date, amount: e.amount, netEarnings: e.netEarnings||0, status });
+      });
+    });
+    xfers.sort((a,b) => b.date.localeCompare(a.date));
+    const grossAmt   = xfers.filter(x=>x.amount>0).reduce((s,x)=>s+x.amount,0);
+    const revAmt     = xfers.filter(x=>x.amount>0&&x.status==='REVERSED').reduce((s,x)=>s+x.amount,0);
+    const netAmt     = grossAmt - revAmt;
+    const cntPending = xfers.filter(x=>x.amount>0&&x.status==='PENDING').length;
+    const rows = xfers.map(x => {
+      const dt=parseLocalDate(x.date), dayName=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()];
+      const dateLbl=`${dayName} ${dt.getDate()} ${MONTH_NAMES[dt.getMonth()]} ${dt.getFullYear()}`;
+      const isPayDay=dt.getDay()===0||dt.getDay()===3, revPos=x.amount>0&&x.status==='REVERSED';
+      const amtClr=(x.amount<0||revPos)?'var(--red)':'var(--green)', amtSign=x.amount<0?'−':'+';
+      const amtDecor=revPos?'text-decoration:line-through;':'';
+      const netCell=x.netEarnings>0?`<span style="font-family:var(--mono);color:var(--text-muted)">${fmt(x.netEarnings)}</span>`:`<span style="color:var(--text-dim)">—</span>`;
+      const noteParts=[];
+      if(!isPayDay&&x.amount>0) noteParts.push(`<span style="color:var(--amber);font-size:11px">⚠ Not a pay day</span>`);
+      if(x.status==='REVERSED') noteParts.push(`<span style="color:var(--red);font-size:11px">⚠ Reversed by Bolt</span>`);
+      if(x.amount<0) noteParts.push(`<span style="color:var(--red);font-size:11px">⚠ Negative posting</span>`);
+      return `<tr>
+        <td style="font-family:var(--mono);font-size:12px;white-space:nowrap">${dateLbl}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:${amtClr};${amtDecor}">${amtSign}${fmt(Math.abs(x.amount))}</td>
+        <td style="text-align:right">${netCell}</td>
+        <td><span style="${transferStatusStyle(x.status)}">${transferStatusBadge(x.status)}</span></td>
+        <td style="font-size:11px">${noteParts.join(' ')}</td>
+      </tr>`;
+    }).join('');
+    const foreign = lookupForeignName(driverName);
+    return `
+      <div class="finance-section" style="margin-bottom:14px">
+        <div class="finance-section-header">
+          <div>
+            <span class="finance-section-title">👤 ${driverName}</span>
+            ${foreign?`<span class="d-foreign" style="margin-left:8px">${foreign}</span>`:''}
+          </div>
+          <div style="display:flex;gap:18px;font-size:12px;align-items:center">
+            <span style="font-family:var(--mono);font-weight:700;color:var(--green)">${fmt(netAmt)} SAR net</span>
+            ${revAmt>0?`<span style="color:var(--red)">−${fmt(revAmt)} reversed</span>`:''}
+            ${cntPending>0?`<span style="color:var(--amber)">⏳ ${cntPending} pending</span>`:''}
+            <span style="color:var(--text-muted)">${xfers.length} payment${xfers.length!==1?'s':''}</span>
+          </div>
+        </div>
+        ${xfers.length?`
+          <div style="overflow-x:auto">
+            <table class="finance-table">
+              <thead><tr>
+                <th>Transfer Date</th><th style="text-align:right">Amount (SAR)</th>
+                <th style="text-align:right">Day Net Earnings</th><th>Status</th><th>Note</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+              <tfoot><tr style="background:var(--bg-card2)">
+                <td style="font-weight:600;color:var(--text-muted);font-size:11px">TOTAL</td>
+                <td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--green)">${fmt(netAmt)} SAR</td>
+                <td colspan="3" style="font-size:11px;color:var(--text-muted)">${revAmt>0?`gross ${fmt(grossAmt)} · reversed −${fmt(revAmt)}`:'all payments landed'}</td>
+              </tr></tfoot>
+            </table>
+          </div>`:`<div class="finance-empty" style="padding:24px">No transfers found for this period.</div>`}
+      </div>`;
+  }).join('');
 }
 function cycleInMonth(transferDate, monthKey) {
   if (!monthKey) return true;
@@ -7963,170 +8083,60 @@ function renderTransferByDate(el, log) {
 
 // ── Transfer Log: By Driver ───────────────────────────────────────────────────
 function renderTransferByDriver(el, log) {
-  // Collect all unique driver names + months from the log
-  const allDriversSet = new Set();
-  const allMonthsSet  = new Set();
-  Object.entries(log).forEach(([date, entries]) => {
-    allMonthsSet.add(date.slice(0, 7));
-    (entries || []).forEach(e => { if (e.name) allDriversSet.add(e.name); });
-  });
-  const allDrivers = [...allDriversSet].sort((a, b) => a.localeCompare(b));
-  const allMonths  = [...allMonthsSet].sort().reverse();
-
-  // Month dropdown options
-  const monthOpts = ['', ...allMonths].map(m =>
-    `<option value="${m}" ${m === finTransferMonth ? 'selected' : ''}>${m ? monthLabel(m) : 'All History'}</option>`
+  // Collect months for the dropdown
+  const allMonthsSet = new Set();
+  Object.keys(log).forEach(d => allMonthsSet.add(d.slice(0,7)));
+  const allMonths    = [...allMonthsSet].sort().reverse();
+  const totalDrivers = _transferAllDrivers().length;
+  const monthOpts    = ['', ...allMonths].map(m =>
+    `<option value="${m}" ${m===finTransferMonth?'selected':''}>${m?monthLabel(m):'All History'}</option>`
   ).join('');
-
-  // Selected driver tags (removable)
-  const selectedTags = [...finTransferDrivers].map(name => {
-    const safe = encodeURIComponent(name);
-    return `<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(0,255,179,.12);border:1px solid rgba(0,255,179,.3);color:var(--bolt-green);padding:4px 10px;border-radius:3px;font-size:12px;font-weight:600">
-      ${name}
-      <button onclick="toggleTransferDriver(decodeURIComponent('${safe}'))"
-        style="background:none;border:none;color:var(--bolt-green);cursor:pointer;font-size:14px;line-height:1;padding:0;opacity:.7" title="Remove">×</button>
-    </span>`;
-  }).join('');
-
-  // Build results per selected driver
-  let resultsHtml = '';
-  if (finTransferDrivers.size === 0) {
-    resultsHtml = `<div style="text-align:center;padding:40px 20px;color:var(--text-muted);font-size:13px">
-      Search for a driver above and select them to see their full transfer history.
-    </div>`;
-  } else {
-    resultsHtml = [...finTransferDrivers].map(driverName => {
-      const xfers = [];
-      Object.entries(log).forEach(([date, entries]) => {
-        if (finTransferMonth && !date.startsWith(finTransferMonth)) return;
-        (entries || []).forEach(e => {
-          if (driverKey(e.name) !== driverKey(driverName)) return;
-          const status = e.amount < 0 ? 'REVERSED' : computeTransferStatus(e.name, date, log);
-          xfers.push({ date, amount: e.amount, netEarnings: e.netEarnings || 0, status });
-        });
-      });
-      xfers.sort((a, b) => b.date.localeCompare(a.date));
-
-      const grossAmt    = xfers.filter(x => x.amount > 0).reduce((s, x) => s + x.amount, 0);
-      const revAmt      = xfers.filter(x => x.amount > 0 && x.status === 'REVERSED').reduce((s, x) => s + x.amount, 0);
-      const netAmt      = grossAmt - revAmt;
-      const cntPending  = xfers.filter(x => x.amount > 0 && x.status === 'PENDING').length;
-
-      const rows = xfers.map(x => {
-        const dt      = parseLocalDate(x.date);
-        const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()];
-        const dateLbl = `${dayName} ${dt.getDate()} ${MONTH_NAMES[dt.getMonth()]} ${dt.getFullYear()}`;
-        const isPayDay = dt.getDay() === 0 || dt.getDay() === 3;
-        const revPos  = x.amount > 0 && x.status === 'REVERSED';
-        const amtClr  = (x.amount < 0 || revPos) ? 'var(--red)' : 'var(--green)';
-        const amtSign = x.amount < 0 ? '−' : '+';
-        const amtDecor = revPos ? 'text-decoration:line-through;' : '';
-        const netCell = x.netEarnings > 0
-          ? `<span style="font-family:var(--mono);color:var(--text-muted)">${fmt(x.netEarnings)}</span>`
-          : `<span style="color:var(--text-dim)">—</span>`;
-        const noteParts = [];
-        if (!isPayDay && x.amount > 0) noteParts.push(`<span style="color:var(--amber);font-size:11px">⚠ Not a pay day</span>`);
-        if (x.status === 'REVERSED')   noteParts.push(`<span style="color:var(--red);font-size:11px">⚠ Reversed by Bolt</span>`);
-        if (x.amount < 0)              noteParts.push(`<span style="color:var(--red);font-size:11px">⚠ Negative posting</span>`);
-        return `<tr>
-          <td style="font-family:var(--mono);font-size:12px;white-space:nowrap">${dateLbl}</td>
-          <td style="text-align:right;font-family:var(--mono);font-weight:700;color:${amtClr};${amtDecor}">${amtSign}${fmt(Math.abs(x.amount))}</td>
-          <td style="text-align:right">${netCell}</td>
-          <td><span style="${transferStatusStyle(x.status)}">${transferStatusBadge(x.status)}</span></td>
-          <td style="font-size:11px">${noteParts.join(' ')}</td>
-        </tr>`;
-      }).join('');
-
-      const foreign = lookupForeignName(driverName);
-      return `
-        <div class="finance-section" style="margin-bottom:14px">
-          <div class="finance-section-header">
-            <div>
-              <span class="finance-section-title">👤 ${driverName}</span>
-              ${foreign ? `<span class="d-foreign" style="margin-left:8px">${foreign}</span>` : ''}
-            </div>
-            <div style="display:flex;gap:18px;font-size:12px;align-items:center">
-              <span style="font-family:var(--mono);font-weight:700;color:var(--green)">${fmt(netAmt)} SAR net</span>
-              ${revAmt > 0 ? `<span style="color:var(--red)">−${fmt(revAmt)} reversed</span>` : ''}
-              ${cntPending > 0 ? `<span style="color:var(--amber)">⏳ ${cntPending} pending</span>` : ''}
-              <span style="color:var(--text-muted)">${xfers.length} payment${xfers.length!==1?'s':''}</span>
-            </div>
-          </div>
-          ${xfers.length ? `
-            <div style="overflow-x:auto">
-              <table class="finance-table">
-                <thead><tr>
-                  <th>Transfer Date</th>
-                  <th style="text-align:right">Amount (SAR)</th>
-                  <th style="text-align:right">Day Net Earnings</th>
-                  <th>Status</th>
-                  <th>Note</th>
-                </tr></thead>
-                <tbody>${rows}</tbody>
-                <tfoot>
-                  <tr style="background:var(--bg-card2)">
-                    <td style="font-weight:600;color:var(--text-muted);font-size:11px">TOTAL</td>
-                    <td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--green)">${fmt(netAmt)} SAR</td>
-                    <td colspan="3" style="font-size:11px;color:var(--text-muted)">
-                      ${revAmt > 0 ? `gross ${fmt(grossAmt)} · reversed −${fmt(revAmt)}` : 'all payments landed'}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          ` : `<div class="finance-empty" style="padding:24px">No transfers found for this period.</div>`}
-        </div>`;
-    }).join('');
-  }
 
   el.innerHTML = `
     <div class="finance-section" style="margin-bottom:14px;overflow:visible">
       <div class="finance-section-header">
         <span class="finance-section-title">👤 Driver Transfer Search</span>
-        <span style="font-size:11px;color:var(--text-muted)">${allDrivers.length} driver${allDrivers.length!==1?'s':''} in log</span>
+        <span style="font-size:11px;color:var(--text-muted)">${totalDrivers} driver${totalDrivers!==1?'s':''} in log</span>
       </div>
 
-      <!-- Filters row -->
       <div style="padding:16px 20px;display:flex;gap:20px;align-items:flex-end;flex-wrap:wrap;border-bottom:1px solid var(--border)">
-
-        <!-- Month dropdown -->
+        <!-- Month -->
         <div>
           <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Month</div>
-          <select class="kpi-select" onchange="setTransferDriverMonth(this.value)" style="min-width:140px">
-            ${monthOpts}
-          </select>
+          <select class="kpi-select" onchange="setTransferDriverMonth(this.value)" style="min-width:140px">${monthOpts}</select>
         </div>
-
-        <!-- Driver search -->
-        <div style="flex:1;min-width:220px">
+        <!-- Driver multi-select -->
+        <div style="flex:1;min-width:240px">
           <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">
-            Driver${finTransferDrivers.size > 0 ? ' · <span style="color:var(--bolt-green)">' + finTransferDrivers.size + ' selected</span>' : ''}
+            Driver${finTransferDrivers.size>0?' · <span style="color:var(--bolt-green)">'+finTransferDrivers.size+' selected</span>':''}
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <div style="position:relative;flex:1">
-              <input id="transferDriverSearch" placeholder="Search by driver or account holder name…" autocomplete="off"
-                oninput="filterDriverSuggestions(this.value)"
-                onblur="setTimeout(()=>{const d=document.getElementById('transferDriverDropdown');if(d)d.style.display='none'},160)"
-                style="width:100%;background:var(--bg-card2);border:1px solid rgba(0,212,255,.2);color:var(--text);font-size:13px;padding:7px 12px;border-radius:3px;outline:none;font-family:inherit;box-sizing:border-box">
-              <div id="transferDriverDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:200;background:var(--bg-card2);border:1px solid rgba(0,212,255,.2);border-top:none;border-radius:0 0 3px 3px;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.7)"></div>
+              <input id="transferDriverSearch" autocomplete="off"
+                placeholder="Click to browse all, or type to filter…"
+                onclick="openTransferDriverDropdown()"
+                oninput="filterTransferDriverList(this.value)"
+                onblur="setTimeout(()=>{const d=document.getElementById('transferDriverDropdown');if(d)d.style.display='none'},180)"
+                style="width:100%;background:var(--bg-card2);border:1px solid rgba(0,212,255,.22);color:var(--text);font-size:13px;padding:8px 12px;border-radius:3px;outline:none;font-family:inherit;box-sizing:border-box;cursor:pointer">
+              <div id="transferDriverDropdown"
+                style="display:none;position:absolute;top:calc(100% + 2px);left:0;right:0;z-index:300;background:var(--bg-card2);border:1px solid rgba(0,212,255,.25);border-radius:3px;max-height:260px;overflow-y:auto;box-shadow:0 12px 32px rgba(0,0,0,.8)"></div>
             </div>
-            <button class="sort-btn" onclick="selectAllTransferDrivers()" style="font-size:10px;white-space:nowrap;flex-shrink:0">All</button>
+            <button class="sort-btn" onclick="_toggleAllVisibleTransferDrivers()" style="font-size:10px;white-space:nowrap;flex-shrink:0">All</button>
             <button class="sort-btn" onclick="clearAllTransferDrivers()" style="font-size:10px;flex-shrink:0">Clear</button>
           </div>
         </div>
       </div>
 
-      <!-- Selected driver tags -->
-      ${finTransferDrivers.size > 0 ? `
-        <div style="padding:12px 20px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-right:4px">Selected</span>
-          ${selectedTags}
-        </div>` : ''}
+      <!-- Selected tags -->
+      <div id="transferSelectedTags" style="display:${finTransferDrivers.size>0?'flex':'none'};padding:12px 20px;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--border)"></div>
     </div>
 
-    <!-- Per-driver results -->
-    ${resultsHtml}
+    <!-- Results -->
+    <div id="transferResults"></div>
   `;
+
+  _renderTransferTags();
+  _renderTransferResults();
 }
 
 function renderFinBonus() {
