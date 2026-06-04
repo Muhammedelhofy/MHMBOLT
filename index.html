@@ -7376,14 +7376,57 @@ function selectAllTransferDrivers() {
   renderFinanceTransferView();
 }
 function clearAllTransferDrivers() { finTransferDrivers.clear(); renderFinanceTransferView(); }
-function addTransferDriverFromSearch(input) {
-  const val = (input.value || '').trim();
-  if (!val) return;
+function filterDriverSuggestions(val) {
+  const dropdown = document.getElementById('transferDriverDropdown');
+  if (!dropdown) return;
+  if (!val || !val.trim()) { dropdown.style.display = 'none'; return; }
+  const q = val.trim().toLowerCase();
   const log = loadTransferLog();
   const allNames = new Set();
   Object.values(log).forEach(entries => (entries||[]).forEach(e => { if (e.name) allNames.add(e.name); }));
-  const match = [...allNames].find(d => d.toLowerCase() === val.toLowerCase());
-  if (match) { finTransferDrivers.add(match); input.value = ''; renderFinanceTransferView(); }
+  const matches = [...allNames]
+    .filter(d => !finTransferDrivers.has(d))
+    .filter(d => {
+      if (d.toLowerCase().includes(q)) return true;
+      const foreign = lookupForeignName(d);
+      return foreign && foreign.toLowerCase().includes(q);
+    })
+    .sort((a, b) => {
+      // exact-start matches first
+      const aStarts = a.toLowerCase().startsWith(q);
+      const bStarts = b.toLowerCase().startsWith(q);
+      if (aStarts && !bStarts) return -1;
+      if (!aStarts && bStarts) return 1;
+      return a.localeCompare(b);
+    })
+    .slice(0, 12);
+  if (!matches.length) { dropdown.style.display = 'none'; return; }
+  const hl = (text, q) => {
+    const i = text.toLowerCase().indexOf(q);
+    if (i === -1) return text;
+    return text.slice(0,i) + '<strong style="color:var(--bolt-green)">' + text.slice(i, i+q.length) + '</strong>' + text.slice(i+q.length);
+  };
+  dropdown.innerHTML = matches.map(name => {
+    const foreign = lookupForeignName(name);
+    const safe = encodeURIComponent(name);
+    return `<div onmousedown="addTransferDriverByName('${safe}')"
+      style="padding:9px 14px;cursor:pointer;border-bottom:1px solid rgba(0,212,255,.06);display:flex;flex-direction:column;gap:2px"
+      onmouseover="this.style.background='rgba(0,212,255,.1)'"
+      onmouseout="this.style.background=''">
+      <span style="font-size:13px;color:var(--text)">${hl(name, q)}</span>
+      ${foreign ? `<span style="font-size:11px;color:var(--text-muted)">${hl(foreign, q)}</span>` : ''}
+    </div>`;
+  }).join('');
+  dropdown.style.display = 'block';
+}
+function addTransferDriverByName(encoded) {
+  const name = decodeURIComponent(encoded);
+  finTransferDrivers.add(name);
+  const inp = document.getElementById('transferDriverSearch');
+  if (inp) inp.value = '';
+  const dd = document.getElementById('transferDriverDropdown');
+  if (dd) dd.style.display = 'none';
+  renderFinanceTransferView();
 }
 function cycleInMonth(transferDate, monthKey) {
   if (!monthKey) return true;
@@ -7927,17 +7970,13 @@ function renderTransferByDriver(el, log) {
     allMonthsSet.add(date.slice(0, 7));
     (entries || []).forEach(e => { if (e.name) allDriversSet.add(e.name); });
   });
-  const allDrivers   = [...allDriversSet].sort((a, b) => a.localeCompare(b));
-  const allMonths    = [...allMonthsSet].sort().reverse();
-  const unselected   = allDrivers.filter(d => !finTransferDrivers.has(d));
+  const allDrivers = [...allDriversSet].sort((a, b) => a.localeCompare(b));
+  const allMonths  = [...allMonthsSet].sort().reverse();
 
   // Month dropdown options
   const monthOpts = ['', ...allMonths].map(m =>
     `<option value="${m}" ${m === finTransferMonth ? 'selected' : ''}>${m ? monthLabel(m) : 'All History'}</option>`
   ).join('');
-
-  // Datalist for autocomplete (only unselected drivers)
-  const datalistOpts = unselected.map(d => `<option value="${d.replace(/"/g,'&quot;')}">`).join('');
 
   // Selected driver tags (removable)
   const selectedTags = [...finTransferDrivers].map(name => {
@@ -8064,14 +8103,15 @@ function renderTransferByDriver(el, log) {
             Driver${finTransferDrivers.size > 0 ? ' · <span style="color:var(--bolt-green)">' + finTransferDrivers.size + ' selected</span>' : ''}
           </div>
           <div style="display:flex;gap:8px;align-items:center">
-            <input id="transferDriverSearch" list="transfer-driver-datalist"
-              placeholder="Type name to search & select…" autocomplete="off"
-              oninput="addTransferDriverFromSearch(this)"
-              onkeydown="if(event.key==='Enter')addTransferDriverFromSearch(this)"
-              style="flex:1;background:rgba(0,255,179,.04);border:1px solid rgba(0,212,255,.2);color:var(--text);font-size:13px;padding:7px 12px;border-radius:3px;outline:none;font-family:inherit">
-            <datalist id="transfer-driver-datalist">${datalistOpts}</datalist>
-            <button class="sort-btn" onclick="selectAllTransferDrivers()" style="font-size:10px;white-space:nowrap">All</button>
-            <button class="sort-btn" onclick="clearAllTransferDrivers()" style="font-size:10px">Clear</button>
+            <div style="position:relative;flex:1">
+              <input id="transferDriverSearch" placeholder="Search by driver or account holder name…" autocomplete="off"
+                oninput="filterDriverSuggestions(this.value)"
+                onblur="setTimeout(()=>{const d=document.getElementById('transferDriverDropdown');if(d)d.style.display='none'},160)"
+                style="width:100%;background:var(--bg-card2);border:1px solid rgba(0,212,255,.2);color:var(--text);font-size:13px;padding:7px 12px;border-radius:3px;outline:none;font-family:inherit;box-sizing:border-box">
+              <div id="transferDriverDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:200;background:var(--bg-card2);border:1px solid rgba(0,212,255,.2);border-top:none;border-radius:0 0 3px 3px;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.7)"></div>
+            </div>
+            <button class="sort-btn" onclick="selectAllTransferDrivers()" style="font-size:10px;white-space:nowrap;flex-shrink:0">All</button>
+            <button class="sort-btn" onclick="clearAllTransferDrivers()" style="font-size:10px;flex-shrink:0">Clear</button>
           </div>
         </div>
       </div>
