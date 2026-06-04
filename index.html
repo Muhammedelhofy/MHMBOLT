@@ -45,7 +45,7 @@ body::after {
   content:''; position:fixed; top:0; left:0; right:0; height:2px; z-index:9999; pointer-events:none;
   background: linear-gradient(90deg,transparent,rgba(0,212,255,.5),rgba(0,255,179,.8),rgba(0,212,255,.5),transparent);
   box-shadow: 0 0 10px rgba(0,212,255,.6);
-  animation: scanline 10s linear infinite;
+  animation: scanline 60s linear infinite;
 }
 
 /* ── Header ── */
@@ -1070,6 +1070,71 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
 .crp-typewriter::after { content:'█'; animation:pulse .8s infinite; margin-left:2px; }
 .crp-alert-row { background:rgba(255,68,102,.07); border:1px solid rgba(255,68,102,.2); border-radius:3px; padding:6px 10px; margin:4px 0; font-size:11px; color:var(--text); }
 .crp-good-row  { background:rgba(0,255,179,.05); border:1px solid rgba(0,255,179,.15); border-radius:3px; padding:6px 10px; margin:4px 0; font-size:11px; }
+
+/* ── Cerebro Lock Screen ─────────────────────────────────────── */
+#cerebroOverlay {
+  display:none; position:fixed; inset:0; z-index:99999;
+  background:#000a14; align-items:center; justify-content:center; overflow:hidden;
+}
+#cerebroOverlay.open { display:flex; }
+#cerebroOverlay::before {
+  content:''; position:absolute; inset:0;
+  background-image:linear-gradient(rgba(0,212,255,.045) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,212,255,.045) 1px,transparent 1px);
+  background-size:48px 48px;
+  animation:cbr-grid 32s linear infinite;
+}
+@keyframes cbr-grid { to{background-position:48px 48px,48px 48px} }
+#cerebroOverlay::after {
+  content:''; position:absolute; left:0; right:0; height:2px; z-index:1;
+  background:linear-gradient(90deg,transparent,rgba(0,212,255,.55),rgba(0,255,179,.85),rgba(0,212,255,.55),transparent);
+  box-shadow:0 0 12px rgba(0,212,255,.5);
+  animation:cbr-sweep 7s linear infinite;
+}
+@keyframes cbr-sweep { from{top:-2px} to{top:100vh} }
+
+.cbr-modal { position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; gap:12px; }
+.cbr-rings { position:relative; width:250px; height:250px; display:flex; align-items:center; justify-content:center; margin-bottom:6px; }
+.cbr-ring  { position:absolute; border-radius:50%; }
+.cbr-ring.r1 { width:250px;height:250px; border:1px solid rgba(0,212,255,.12); border-top-color:rgba(0,212,255,.75); border-right-color:rgba(0,255,179,.4); animation:cbr-cw 11s linear infinite; }
+.cbr-ring.r2 { width:196px;height:196px; border:1px solid rgba(0,255,179,.1); border-left-color:rgba(0,255,179,.65); border-bottom-color:rgba(0,212,255,.35); animation:cbr-ccw 7s linear infinite; }
+.cbr-ring.r3 { width:148px;height:148px; border:1.5px dashed rgba(0,212,255,.18); border-top-color:rgba(0,212,255,.5); animation:cbr-cw 4.5s linear infinite; }
+.cbr-ring.r4 { width:96px;height:96px; border:1px solid rgba(0,255,179,.18); border-bottom-color:rgba(0,255,179,.85); animation:cbr-ccw 2.8s linear infinite; }
+@keyframes cbr-cw  { to{transform:rotate(360deg)} }
+@keyframes cbr-ccw { to{transform:rotate(-360deg)} }
+
+.cbr-core {
+  position:relative; z-index:1;
+  font-family:var(--mono); font-size:24px; font-weight:900; letter-spacing:.12em;
+  color:var(--bolt-green);
+  text-shadow:0 0 18px rgba(0,255,179,.9),0 0 36px rgba(0,255,179,.45);
+  animation:cbr-pulse 2.2s ease-in-out infinite;
+  transition:color .3s;
+}
+@keyframes cbr-pulse {
+  0%,100%{text-shadow:0 0 18px rgba(0,255,179,.85),0 0 36px rgba(0,255,179,.4)}
+  50%{text-shadow:0 0 28px rgba(0,255,179,1),0 0 56px rgba(0,255,179,.6),0 0 84px rgba(0,212,255,.25)}
+}
+.cbr-title  { font-family:var(--mono); font-size:11px; font-weight:700; letter-spacing:.42em; color:var(--cyan); text-shadow:0 0 10px rgba(0,212,255,.5); animation:cbr-flicker 4.5s ease-in-out infinite; }
+.cbr-sub    { font-family:var(--mono); font-size:8px; letter-spacing:.22em; color:rgba(0,212,255,.38); }
+.cbr-status { font-family:var(--mono); font-size:9px; letter-spacing:.18em; color:var(--bolt-green); text-shadow:0 0 8px rgba(0,255,179,.5); min-height:14px; text-transform:uppercase; }
+.cbr-dots   { display:flex; gap:14px; margin:4px 0; min-height:20px; align-items:center; }
+.cbr-dot    { width:12px; height:12px; border-radius:50%; border:1px solid rgba(0,212,255,.32); background:transparent; }
+.cbr-dot.lit{ background:var(--bolt-green); border-color:var(--bolt-green); box-shadow:0 0 8px rgba(0,255,179,.9),0 0 16px rgba(0,255,179,.4); animation:cbr-dot-pop .13s ease; }
+@keyframes cbr-dot-pop { from{transform:scale(0);opacity:0} to{transform:scale(1);opacity:1} }
+.cbr-hint   { font-family:var(--mono); font-size:8px; letter-spacing:.22em; color:rgba(0,212,255,.28); text-transform:uppercase; }
+.cbr-feedback{ font-family:var(--mono); font-size:11px; font-weight:700; letter-spacing:.26em; min-height:18px; text-align:center; }
+.cbr-feedback.ok { color:var(--bolt-green); text-shadow:0 0 12px rgba(0,255,179,.8); animation:cbr-appear .3s ease; }
+.cbr-feedback.err{ color:var(--red);       text-shadow:0 0 12px rgba(255,68,102,.8); animation:cbr-shake .4s ease; }
+.cbr-footer { font-family:var(--mono); font-size:7px; letter-spacing:.16em; color:rgba(0,212,255,.22); margin-top:6px; }
+.cbr-flash  { position:absolute; inset:0; z-index:1; pointer-events:none; opacity:0; }
+.cbr-flash.ok { animation:cbr-fok .9s ease forwards; }
+.cbr-flash.err{ animation:cbr-ferr .55s ease forwards; }
+@keyframes cbr-fok  { 0%{background:transparent;opacity:0} 25%{background:rgba(0,255,179,.07);opacity:1} 100%{opacity:0} }
+@keyframes cbr-ferr { 0%{background:transparent;opacity:0} 25%{background:rgba(255,68,102,.11);opacity:1} 60%{opacity:0} 80%{opacity:.45} 100%{opacity:0} }
+@keyframes cbr-flicker{ 0%,100%{opacity:1} 50%{opacity:.85} 77%{opacity:.95} 80%{opacity:.58} 83%{opacity:.95} }
+@keyframes cbr-appear { from{opacity:0;letter-spacing:.55em} to{opacity:1;letter-spacing:.26em} }
+@keyframes cbr-shake  { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)} 40%{transform:translateX(10px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1204,8 +1269,8 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
 <div class="tabs">
   <div class="tab active" data-tab="captains"  onclick="showTab('captains',this)">Captains</div>
   <div class="tab"        data-tab="finance"   onclick="showTab('finance',this)">Finance</div>
-  <div class="tab"        data-tab="starmap"   onclick="showTab('starmap',this)">⭐ Star Map</div>
   <div class="tab"        data-tab="analytics" onclick="showTab('analytics',this);renderAnalytics()">Analytics</div>
+  <div class="tab"        data-tab="starmap"   onclick="showTab('starmap',this)">⭐ Star Map</div>
   <div class="tab"        data-tab="settings"  onclick="showTab('settings',this)">Settings</div>
 </div>
 
@@ -1537,7 +1602,15 @@ function initSettingsUI() {
 // ═══════════════════════════════════════════
 // TAB NAV
 // ═══════════════════════════════════════════
+let _starmapUnlocked = false;
 function showTab(id, el) {
+  if (id === 'starmap' && !_starmapUnlocked) {
+    openCerebroLock();
+    return;
+  }
+  _doShowTab(id, el);
+}
+function _doShowTab(id, el) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById(id).classList.add('active');
@@ -1627,6 +1700,16 @@ function confirmUpload() {
   saveToHistory(period, currentDrivers, pendingFilename, pInfo);
   // Record Bolt transfer amounts from this CSV into the payment log
   recordTransfersFromUpload(htmlDate, currentDrivers);
+  // Integrity guard: warn if this upload produced any suspicious transfer log entries
+  const _uploadAudit = runTransferLogAudit().filter(i => i.date === htmlDate);
+  if (_uploadAudit.length) {
+    const _crit = _uploadAudit.filter(i => i.severity === 'critical').length;
+    setTimeout(() => toast(
+      `⚠ Transfer log: ${_uploadAudit.length} integrity issue${_uploadAudit.length!==1?'s':''} on ${htmlDate}` +
+      (_crit ? ` (${_crit} critical)` : '') +
+      ` — check Finance → Transfer Log → Audit`
+    ), 800);
+  }
   // Include the newly uploaded day in the active period selection
   if (sumPeriodMode === 'all' || summarySelectedDays === null) {
     summarySelectedDays = new Set(getHistory().map(h => h.period));
@@ -7104,6 +7187,71 @@ function transferStatusStyle(status) {
   return 'color:var(--amber);font-weight:600';
 }
 
+// ── Transfer Log: Integrity Audit ─────────────────────────────────────────────
+// Returns an array of issue objects. Severity: 'critical' or 'warning'.
+// Run this after every upload and on the Audit sub-mode view.
+function runTransferLogAudit() {
+  const log = loadTransferLog();
+  const issues = [];
+  Object.entries(log).forEach(([date, entries]) => {
+    if (!Array.isArray(entries)) return;
+    const dt      = parseLocalDate(date);
+    const dow     = dt.getDay();
+    const isPayDay = dow === 0 || dow === 3;
+    const seenKeys = new Set();
+    entries.forEach(e => {
+      if (!e || !e.name) return;
+      const transMs = dt.getTime();
+      // 1. Positive transfer recorded on a non-pay day (Sat/Mon/Tue/etc)
+      if (e.amount > 0 && !isPayDay) {
+        issues.push({ severity: 'critical', type: 'NON_PAY_DAY', date, name: e.name, amount: e.amount,
+          label: `Non-pay-day (${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow]}) — Bolt only pays Sun/Wed` });
+      }
+      // 2. Transfer predates the driver's profile start date
+      const profile = getCourierProfile(e.name);
+      if (profile.startDate) {
+        const startMs = parseLocalDate(profile.startDate).getTime();
+        if (transMs < startMs) {
+          issues.push({ severity: 'critical', type: 'BEFORE_PROFILE_START', date, name: e.name, amount: e.amount,
+            label: `Before profile start date (${profile.startDate})` });
+        }
+      }
+      // 3. Transfer predates the driver's earliest CSV activity
+      const firstMs = driverFirstSeenMs(e.name);
+      if (firstMs !== null && transMs < firstMs) {
+        const fs = new Date(firstMs);
+        issues.push({ severity: 'warning', type: 'BEFORE_CSV_ACTIVITY', date, name: e.name, amount: e.amount,
+          label: `Before first CSV activity (${fs.getDate()} ${MONTH_NAMES[fs.getMonth()]} ${fs.getFullYear()})` });
+      }
+      // 4. Same driver appears twice in one cycle date
+      const k = driverKey(e.name);
+      if (seenKeys.has(k)) {
+        issues.push({ severity: 'warning', type: 'DUPLICATE_DRIVER', date, name: e.name, amount: e.amount,
+          label: 'Driver appears twice in the same cycle date' });
+      }
+      seenKeys.add(k);
+    });
+  });
+  // Critical first, then by date descending
+  return issues.sort((a, b) => {
+    if (a.severity !== b.severity) return a.severity === 'critical' ? -1 : 1;
+    return b.date.localeCompare(a.date);
+  });
+}
+
+function deleteTransferEntryConfirm(date, encodedName) {
+  const name = decodeURIComponent(encodedName);
+  if (!confirm(`Delete transfer entry for ${name} on ${date}?\n\nThis removes it from the log only — your CSV data and earnings are unaffected.`)) return;
+  const log = loadTransferLog();
+  if (!log[date]) return;
+  log[date] = log[date].filter(e => driverKey(e.name) !== driverKey(name));
+  if (!log[date].length) delete log[date];
+  saveTransferLog(log);
+  syncToCloud();
+  toast(`Removed: ${name} on ${date}`);
+  renderFinanceTransferView();
+}
+
 // ── Local-date helpers (timezone-safe) ────────────────
 // Always parse date strings at noon so UTC offset never rolls the day backward
 function parseLocalDate(ymdStr) { return new Date(ymdStr + 'T12:00:00'); }
@@ -7492,10 +7640,12 @@ function _renderTransferResults() {
       });
     });
     xfers.sort((a,b) => b.date.localeCompare(a.date));
-    const grossAmt   = xfers.filter(x=>x.amount>0).reduce((s,x)=>s+x.amount,0);
-    const revAmt     = xfers.filter(x=>x.amount>0&&x.status==='REVERSED').reduce((s,x)=>s+x.amount,0);
-    const netAmt     = grossAmt - revAmt;
-    const cntPending = xfers.filter(x=>x.amount>0&&x.status==='PENDING').length;
+    const grossAmt     = xfers.filter(x=>x.amount>0).reduce((s,x)=>s+x.amount,0);
+    const revAmt       = xfers.filter(x=>x.amount>0&&x.status==='REVERSED').reduce((s,x)=>s+x.amount,0);
+    const pendingAmt   = xfers.filter(x=>x.amount>0&&x.status==='PENDING').reduce((s,x)=>s+x.amount,0);
+    const confirmedAmt = grossAmt - revAmt - pendingAmt;
+    const cntPending   = xfers.filter(x=>x.amount>0&&x.status==='PENDING').length;
+    const firstSeenMs  = driverFirstSeenMs(driverName);
     const rows = xfers.map(x => {
       const dt=parseLocalDate(x.date), dayName=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()];
       const dateLbl=`${dayName} ${dt.getDate()} ${MONTH_NAMES[dt.getMonth()]} ${dt.getFullYear()}`;
@@ -7507,6 +7657,10 @@ function _renderTransferResults() {
       if(!isPayDay&&x.amount>0) noteParts.push(`<span style="color:var(--amber);font-size:11px">⚠ Not a pay day</span>`);
       if(x.status==='REVERSED') noteParts.push(`<span style="color:var(--red);font-size:11px">⚠ Reversed by Bolt</span>`);
       if(x.amount<0) noteParts.push(`<span style="color:var(--red);font-size:11px">⚠ Negative posting</span>`);
+      if(firstSeenMs !== null && parseLocalDate(x.date).getTime() < firstSeenMs) {
+        const fs = new Date(firstSeenMs);
+        noteParts.push(`<span style="color:var(--red);font-size:11px">⚠ Before first fleet activity (${fs.getDate()} ${MONTH_NAMES[fs.getMonth()]}) — verify</span>`);
+      }
       return `<tr>
         <td style="font-family:var(--mono);font-size:12px;white-space:nowrap">${dateLbl}</td>
         <td style="text-align:right;font-family:var(--mono);font-weight:700;color:${amtClr};${amtDecor}">${amtSign}${fmt(Math.abs(x.amount))}</td>
@@ -7516,6 +7670,11 @@ function _renderTransferResults() {
       </tr>`;
     }).join('');
     const foreign = lookupForeignName(driverName);
+    const footerNote = [
+      revAmt>0 ? `gross ${fmt(grossAmt)} · reversed −${fmt(revAmt)}` : '',
+      pendingAmt>0 ? `<span style="color:var(--amber)">+${fmt(pendingAmt)} pending</span>` : '',
+      revAmt===0&&pendingAmt===0 ? 'all confirmed' : ''
+    ].filter(Boolean).join(' · ');
     return `
       <div class="finance-section" style="margin-bottom:14px">
         <div class="finance-section-header">
@@ -7524,10 +7683,10 @@ function _renderTransferResults() {
             ${foreign?`<span class="d-foreign" style="margin-left:8px">${foreign}</span>`:''}
           </div>
           <div style="display:flex;gap:18px;font-size:12px;align-items:center">
-            <span style="font-family:var(--mono);font-weight:700;color:var(--green)">${fmt(netAmt)} SAR net</span>
+            <span style="font-family:var(--mono);font-weight:700;color:var(--green)">${fmt(confirmedAmt)} SAR confirmed</span>
+            ${pendingAmt>0?`<span style="color:var(--amber);font-family:var(--mono)">+${fmt(pendingAmt)} pending</span>`:''}
             ${revAmt>0?`<span style="color:var(--red)">−${fmt(revAmt)} reversed</span>`:''}
-            ${cntPending>0?`<span style="color:var(--amber)">⏳ ${cntPending} pending</span>`:''}
-            <span style="color:var(--text-muted)">${xfers.length} payment${xfers.length!==1?'s':''}</span>
+            <span style="color:var(--text-muted)">${xfers.filter(x=>x.amount>0).length} payment${xfers.filter(x=>x.amount>0).length!==1?'s':''}</span>
           </div>
         </div>
         ${xfers.length?`
@@ -7540,8 +7699,8 @@ function _renderTransferResults() {
               <tbody>${rows}</tbody>
               <tfoot><tr style="background:var(--bg-card2)">
                 <td style="font-weight:600;color:var(--text-muted);font-size:11px">TOTAL</td>
-                <td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--green)">${fmt(netAmt)} SAR</td>
-                <td colspan="3" style="font-size:11px;color:var(--text-muted)">${revAmt>0?`gross ${fmt(grossAmt)} · reversed −${fmt(revAmt)}`:'all payments landed'}</td>
+                <td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--green)">${fmt(confirmedAmt)} SAR</td>
+                <td colspan="3" style="font-size:11px;color:var(--text-muted)">${footerNote}</td>
               </tr></tfoot>
             </table>
           </div>`:`<div class="finance-empty" style="padding:24px">No transfers found for this period.</div>`}
@@ -7919,17 +8078,24 @@ function renderFinanceTransferView() {
   }
 
   // Sub-mode toggle header
+  const auditIssues = runTransferLogAudit();
+  const auditCritical = auditIssues.filter(i => i.severity === 'critical').length;
+  const auditTotal    = auditIssues.length;
+  const auditBtnStyle = auditCritical > 0 ? 'color:var(--red);font-weight:700' : auditTotal > 0 ? 'color:var(--amber)' : '';
+  const auditLabel    = auditTotal > 0 ? `🔍 Audit (${auditTotal})` : '🔍 Audit';
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px">
       <span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-right:4px">View</span>
       <button class="view-toggle-btn ${finTransferSubMode==='date'?'active':''}" onclick="setTransferSubMode('date')">📅 By Date</button>
       <button class="view-toggle-btn ${finTransferSubMode==='driver'?'active':''}" onclick="setTransferSubMode('driver')">👤 By Driver</button>
+      <button class="view-toggle-btn ${finTransferSubMode==='audit'?'active':''}" onclick="setTransferSubMode('audit')" style="${auditBtnStyle}">${auditLabel}</button>
     </div>
     <div id="transferSubContent"></div>`;
 
   const sub = document.getElementById('transferSubContent');
   if (finTransferSubMode === 'date') renderTransferByDate(sub, log);
-  else renderTransferByDriver(sub, log);
+  else if (finTransferSubMode === 'driver') renderTransferByDriver(sub, log);
+  else renderTransferAudit(sub, auditIssues);
 }
 
 // ── Transfer Log: By Date (original view) ────────────────────────────────────
@@ -8137,6 +8303,75 @@ function renderTransferByDriver(el, log) {
 
   _renderTransferTags();
   _renderTransferResults();
+}
+
+// ── Transfer Log: Audit view ─────────────────────────────────────────────────
+function renderTransferAudit(el, issues) {
+  if (!issues || !issues.length) {
+    el.innerHTML = `
+      <div class="finance-section">
+        <div class="finance-section-header"><span class="finance-section-title">🔍 Transfer Log Audit</span></div>
+        <div style="text-align:center;padding:48px 20px">
+          <div style="font-size:36px;margin-bottom:12px">✅</div>
+          <div style="font-weight:700;color:var(--green);font-size:15px;margin-bottom:8px">No integrity issues found</div>
+          <div style="color:var(--text-muted);font-size:13px">Every entry in the transfer log passes all four checks.</div>
+        </div>
+      </div>`;
+    return;
+  }
+  const critical = issues.filter(i => i.severity === 'critical');
+  const warnings = issues.filter(i => i.severity === 'warning');
+  const rows = issues.map(issue => {
+    const dt = parseLocalDate(issue.date);
+    const dateLbl = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()] + ' ' + dt.getDate() + ' ' + MONTH_NAMES[dt.getMonth()] + ' ' + dt.getFullYear();
+    const foreign = lookupForeignName(issue.name);
+    const isCrit  = issue.severity === 'critical';
+    const sevBadge = isCrit
+      ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:2px;background:rgba(255,68,102,.15);border:1px solid rgba(255,68,102,.4);color:var(--red);white-space:nowrap">CRITICAL</span>`
+      : `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:2px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);color:var(--amber);white-space:nowrap">WARNING</span>`;
+    const encoded = encodeURIComponent(issue.name);
+    return `<tr>
+      <td>${sevBadge}</td>
+      <td style="font-family:var(--mono);font-size:12px;white-space:nowrap">${dateLbl}</td>
+      <td>
+        <div style="font-weight:600;font-size:13px">${issue.name}</div>
+        ${foreign ? `<span class="d-foreign">${foreign}</span>` : ''}
+      </td>
+      <td style="text-align:right;font-family:var(--mono);color:var(--green)">+${fmt(issue.amount)}</td>
+      <td style="font-size:12px;color:${isCrit?'var(--red)':'var(--amber)'}">${issue.label}</td>
+      <td>
+        <button class="finance-btn finance-btn-danger" style="padding:3px 10px;font-size:11px"
+          onclick="deleteTransferEntryConfirm('${issue.date}','${encoded}')">Delete entry</button>
+      </td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `
+    <div class="finance-section">
+      <div class="finance-section-header">
+        <span class="finance-section-title">🔍 Transfer Log Audit</span>
+        <div style="display:flex;gap:12px;font-size:12px;align-items:center">
+          ${critical.length ? `<span style="color:var(--red);font-weight:700">${critical.length} critical</span>` : ''}
+          ${warnings.length ? `<span style="color:var(--amber)">${warnings.length} warning${warnings.length!==1?'s':''}</span>` : ''}
+        </div>
+      </div>
+      <div style="padding:10px 20px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-muted);line-height:1.6">
+        <strong>Checks run:</strong>
+        &ensp;① Positive transfer on non-Sun/Wed (Bolt pay days only)
+        &ensp;② Transfer before driver's profile start date
+        &ensp;③ Transfer before driver's first CSV upload
+        &ensp;④ Duplicate driver in same cycle date<br>
+        Deleting an entry removes it from the log only — CSV data and earnings are unaffected.
+      </div>
+      <div style="overflow-x:auto">
+        <table class="finance-table">
+          <thead><tr>
+            <th>Severity</th><th>Transfer Date</th><th>Driver</th>
+            <th style="text-align:right">Amount</th><th>Issue</th><th></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 function renderFinBonus() {
@@ -10047,6 +10282,119 @@ function m8SmartCommand(arg) {
     }
   }
 }
+
+// ── Cerebro Lock Screen ──────────────────────────────────────────────────────
+const _cbrStatuses = [
+  'NEURAL SCAN ACTIVE',
+  'MAPPING THOUGHT PATTERNS',
+  'CEREBRAL SYNC IN PROGRESS',
+  'QUANTUM ENCRYPTION ENABLED',
+  'AWAITING AUTHORIZATION CODE',
+  'SCANNING MUTANT SIGNATURES…'
+];
+let _cerebroVal = '', _cbrSIdx = 0, _cbrTimer = null;
+
+function openCerebroLock() {
+  _cerebroVal = '';
+  const ov = document.getElementById('cerebroOverlay');
+  ov.classList.add('open');
+  document.getElementById('cerebroFeedback').textContent = '';
+  document.getElementById('cerebroFeedback').className = 'cbr-feedback';
+  document.getElementById('cerebroFlash').className = 'cbr-flash';
+  document.getElementById('cerebroCore').style.color = '';
+  _cbrRenderDots();
+  _cbrSetStatus('NEURAL SCAN ACTIVE');
+  _cbrSIdx = 0;
+  clearInterval(_cbrTimer);
+  _cbrTimer = setInterval(() => {
+    _cbrSIdx = (_cbrSIdx + 1) % _cbrStatuses.length;
+    _cbrSetStatus(_cbrStatuses[_cbrSIdx]);
+  }, 2800);
+  setTimeout(() => document.getElementById('cerebroInput').focus(), 60);
+}
+
+function closeCerebroLock() {
+  clearInterval(_cbrTimer);
+  document.getElementById('cerebroOverlay').classList.remove('open');
+  _cerebroVal = '';
+}
+
+function _cbrSetStatus(t) { document.getElementById('cerebroStatus').textContent = t; }
+
+function _cbrRenderDots() {
+  const n = _cerebroVal.length, SLOTS = 6;
+  document.getElementById('cerebroDots').innerHTML =
+    Array.from({length: SLOTS}, (_, i) =>
+      `<div class="cbr-dot${i < n ? ' lit' : ''}"></div>`
+    ).join('');
+}
+
+function cerebroKeydown(e) {
+  if (e.key === 'Escape')     { closeCerebroLock(); return; }
+  if (e.key === 'Backspace')  { _cerebroVal = _cerebroVal.slice(0,-1); _cbrRenderDots(); return; }
+  if (e.key === 'Enter')      { _cerebroSubmit(); return; }
+  if (e.key.length === 1 && _cerebroVal.length < 12) { _cerebroVal += e.key; _cbrRenderDots(); }
+}
+
+function _cerebroSubmit() {
+  clearInterval(_cbrTimer);
+  const fb = document.getElementById('cerebroFeedback');
+  const fl = document.getElementById('cerebroFlash');
+  if (_cerebroVal === '7ofy') {
+    _cbrSetStatus('NEURAL LINK ESTABLISHED');
+    fl.className = 'cbr-flash ok';
+    fb.textContent = '── ACCESS GRANTED ──';
+    fb.className = 'cbr-feedback ok';
+    document.getElementById('cerebroCore').style.color = '#00ffb3';
+    setTimeout(() => {
+      _starmapUnlocked = true;
+      closeCerebroLock();
+      const tab = document.querySelector('.tab[data-tab="starmap"]');
+      if (tab) _doShowTab('starmap', tab);
+    }, 1500);
+  } else {
+    _cbrSetStatus('INTRUSION DETECTED · ACCESS DENIED');
+    fl.className = 'cbr-flash err';
+    fb.textContent = '── NEURAL MISMATCH ──';
+    fb.className = 'cbr-feedback err';
+    _cerebroVal = '';
+    setTimeout(() => {
+      _cbrRenderDots();
+      fb.textContent = ''; fb.className = 'cbr-feedback';
+      fl.className = 'cbr-flash';
+      _cbrSIdx = 0; _cbrSetStatus('NEURAL SCAN ACTIVE');
+      _cbrTimer = setInterval(() => {
+        _cbrSIdx = (_cbrSIdx + 1) % _cbrStatuses.length;
+        _cbrSetStatus(_cbrStatuses[_cbrSIdx]);
+      }, 2800);
+      setTimeout(() => document.getElementById('cerebroInput').focus(), 50);
+    }, 1400);
+  }
+}
 </script>
+
+<!-- ── Cerebro Lock Screen ── -->
+<div id="cerebroOverlay">
+  <div class="cbr-flash" id="cerebroFlash"></div>
+  <div class="cbr-modal">
+    <div class="cbr-rings">
+      <div class="cbr-ring r1"></div>
+      <div class="cbr-ring r2"></div>
+      <div class="cbr-ring r3"></div>
+      <div class="cbr-ring r4"></div>
+      <div class="cbr-core" id="cerebroCore">X·M</div>
+    </div>
+    <div class="cbr-title">XAVIER FLEET COMMAND</div>
+    <div class="cbr-sub">CEREBRAL INTERFACE &nbsp;·&nbsp; NEURAL AUTHENTICATION REQUIRED</div>
+    <div class="cbr-status" id="cerebroStatus">NEURAL SCAN ACTIVE</div>
+    <div class="cbr-dots" id="cerebroDots"></div>
+    <div class="cbr-hint">ENTER ACCESS CODE</div>
+    <input id="cerebroInput" type="password" autocomplete="off"
+      style="position:absolute;opacity:0;width:1px;height:1px;top:0;left:0;pointer-events:none"
+      onkeydown="cerebroKeydown(event)">
+    <div class="cbr-feedback" id="cerebroFeedback"></div>
+    <div class="cbr-footer">[ ENTER ] &nbsp; AUTHENTICATE &emsp;·&emsp; [ ESC ] &nbsp; ABORT SEQUENCE</div>
+  </div>
+</div>
 </body>
 </html>
