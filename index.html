@@ -1141,44 +1141,119 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
 @keyframes cbr-appear { from{opacity:0;letter-spacing:.55em} to{opacity:1;letter-spacing:.26em} }
 @keyframes cbr-shake  { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)} 40%{transform:translateX(10px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
 
-/* ── Fleet Command Bridge ──────────────────────────────── */
-.cmd-bridge { padding:16px 20px 24px; }
-.cmd-kpi-row { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:22px; }
-.cmd-kpi { background:var(--bg-card2); border:1px solid var(--border); border-radius:4px; padding:14px 16px; position:relative; overflow:hidden; }
-.cmd-kpi::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; }
-.cmd-kpi.kpi-fleet::before { background:var(--cyan); }
-.cmd-kpi.kpi-net::before   { background:var(--bolt-green); }
-.cmd-kpi.kpi-pnl::before   { background:var(--amber); }
-.cmd-kpi.kpi-xfer::before  { background:rgba(245,158,11,.5); }
-.cmd-kpi-label { font-family:var(--mono); font-size:9px; letter-spacing:.15em; color:var(--text-muted); text-transform:uppercase; margin-bottom:6px; }
-.cmd-kpi-value { font-family:var(--mono); font-size:22px; font-weight:700; line-height:1.1; }
-.cmd-kpi-sub   { font-size:11px; color:var(--text-muted); margin-top:5px; }
-.cmd-section-title { font-family:var(--mono); font-size:9px; letter-spacing:.18em; color:var(--text-muted); text-transform:uppercase; margin-bottom:10px; }
-.cmd-driver-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(195px,1fr)); gap:10px; margin-bottom:22px; }
-.cmd-driver-card { background:var(--bg-card2); border:1px solid var(--border); border-radius:4px; padding:13px; position:relative; overflow:hidden; cursor:default; transition:border-color .2s; }
-.cmd-driver-card:hover { border-color:rgba(0,212,255,.28); }
-.cmd-driver-card::before { content:''; position:absolute; top:0; left:0; width:3px; bottom:0; border-radius:4px 0 0 4px; }
-.cmd-driver-card.t3::before { background:var(--bolt-green); box-shadow:0 0 10px rgba(0,255,179,.45); }
-.cmd-driver-card.t2::before { background:var(--cyan); }
-.cmd-driver-card.t1::before { background:var(--amber); }
-.cmd-driver-card.t0::before { background:var(--red); }
-.cmd-driver-card.tb::before { background:rgba(255,68,102,.4); }
-.cmd-d-name    { font-weight:700; font-size:13px; margin-bottom:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.cmd-d-foreign { font-size:10px; color:var(--text-muted); margin-bottom:9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-height:15px; }
-.cmd-d-net     { font-family:var(--mono); font-size:19px; font-weight:700; margin-bottom:7px; }
-.cmd-d-bar-wrap{ height:4px; background:rgba(255,255,255,.07); border-radius:2px; margin-bottom:5px; overflow:hidden; }
-.cmd-d-bar     { height:100%; border-radius:2px; }
-.cmd-d-pct     { font-family:var(--mono); font-size:10px; color:var(--text-muted); display:flex; justify-content:space-between; margin-bottom:9px; }
-.cmd-d-badges  { display:flex; gap:4px; flex-wrap:wrap; align-items:center; min-height:20px; }
-.cmd-alert-feed{ display:flex; flex-direction:column; gap:6px; }
-.cmd-alert { display:flex; align-items:flex-start; gap:10px; background:var(--bg-card2); border:1px solid var(--border); border-radius:4px; padding:10px 14px; }
-.cmd-alert.critical { border-color:rgba(255,68,102,.3); background:rgba(255,68,102,.04); }
-.cmd-alert.warning  { border-color:rgba(245,158,11,.28);  background:rgba(245,158,11,.04); }
-.cmd-alert.info     { border-color:rgba(0,212,255,.2);    background:rgba(0,212,255,.03); }
-.cmd-alert-icon { font-size:14px; flex-shrink:0; margin-top:1px; }
-.cmd-alert-title{ font-weight:600; font-size:12px; }
-.cmd-alert-sub  { font-size:11px; color:var(--text-muted); margin-top:2px; }
-@media(max-width:640px){ .cmd-kpi-row{ grid-template-columns:1fr 1fr; } }
+/* ── Fleet Command Bridge — Sci-Fi Terminal ─────────────── */
+.cmd-bridge {
+  padding:20px 24px 32px;
+  background-image: repeating-linear-gradient(
+    0deg, rgba(0,0,0,.04) 0px, rgba(0,0,0,.04) 1px, transparent 1px, transparent 3px
+  );
+}
+/* ── Telemetry banner (one unified bar, no boxes) ── */
+.cmd-telem {
+  position:relative; overflow:hidden;
+  display:flex; align-items:stretch;
+  border:1px solid rgba(0,212,255,.18);
+  border-radius:2px; margin-bottom:28px;
+  background:rgba(0,212,255,.03);
+}
+.cmd-telem::before {
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(90deg,transparent 0%,rgba(0,212,255,.04) 50%,transparent 100%);
+  animation:cmd-sweep 5s ease-in-out infinite;
+}
+@keyframes cmd-sweep { 0%{transform:translateX(-100%)} 100%{transform:translateX(200%)} }
+.cmd-telem-cell {
+  flex:1; padding:14px 20px; text-align:center;
+  border-right:1px solid rgba(0,212,255,.1);
+  position:relative; z-index:1;
+}
+.cmd-telem-cell:last-child { border-right:none; }
+.cmd-tl { font-family:var(--mono); font-size:8px; letter-spacing:.22em; color:rgba(0,212,255,.45); text-transform:uppercase; margin-bottom:5px; }
+.cmd-tv { font-family:var(--mono); font-size:20px; font-weight:700; line-height:1; }
+.cmd-ts { font-size:10px; color:var(--text-muted); margin-top:4px; letter-spacing:.04em; }
+
+/* ── Section divider ── */
+.cmd-divider {
+  font-family:var(--mono); font-size:8px; letter-spacing:.25em;
+  color:rgba(0,212,255,.35); text-transform:uppercase;
+  display:flex; align-items:center; gap:12px; margin-bottom:10px;
+}
+.cmd-divider::after {
+  content:''; flex:1; height:1px;
+  background:linear-gradient(90deg,rgba(0,212,255,.2),transparent);
+}
+
+/* ── Signal matrix rows ── */
+.cmd-matrix { display:flex; flex-direction:column; gap:2px; margin-bottom:28px; }
+.cmd-row {
+  display:grid;
+  grid-template-columns: 26px 200px 1fr 100px 55px;
+  align-items:center; gap:14px;
+  padding:9px 12px;
+  border:1px solid rgba(0,212,255,.07);
+  border-left:3px solid;
+  background:rgba(0,0,0,.25);
+  cursor:default;
+  transition:background .15s, border-color .15s;
+  position:relative; overflow:hidden;
+}
+.cmd-row::before {
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(90deg,transparent,rgba(0,212,255,.025),transparent);
+  transform:translateX(-100%); transition:transform .4s ease;
+}
+.cmd-row:hover { background:rgba(0,212,255,.05); border-color:rgba(0,212,255,.22); }
+.cmd-row:hover::before { transform:translateX(100%); }
+.cmd-row.t3 { border-left-color:var(--bolt-green); }
+.cmd-row.t2 { border-left-color:var(--cyan); }
+.cmd-row.t1 { border-left-color:var(--amber); }
+.cmd-row.t0 { border-left-color:var(--red); }
+.cmd-row.tb { border-left-color:rgba(255,68,102,.3); opacity:.6; }
+
+.cmd-rank { font-family:var(--mono); font-size:10px; color:rgba(0,212,255,.28); text-align:right; }
+.cmd-name-block { min-width:0; }
+.cmd-name { font-family:var(--mono); font-weight:700; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cmd-acct { font-size:10px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+.cmd-bar-col { position:relative; }
+.cmd-bar-track { height:5px; background:rgba(255,255,255,.06); border-radius:1px; overflow:hidden; margin-bottom:3px; }
+.cmd-bar-fill {
+  height:100%; border-radius:1px;
+  animation:cmd-bar-in .9s cubic-bezier(.22,1,.36,1) forwards;
+  width:0;
+}
+@keyframes cmd-bar-in { to { width:var(--w); } }
+.cmd-bar-fill.t3 { background:linear-gradient(90deg,rgba(0,255,179,.5),var(--bolt-green)); box-shadow:0 0 6px rgba(0,255,179,.5); }
+.cmd-bar-fill.t2 { background:linear-gradient(90deg,rgba(0,212,255,.5),var(--cyan)); }
+.cmd-bar-fill.t1 { background:linear-gradient(90deg,rgba(245,158,11,.4),var(--amber)); }
+.cmd-bar-fill.t0 { background:linear-gradient(90deg,rgba(255,68,102,.3),var(--red)); }
+.cmd-bar-fill.tb { background:rgba(255,68,102,.3); }
+.cmd-bar-label { font-family:var(--mono); font-size:9px; color:rgba(0,212,255,.3); letter-spacing:.05em; }
+
+.cmd-sar { font-family:var(--mono); font-weight:700; font-size:13px; text-align:right; white-space:nowrap; }
+.cmd-badges { display:flex; gap:3px; justify-content:flex-end; flex-wrap:wrap; }
+
+/* ── Transmission alerts ── */
+.cmd-transmissions { display:flex; flex-direction:column; gap:4px; }
+.cmd-tx {
+  font-family:var(--mono); font-size:11px; letter-spacing:.04em;
+  padding:9px 14px; border-radius:2px; border:1px solid;
+  display:grid; grid-template-columns:auto 1fr; gap:10px; align-items:start;
+}
+.cmd-tx.critical { border-color:rgba(255,68,102,.35); background:rgba(255,68,102,.04); color:var(--text); }
+.cmd-tx.warning  { border-color:rgba(245,158,11,.3);  background:rgba(245,158,11,.03); }
+.cmd-tx.info     { border-color:rgba(0,212,255,.18);  background:rgba(0,212,255,.025); color:rgba(0,212,255,.75); }
+.cmd-tx-tag  { font-size:9px; letter-spacing:.15em; padding:1px 6px; border-radius:1px; white-space:nowrap; margin-top:1px; }
+.cmd-tx.critical .cmd-tx-tag { background:rgba(255,68,102,.2); color:var(--red); }
+.cmd-tx.warning  .cmd-tx-tag { background:rgba(245,158,11,.15); color:var(--amber); }
+.cmd-tx.info     .cmd-tx-tag { background:rgba(0,212,255,.1);   color:var(--cyan); }
+.cmd-tx-body { line-height:1.5; }
+.cmd-tx-sub  { font-size:10px; opacity:.55; margin-top:1px; }
+
+@media(max-width:860px){
+  .cmd-row { grid-template-columns:26px 1fr 1fr 80px; }
+  .cmd-row > .cmd-badges { display:none; }
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -10333,22 +10408,20 @@ function renderCommandBridge() {
   if (!smCommandMonth) smCommandMonth = defaultMonth();
   const months = getAvailableMonths();
   if (!months.length) {
-    el.innerHTML = `<div class="cmd-bridge" style="text-align:center;padding:60px;color:var(--text-muted);font-family:var(--mono);letter-spacing:.1em">NO DATA — UPLOAD BOLT CSVs TO ACTIVATE COMMAND BRIDGE</div>`;
+    el.innerHTML = `<div class="cmd-bridge" style="text-align:center;padding:80px;font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:rgba(0,212,255,.4)">[ NO DATA — UPLOAD BOLT CSVs TO ACTIVATE COMMAND BRIDGE ]</div>`;
     return;
   }
   if (!months.includes(smCommandMonth)) smCommandMonth = months[0];
   const monthKey = smCommandMonth;
 
-  // Gather all drivers active this month
   const monthNames = getDriversInMonth(monthKey);
   if (!monthNames.length) {
-    el.innerHTML = `<div class="cmd-bridge" style="text-align:center;padding:40px;color:var(--text-muted);font-size:13px">No driver activity for ${monthLabel(monthKey)}.</div>`;
+    el.innerHTML = `<div class="cmd-bridge" style="text-align:center;padding:60px;font-family:var(--mono);color:rgba(0,212,255,.35);letter-spacing:.15em">[ NO SIGNALS FOR ${monthLabel(monthKey).toUpperCase()} ]</div>`;
     return;
   }
-  const pls = monthNames.map(name => computeDriverPnL(name, monthKey))
-                        .sort((a,b) => b.income - a.income);
+  const pls = monthNames.map(n => computeDriverPnL(n, monthKey)).sort((a,b) => b.income - a.income);
 
-  // Pending transfers across all time
+  // Pending transfers
   const log = loadTransferLog();
   const pendingByDriver = {};
   let totalPending = 0;
@@ -10363,101 +10436,126 @@ function renderCommandBridge() {
   });
 
   const [t1, t2, t3] = bonusTiers();
-  const activePls  = pls.filter(p => p.income > 0);
-  const totalNet   = activePls.reduce((s,p) => s + p.income, 0);
-  const totalPnL   = pls.reduce((s,p) => s + p.netPnL, 0);
-  const pendCount  = Object.keys(pendingByDriver).length;
+  const activePls = pls.filter(p => p.income > 0);
+  const totalNet  = activePls.reduce((s,p) => s + p.income, 0);
+  const totalPnL  = pls.reduce((s,p) => s + p.netPnL, 0);
+  const pendCount = Object.keys(pendingByDriver).length;
 
-  function driverTierClass(p) {
+  function tc(p) {
     if (p.profile?.blocked) return 'tb';
     if (p.income >= t3) return 't3';
     if (p.income >= t2) return 't2';
     if (p.income >= t1) return 't1';
     return 't0';
   }
-  const tierColor = { t3:'var(--bolt-green)', t2:'var(--cyan)', t1:'var(--amber)', t0:'var(--red)', tb:'var(--red)' };
+  const tcCol = { t3:'var(--bolt-green)', t2:'var(--cyan)', t1:'var(--amber)', t0:'var(--red)', tb:'rgba(255,68,102,.5)' };
 
-  // Driver cards
-  const cards = pls.map(p => {
-    const foreign   = lookupForeignName(p.name);
-    const tc        = driverTierClass(p);
-    const col       = tierColor[tc];
-    const pct       = p.income > 0 ? Math.min(100, Math.round(p.income / t3 * 100)) : 0;
-    const pendAmt   = pendingByDriver[driverKey(p.name)] || 0;
-    const modelLbl  = p.model === 'Custom' ? (p.modelCustom||'Custom') : resolveModelDisplay(p.model);
-    const isBlocked = p.profile?.blocked;
+  // ── Signal matrix rows ──────────────────────────────────
+  const rows = pls.map((p, i) => {
+    const tier     = tc(p);
+    const col      = tcCol[tier];
+    const pct      = p.income > 0 ? Math.min(100, Math.round(p.income / t3 * 100)) : 0;
+    const foreign  = lookupForeignName(p.name);
+    const pendAmt  = pendingByDriver[driverKey(p.name)] || 0;
+    const modelLbl = p.model === 'Custom' ? (p.modelCustom||'Custom') : resolveModelDisplay(p.model);
 
-    let statusBadge;
-    if      (isBlocked)       statusBadge = `<span class="tier tier-none" style="color:var(--red);border-color:rgba(255,68,102,.4)">🚫 BLOCKED</span>`;
-    else if (p.income === 0)  statusBadge = `<span class="tier tier-none">NO ACTIVITY</span>`;
-    else if (p.income >= t3)  statusBadge = `<span class="tier tier-active">✅ TARGET MET</span>`;
-    else if (p.income >= t2)  statusBadge = `<span class="tier tier-platinum">🔵 CLOSE</span>`;
-    else if (p.income >= t1)  statusBadge = `<span class="tier tier-gold">🟡 TRACKING</span>`;
-    else                      statusBadge = `<span class="tier tier-bronze">🔴 BELOW</span>`;
+    let statusTag;
+    if      (p.profile?.blocked) statusTag = `<span class="tier tier-none" style="color:var(--red);border-color:rgba(255,68,102,.4)">BLOCKED</span>`;
+    else if (p.income === 0)     statusTag = `<span class="tier tier-none">DARK</span>`;
+    else if (p.income >= t3)     statusTag = `<span class="tier tier-active">TARGET</span>`;
+    else if (p.income >= t2)     statusTag = `<span class="tier tier-platinum">CLOSE</span>`;
+    else if (p.income >= t1)     statusTag = `<span class="tier tier-gold">TRACKING</span>`;
+    else                         statusTag = `<span class="tier tier-bronze">BELOW</span>`;
 
-    const pendBadge  = pendAmt > 0 ? `<span class="tier" style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);color:var(--amber)">⏳ ${fmt(pendAmt)}</span>` : '';
-    const modelBadge = modelLbl && modelLbl !== 'none' ? `<span class="${modelBadgeClass(p.model)}">${modelLbl}</span>` : '';
+    const pendTag  = pendAmt > 0 ? `<span class="tier" style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);color:var(--amber)">⏳&nbsp;${fmt(pendAmt)}</span>` : '';
+    const modelTag = modelLbl && modelLbl !== 'none' ? `<span class="${modelBadgeClass(p.model)}">${modelLbl}</span>` : '';
+
+    // blocks ▓▓▓░░ visual
+    const filledBlocks = Math.round(pct / 20); // 0-5 blocks
+    const blocks = '▓'.repeat(filledBlocks) + '░'.repeat(5 - filledBlocks);
 
     return `
-      <div class="cmd-driver-card ${tc}">
-        <div class="cmd-d-name">${p.name}</div>
-        <div class="cmd-d-foreign">${foreign||''}</div>
-        <div class="cmd-d-net" style="color:${col}">${p.income > 0 ? fmt(p.income)+' SAR' : '—'}</div>
-        <div class="cmd-d-bar-wrap"><div class="cmd-d-bar" style="width:${pct}%;background:${col}"></div></div>
-        <div class="cmd-d-pct"><span>${pct}%</span><span>${fmt(t3)} target</span></div>
-        <div class="cmd-d-badges">${statusBadge}${pendBadge}${modelBadge}</div>
+      <div class="cmd-row ${tier}" style="animation-delay:${i * 0.03}s">
+        <div class="cmd-rank">${String(i+1).padStart(2,'0')}</div>
+        <div class="cmd-name-block">
+          <div class="cmd-name">${p.name}</div>
+          ${foreign ? `<div class="cmd-acct">${foreign}</div>` : ''}
+        </div>
+        <div class="cmd-bar-col">
+          <div class="cmd-bar-track">
+            <div class="cmd-bar-fill ${tier}" style="--w:${pct}%"></div>
+          </div>
+          <div class="cmd-bar-label"><span style="color:${col};letter-spacing:.04em">${blocks}</span>&nbsp;&nbsp;${pct}% of ${fmt(t3)}</div>
+        </div>
+        <div class="cmd-sar" style="color:${col}">${p.income > 0 ? fmt(p.income) : '—'}<span style="font-size:9px;color:var(--text-muted);margin-left:3px">SAR</span></div>
+        <div class="cmd-badges">${statusTag}${pendTag}${modelTag}</div>
       </div>`;
   }).join('');
 
-  // Alerts
+  // ── Transmission alerts ─────────────────────────────────
   const alerts = [];
   pls.filter(p => p.profile?.blocked).forEach(p =>
-    alerts.push({ sev:'critical', icon:'🚫', title:`${p.name} — BLOCKED`, sub:'Captain suspended — not generating revenue' }));
+    alerts.push({ sev:'critical', tag:'CRITICAL', msg:`${p.name}`, sub:'Captain suspended · zero revenue output' }));
   pls.filter(p => !p.profile?.blocked && p.income > 0 && p.income < t1).forEach(p =>
-    alerts.push({ sev:'warning', icon:'⚠', title:`${p.name} — Below minimum tier (${Math.round(p.income/t3*100)}%)`, sub:`${fmt(p.income)} SAR earned · minimum tier requires ${fmt(t1)} SAR` }));
+    alerts.push({ sev:'warning', tag:'WARNING', msg:`${p.name} · ${Math.round(p.income/t3*100)}% signal`, sub:`${fmt(p.income)} SAR received · minimum tier threshold ${fmt(t1)} SAR` }));
   Object.entries(pendingByDriver).forEach(([k, amt]) => {
     const name = pls.find(p => driverKey(p.name) === k)?.name || k;
-    alerts.push({ sev:'info', icon:'⏳', title:`Pending transfer — ${name}`, sub:`${fmt(amt)} SAR not yet confirmed` });
+    alerts.push({ sev:'info', tag:'PENDING', msg:`Transfer unconfirmed · ${name}`, sub:`${fmt(amt)} SAR awaiting Bolt confirmation` });
   });
-  const alertHTML = alerts.length
-    ? alerts.map(a => `<div class="cmd-alert ${a.sev}"><div class="cmd-alert-icon">${a.icon}</div><div><div class="cmd-alert-title">${a.title}</div><div class="cmd-alert-sub">${a.sub}</div></div></div>`).join('')
-    : `<div style="padding:12px 14px;color:var(--text-muted);font-size:12px;font-family:var(--mono);letter-spacing:.08em;background:var(--bg-card2);border:1px solid var(--border);border-radius:4px">✅ ALL SYSTEMS NOMINAL — NO ALERTS</div>`;
+  const txHTML = alerts.length
+    ? alerts.map(a => `
+        <div class="cmd-tx ${a.sev}">
+          <span class="cmd-tx-tag">${a.tag}</span>
+          <div class="cmd-tx-body">${a.msg}<div class="cmd-tx-sub">${a.sub}</div></div>
+        </div>`).join('')
+    : `<div class="cmd-tx info"><span class="cmd-tx-tag">STATUS</span><div class="cmd-tx-body">ALL SYSTEMS NOMINAL · NO ACTIVE ALERTS</div></div>`;
 
-  const pnlCol  = totalPnL >= 0 ? 'var(--bolt-green)' : 'var(--red)';
+  const pnlCol = totalPnL >= 0 ? 'var(--bolt-green)' : 'var(--red)';
   const monthOpts = months.map(mo => `<option value="${mo}" ${mo===monthKey?'selected':''}>${monthLabel(mo)}</option>`).join('');
 
   el.innerHTML = `
     <div class="cmd-bridge">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <div style="font-family:var(--mono);font-size:9px;letter-spacing:.2em;color:var(--text-muted)">FLEET COMMAND BRIDGE</div>
+
+      <!-- Header row -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+        <div style="font-family:var(--mono);font-size:8px;letter-spacing:.28em;color:rgba(0,212,255,.4)">
+          ◈ FLEET COMMAND BRIDGE &nbsp;·&nbsp; NEURAL TELEMETRY ONLINE
+        </div>
         <select class="kpi-select" onchange="smCommandMonth=this.value;renderCommandBridge()">${monthOpts}</select>
       </div>
-      <div class="cmd-kpi-row">
-        <div class="cmd-kpi kpi-fleet">
-          <div class="cmd-kpi-label">Active Captains</div>
-          <div class="cmd-kpi-value" style="color:var(--cyan)">${activePls.length}</div>
-          <div class="cmd-kpi-sub">${pls.length} on roster · ${monthLabel(monthKey)}</div>
+
+      <!-- Unified telemetry banner -->
+      <div class="cmd-telem">
+        <div class="cmd-telem-cell">
+          <div class="cmd-tl">Active Signals</div>
+          <div class="cmd-tv" style="color:var(--cyan)">${activePls.length}<span style="font-size:11px;color:var(--text-muted)"> / ${pls.length}</span></div>
+          <div class="cmd-ts">captains on grid</div>
         </div>
-        <div class="cmd-kpi kpi-net">
-          <div class="cmd-kpi-label">Fleet Net Earnings</div>
-          <div class="cmd-kpi-value" style="color:var(--bolt-green)">${fmt(totalNet)}</div>
-          <div class="cmd-kpi-sub">SAR from Bolt</div>
+        <div class="cmd-telem-cell">
+          <div class="cmd-tl">Fleet Net Output</div>
+          <div class="cmd-tv" style="color:var(--bolt-green)">${fmt(totalNet)}</div>
+          <div class="cmd-ts">SAR · Bolt earnings</div>
         </div>
-        <div class="cmd-kpi kpi-pnl">
-          <div class="cmd-kpi-label">Fleet P&amp;L</div>
-          <div class="cmd-kpi-value" style="color:${pnlCol}">${totalPnL>=0?'+':''}${fmt(totalPnL)}</div>
-          <div class="cmd-kpi-sub">SAR after all costs</div>
+        <div class="cmd-telem-cell">
+          <div class="cmd-tl">Fleet P&amp;L</div>
+          <div class="cmd-tv" style="color:${pnlCol}">${totalPnL>=0?'+':''}${fmt(totalPnL)}</div>
+          <div class="cmd-ts">SAR after all costs</div>
         </div>
-        <div class="cmd-kpi kpi-xfer">
-          <div class="cmd-kpi-label">Pending Transfers</div>
-          <div class="cmd-kpi-value" style="color:${totalPending>0?'var(--amber)':'var(--text-muted)'}">${totalPending>0?fmt(totalPending):'—'}</div>
-          <div class="cmd-kpi-sub">${pendCount} driver${pendCount!==1?'s':''} awaiting</div>
+        <div class="cmd-telem-cell">
+          <div class="cmd-tl">Unconfirmed Transfers</div>
+          <div class="cmd-tv" style="color:${totalPending>0?'var(--amber)':'rgba(0,212,255,.3)'}">${totalPending>0?fmt(totalPending):'——'}</div>
+          <div class="cmd-ts">${pendCount} captain${pendCount!==1?'s':''} pending</div>
         </div>
       </div>
-      <div class="cmd-section-title">CAPTAIN STATUS · ${activePls.length} ACTIVE SIGNALS</div>
-      <div class="cmd-driver-grid">${cards}</div>
-      <div class="cmd-section-title">COMMAND ALERTS · ${alerts.length} ITEM${alerts.length!==1?'S':''}</div>
-      <div class="cmd-alert-feed">${alertHTML}</div>
+
+      <!-- Signal matrix -->
+      <div class="cmd-divider">CAPTAIN SIGNAL MATRIX &nbsp;·&nbsp; ${activePls.length} ACTIVE</div>
+      <div class="cmd-matrix">${rows}</div>
+
+      <!-- Transmissions -->
+      <div class="cmd-divider">INCOMING TRANSMISSIONS &nbsp;·&nbsp; ${alerts.length} ITEM${alerts.length!==1?'S':''}</div>
+      <div class="cmd-transmissions">${txHTML}</div>
+
     </div>`;
 }
 
