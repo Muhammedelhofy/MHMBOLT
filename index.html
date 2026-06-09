@@ -541,6 +541,28 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 .finance-btn-danger    { background:transparent; color:var(--red); border:1px solid rgba(255,68,102,.3); }
 .finance-actions { display:flex; gap:8px; align-items:center; }
 .finance-empty   { text-align:center; padding:32px 20px; color:var(--text-muted); font-size:13px; }
+
+/* ── Finance Captain filter row ── */
+.fin-filter-row { display:flex; align-items:center; gap:8px; padding:10px 16px; border-bottom:1px solid rgba(0,212,255,.08); background:var(--bg-card2); flex-wrap:wrap; }
+.fin-search-inp { padding:5px 10px; border:1px solid rgba(0,212,255,.18); border-radius:2px; font-size:12px; color:var(--text); background:var(--bg-card); outline:none; width:180px; transition:border-color .15s; }
+.fin-search-inp:focus { border-color:var(--bolt-green); box-shadow:0 0 0 2px rgba(0,255,179,.08); }
+.fin-dd-wrap { position:relative; }
+.fin-dd-btn { padding:5px 11px; border:1px solid rgba(0,212,255,.18); border-radius:2px; font-size:11px; color:var(--text-muted); background:var(--bg-card); cursor:pointer; display:inline-flex; align-items:center; gap:5px; white-space:nowrap; transition:border-color .15s,color .15s; user-select:none; }
+.fin-dd-btn:hover,.fin-dd-btn.active { border-color:var(--bolt-green); color:var(--bolt-green); }
+.fin-dd-list { position:absolute; top:calc(100% + 4px); left:0; background:#021525; border:1px solid rgba(0,212,255,.2); border-radius:3px; min-width:220px; max-height:260px; overflow-y:auto; z-index:500; box-shadow:0 8px 32px rgba(0,0,0,.7); }
+.fin-dd-list.hidden { display:none; }
+.fin-dd-search-row { padding:7px 10px; border-bottom:1px solid rgba(0,212,255,.1); position:sticky; top:0; background:#021525; }
+.fin-dd-search-row input { width:100%; box-sizing:border-box; background:transparent; border:none; color:var(--text); font-size:12px; outline:none; }
+.fin-dd-item { padding:7px 12px; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:8px; border-bottom:1px solid rgba(0,212,255,.04); transition:background .1s; }
+.fin-dd-item:hover { background:rgba(0,212,255,.07); }
+.fin-dd-chk { width:14px; height:14px; flex-shrink:0; border:1px solid rgba(0,212,255,.35); border-radius:2px; display:inline-flex; align-items:center; justify-content:center; font-size:9px; color:var(--bolt-green); }
+.fin-dd-chk.on { background:rgba(0,255,179,.15); border-color:var(--bolt-green); }
+.fin-tag-row { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+.fin-tag { background:rgba(0,255,179,.08); border:1px solid rgba(0,255,179,.25); border-radius:2px; font-size:11px; color:var(--bolt-green); padding:2px 8px; display:inline-flex; align-items:center; gap:4px; }
+.fin-tag-x { cursor:pointer; opacity:.6; font-size:13px; line-height:1; }
+.fin-tag-x:hover { opacity:1; }
+.fin-name-link { cursor:pointer; text-decoration:none; }
+.fin-name-link:hover .fin-name-text { color:var(--cyan); text-decoration:underline; }
 .variance-positive { color:var(--bolt-green); }
 .variance-negative { color:var(--red); }
 .pl-table    { width:100%; border-collapse:collapse; font-size:13px; }
@@ -1370,6 +1392,13 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
 <div class="modal-panel" id="modalPanel">
   <div class="modal-header" id="modalHeader"></div>
   <div class="modal-body"  id="modalBody"></div>
+</div>
+
+<!-- ── Finance Captain Detail Panel ── -->
+<div class="modal-overlay" id="finCaptainOverlay" onclick="closeFinanceCaptainPanel()"></div>
+<div class="modal-panel" id="finCaptainPanel">
+  <div class="modal-header" id="finCaptainHeader"></div>
+  <div class="modal-body"  id="finCaptainBody"></div>
 </div>
 
 <!-- Sci-Fi Overlays -->
@@ -6068,12 +6097,8 @@ function buildCourierSummaryTable(entries, searchFilter) {
     const nameHTML = foreign
       ? `<div class="d-name">${c.name}${badge}</div><div class="d-foreign">${foreign}</div>`
       : `<div class="d-name">${c.name}${badge}</div>`;
-    const clickFn = singlePeriod
-      ? `bioScanThenOpen('${esc(c.name)}',this)`
-      : `bioScanThenOpen('${esc(c.name)}',this)`;
-    // bio scan wrapper handles openModal; for single-period we still need openModalForEntry
     const clickAttr = singlePeriod
-      ? `onclick="(function(el){bioScanThenOpen('${esc(c.name)}',el);setTimeout(()=>openModalForEntry('${esc(c.name)}','${esc(singlePeriod)}'),0);})(this)"`
+      ? `onclick="bioScanThenOpen('${esc(c.name)}',this,'${esc(singlePeriod)}')"`
       : `onclick="bioScanThenOpen('${esc(c.name)}',this)"`;
 
     // TIER-BASED projection. Translate the captain's daily pace into a projected month
@@ -7143,6 +7168,13 @@ let financeSortAsc  = false;
 let finTransferSubMode    = 'date';    // 'date' | 'driver'
 let finTransferDrivers    = new Set(); // selected drivers in by-driver mode
 let finTransferMonth      = '';        // '' = all history, 'YYYY-MM' = filtered month
+// Finance By-Captain filter state
+let finCourierSearch   = '';
+let finCourierSelected = new Set();
+// Finance Captain Detail Panel state
+let finCaptainCtx      = null;        // { name, monthKey }
+let finCaptainSortCol  = 'period';
+let finCaptainSortAsc  = true;
 function driverKey(name) { return (name||'').trim().toLowerCase(); }
 function defaultProfile() {
   return { model:'F', modelCustom:null,
@@ -7949,9 +7981,6 @@ function renderFinanceTab() {
 
 function renderFinanceCourierView() {
   const monthKey = financeMonth;
-  // Build complete roster: union of ALL-TIME CSV drivers + profile-only drivers.
-  // This ensures a driver who worked last month but not this month still appears
-  // in the Finance ledger (shows 0 income, costs still apply).
   const nameMap = new Map();
   getHistory().forEach(h => {
     (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => {
@@ -7959,18 +7988,23 @@ function renderFinanceCourierView() {
     });
   });
   Object.keys(loadCourierProfiles()).forEach(k => { if (!nameMap.has(k)) nameMap.set(k, k); });
-  const drivers = [...nameMap.values()];
-  if (!drivers.length) {
+  const allDriverNames = [...nameMap.values()].sort((a,b) => a.localeCompare(b));
+  if (!allDriverNames.length) {
     document.getElementById('financeMainContent').innerHTML =
       `<div class="finance-section"><div class="finance-empty">No driver data for ${monthLabel(monthKey)}.<br>Upload Bolt CSVs in the Fleet tab, then return here.</div></div>`;
     return;
   }
-  const pls = drivers.map(name => computeDriverPnL(name, monthKey));
-  pls.sort((a,b) => {
+  const allPls = allDriverNames.map(name => computeDriverPnL(name, monthKey));
+  allPls.sort((a,b) => {
     if (financeSortCol === 'name') return financeSortAsc ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
     return financeSortAsc ? (a[financeSortCol]||0) - (b[financeSortCol]||0) : (b[financeSortCol]||0) - (a[financeSortCol]||0);
   });
-  const tot = pls.reduce((a,p) => ({
+  // Apply search + multi-select filter (filtered view only affects displayed rows, totals reflect full roster)
+  const q = finCourierSearch.trim().toLowerCase();
+  let visPls = allPls;
+  if (finCourierSelected.size > 0) visPls = visPls.filter(p => finCourierSelected.has(p.name));
+  if (q) visPls = visPls.filter(p => p.name.toLowerCase().includes(q) || (lookupForeignName(p.name)||'').toLowerCase().includes(q));
+  const tot = allPls.reduce((a,p) => ({
     income: a.income + p.income, acctRent: a.acctRent + p.acctRent,
     carRent: a.carRent + p.carRent, salary: a.salary + p.salary,
     fleetCut: a.fleetCut + p.fleetCut, other: a.other + p.other,
@@ -7979,7 +8013,7 @@ function renderFinanceCourierView() {
   const signed = v => v === 0 ? '—' : `<span style="color:${v > 0 ? 'var(--green)' : 'var(--red)'}">${v > 0 ? '+' : ''}${fmt(v)}</span>`;
   const pnlCell = v => `<span style="font-weight:700;color:${v >= 0 ? 'var(--green)' : 'var(--red)'}">${v >= 0 ? '+' : ''}${fmt(v)}</span>`;
   const escAttr = s => String(s||'').replace(/\\/g,'\\\\').replace(/'/g, "\\'").replace(/"/g,'&quot;');
-  const rows = pls.map(p => {
+  const rows = visPls.map(p => {
     const modelLabel = p.model === 'Custom' ? (p.modelCustom || 'Custom') : resolveModelDisplay(p.model);
     const foreign = lookupForeignName(p.name);
     const hasOverride = !!getOverride(p.name, monthKey);
@@ -7988,7 +8022,12 @@ function renderFinanceCourierView() {
     const fcValue = p.profile?.fleetCut?.value;
     const nameAttr = escAttr(p.name);
     return `<tr>
-      <td><div style="font-weight:600">${p.name}</div>${foreign?`<span class="d-foreign">${foreign}</span>`:''}</td>
+      <td>
+        <div class="fin-name-link" onclick="openFinanceCaptainPanel('${nameAttr}')" title="View captain summary">
+          <span class="fin-name-text" style="font-weight:600">${p.name}</span>
+        </div>
+        ${foreign?`<span class="d-foreign">${foreign}</span>`:''}
+      </td>
       <td><span class="${modelBadgeClass(p.model)}">${modelLabel}</span></td>
       <td style="text-align:right">${fmt(p.income)}</td>
       <td style="text-align:right">${signed(p.acctRent)}</td>
@@ -7998,33 +8037,58 @@ function renderFinanceCourierView() {
       <td style="text-align:right">${signed(p.other)}${otherLabel?`<div style="font-size:10px;color:var(--text-muted)">${otherLabel}</div>`:''}</td>
       <td style="text-align:right">${pnlCell(p.netPnL)}</td>
       <td style="text-align:right;white-space:nowrap">
-        <button class="finance-btn finance-btn-secondary" onclick="openCourierProfileModal('${nameAttr}')" title="Permanent deal — applies to ALL months (the default that carries everywhere unless a month-change overrides it)">Profile</button>
-        <button class="finance-btn finance-btn-secondary" onclick="openOverrideModal('${nameAttr}','${monthKey}')" title="Change a value from ${monthLabel(monthKey)} FORWARD only — earlier months keep their old value">${hasOverride?'✓ Changed':'Change ▸'}</button>
+        <button class="finance-btn finance-btn-secondary" onclick="openCourierProfileModal('${nameAttr}')" title="Permanent deal — applies to ALL months">Profile</button>
+        <button class="finance-btn finance-btn-secondary" onclick="openOverrideModal('${nameAttr}','${monthKey}')" title="Change a value from ${monthLabel(monthKey)} FORWARD only">${hasOverride?'✓ Changed':'Change ▸'}</button>
       </td>
     </tr>`;
   }).join('');
+  // Build dropdown list items for the multi-select
+  const ddItems = allDriverNames.map(n => {
+    const sel = finCourierSelected.has(n);
+    const safe = encodeURIComponent(n);
+    return `<div class="fin-dd-item${sel?' checked':''}" data-name="${escAttr(n)}" onmousedown="_toggleFinCourierInDd('${safe}')">
+      <span class="fin-dd-chk${sel?' on':''}">${sel?'✓':''}</span>
+      <span>${n}${lookupForeignName(n)?`<span style="color:var(--text-muted);font-size:11px;margin-left:4px">→ ${lookupForeignName(n)}</span>`:''}</span>
+    </div>`;
+  }).join('');
+  const hasFilt = finCourierSearch || finCourierSelected.size > 0;
+  const tagHtml = [...finCourierSelected].map(n => `<span class="fin-tag">${n}<span class="fin-tag-x" onmousedown="event.preventDefault();_removeFinCourierSel('${encodeURIComponent(n)}')">✕</span></span>`).join('');
   document.getElementById('financeMainContent').innerHTML = `
     <div class="finance-section">
       <div class="finance-section-header">
         <span class="finance-section-title">Per-Captain P&L — ${monthLabel(monthKey)}</span>
-        <span style="font-size:11px;color:var(--text-muted)">${pls.length} driver${pls.length===1?'':'s'}</span>
+        <span style="font-size:11px;color:var(--text-muted)">${visPls.length}${visPls.length!==allPls.length?` of ${allPls.length}`:''} driver${allPls.length===1?'':'s'}${hasFilt?' <span style="color:var(--amber)">filtered</span>':''}</span>
+      </div>
+      <div class="fin-filter-row">
+        <input type="text" class="fin-search-inp" placeholder="Search captain…" value="${finCourierSearch.replace(/"/g,'&quot;')}"
+          oninput="finCourierSearch=this.value;renderFinanceCourierView()" autocomplete="off">
+        <div class="fin-dd-wrap" id="finCourierDdWrap">
+          <div class="fin-dd-btn${finCourierSelected.size>0?' active':''}" onclick="toggleFinCourierDd()">
+            ▾ Filter${finCourierSelected.size>0?` (${finCourierSelected.size})`:''}
+          </div>
+          <div class="fin-dd-list hidden" id="finCourierDd">
+            <div class="fin-dd-search-row"><input type="text" placeholder="Search drivers…" oninput="filterFinCourierDdList(this.value)"></div>
+            <div id="finCourierDdItems">${ddItems}</div>
+          </div>
+        </div>
+        ${hasFilt ? `<div class="fin-tag-row">${tagHtml}${finCourierSelected.size>0||finCourierSearch?`<span style="font-size:11px;color:var(--text-muted);cursor:pointer;margin-left:4px" onclick="clearFinCourierFilter()">Clear all ✕</span>`:''}</div>` : ''}
       </div>
       <div style="overflow-x:auto"><table class="finance-table">
         <thead><tr>
-          <th class="${finThCls('name')}"    onclick="setFinanceSort('name')"    style="cursor:pointer;user-select:none">Driver${finArrow('name')}</th>
+          <th class="${finThCls('name')}"    onclick="setFinanceSort('name')"    style="cursor:pointer;user-select:none">Driver ${finArrow('name')}</th>
           <th>Model</th>
-          <th class="${finThCls('income')}"   onclick="setFinanceSort('income')"   style="cursor:pointer;user-select:none;text-align:right">Bolt Net${finArrow('income')}</th>
-          <th class="${finThCls('acctRent')}" onclick="setFinanceSort('acctRent')" style="cursor:pointer;user-select:none;text-align:right">Acct Rent${finArrow('acctRent')}</th>
-          <th class="${finThCls('carRent')}"  onclick="setFinanceSort('carRent')"  style="cursor:pointer;user-select:none;text-align:right">Car Rent${finArrow('carRent')}</th>
-          <th class="${finThCls('salary')}"   onclick="setFinanceSort('salary')"   style="cursor:pointer;user-select:none;text-align:right">Salary${finArrow('salary')}</th>
-          <th class="${finThCls('fleetCut')}" onclick="setFinanceSort('fleetCut')" style="cursor:pointer;user-select:none;text-align:right">Fleet Cut${finArrow('fleetCut')}</th>
-          <th class="${finThCls('other')}"    onclick="setFinanceSort('other')"    style="cursor:pointer;user-select:none;text-align:right">Other${finArrow('other')}</th>
-          <th class="${finThCls('netPnL')}"   onclick="setFinanceSort('netPnL')"   style="cursor:pointer;user-select:none;text-align:right">Net P&amp;L${finArrow('netPnL')}</th>
+          <th class="${finThCls('income')}"   onclick="setFinanceSort('income')"   style="cursor:pointer;user-select:none;text-align:right">Bolt Net ${finArrow('income')}</th>
+          <th class="${finThCls('acctRent')}" onclick="setFinanceSort('acctRent')" style="cursor:pointer;user-select:none;text-align:right">Acct Rent ${finArrow('acctRent')}</th>
+          <th class="${finThCls('carRent')}"  onclick="setFinanceSort('carRent')"  style="cursor:pointer;user-select:none;text-align:right">Car Rent ${finArrow('carRent')}</th>
+          <th class="${finThCls('salary')}"   onclick="setFinanceSort('salary')"   style="cursor:pointer;user-select:none;text-align:right">Salary ${finArrow('salary')}</th>
+          <th class="${finThCls('fleetCut')}" onclick="setFinanceSort('fleetCut')" style="cursor:pointer;user-select:none;text-align:right">Fleet Cut ${finArrow('fleetCut')}</th>
+          <th class="${finThCls('other')}"    onclick="setFinanceSort('other')"    style="cursor:pointer;user-select:none;text-align:right">Other ${finArrow('other')}</th>
+          <th class="${finThCls('netPnL')}"   onclick="setFinanceSort('netPnL')"   style="cursor:pointer;user-select:none;text-align:right">Net P&amp;L ${finArrow('netPnL')}</th>
           <th style="text-align:right">Actions</th>
         </tr></thead>
         <tbody>
-          ${rows}
-          <tr style="background:var(--bg-card2);font-weight:700">
+          ${rows || `<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--text-muted)">No captains match your filter</td></tr>`}
+          ${!hasFilt ? `<tr style="background:var(--bg-card2);font-weight:700">
             <td colspan="2">TOTAL</td>
             <td style="text-align:right">${fmt(tot.income)}</td>
             <td style="text-align:right">${signed(tot.acctRent)}</td>
@@ -8034,15 +8098,198 @@ function renderFinanceCourierView() {
             <td style="text-align:right">${signed(tot.other)}</td>
             <td style="text-align:right">${pnlCell(tot.netPnL)}</td>
             <td></td>
-          </tr>
+          </tr>` : ''}
         </tbody>
       </table></div>
       <div class="finance-kpi-row">
         <div class="finance-kpi"><div class="finance-kpi-label">Total Income</div><div class="finance-kpi-value">${fmt(tot.income)} SAR</div></div>
-        <div class="finance-kpi"><div class="finance-kpi-label">Drivers on Roster</div><div class="finance-kpi-value">${pls.length}</div></div>
+        <div class="finance-kpi"><div class="finance-kpi-label">Drivers on Roster</div><div class="finance-kpi-value">${allPls.length}</div></div>
         <div class="finance-kpi"><div class="finance-kpi-label">Fleet Net P&L</div><div class="finance-kpi-value ${tot.netPnL>=0?'positive':'negative'}">${tot.netPnL>=0?'+':''}${fmt(tot.netPnL)} SAR</div></div>
       </div>
     </div>
+  `;
+}
+// Finance By-Captain dropdown helpers
+function toggleFinCourierDd() {
+  const dd = document.getElementById('finCourierDd');
+  if (!dd) return;
+  dd.classList.toggle('hidden');
+  if (!dd.classList.contains('hidden')) dd.querySelector('input')?.focus();
+}
+function filterFinCourierDdList(val) {
+  const q = (val||'').toLowerCase();
+  document.querySelectorAll('#finCourierDdItems .fin-dd-item').forEach(el => {
+    el.style.display = (el.dataset.name||'').toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+function _toggleFinCourierInDd(encoded) {
+  const name = decodeURIComponent(encoded);
+  if (finCourierSelected.has(name)) finCourierSelected.delete(name);
+  else finCourierSelected.add(name);
+  renderFinanceCourierView();
+  // Keep the dropdown open and restore its search
+  requestAnimationFrame(() => { const dd = document.getElementById('finCourierDd'); if (dd) dd.classList.remove('hidden'); });
+}
+function _removeFinCourierSel(encoded) {
+  finCourierSelected.delete(decodeURIComponent(encoded));
+  renderFinanceCourierView();
+}
+function clearFinCourierFilter() {
+  finCourierSearch = '';
+  finCourierSelected.clear();
+  renderFinanceCourierView();
+}
+// Close dropdown on outside click
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('finCourierDdWrap');
+  if (wrap && !wrap.contains(e.target)) {
+    const dd = document.getElementById('finCourierDd');
+    if (dd) dd.classList.add('hidden');
+  }
+});
+
+// ─────────────────────────────────────────────────
+// Finance Captain Detail Panel
+// ─────────────────────────────────────────────────
+function openFinanceCaptainPanel(name) {
+  finCaptainCtx = { name, monthKey: financeMonth };
+  finCaptainSortCol = 'period';
+  finCaptainSortAsc = true;
+  renderFinanceCaptainPanel();
+  document.getElementById('finCaptainOverlay').classList.add('open');
+  document.getElementById('finCaptainPanel').classList.add('open');
+}
+
+function closeFinanceCaptainPanel() {
+  document.getElementById('finCaptainOverlay').classList.remove('open');
+  document.getElementById('finCaptainPanel').classList.remove('open');
+  finCaptainCtx = null;
+}
+
+function setFinCaptainSort(col) {
+  if (finCaptainSortCol === col) finCaptainSortAsc = !finCaptainSortAsc;
+  else { finCaptainSortCol = col; finCaptainSortAsc = col === 'period'; }
+  renderFinanceCaptainPanel();
+}
+
+function renderFinanceCaptainPanel() {
+  if (!finCaptainCtx) return;
+  const { name, monthKey } = finCaptainCtx;
+  const pnl = computeDriverPnL(name, monthKey);
+  const allHist = getDriverAllHistory('', name);
+  const monthRows = allHist.filter(h => getMonthKey(h.period) === monthKey);
+  const agg = aggregateDriverRows(monthRows);
+  const s = loadSettings();
+  const target = s.monthlyTarget || 0;
+
+  // Figure out the last uploaded day within this month for projection
+  const [y, m] = monthKey.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const maxDay = monthRows.length > 0
+    ? Math.max(...monthRows.map(h => parseInt((h.period||'').split(' ')[0] || 0)))
+    : 0;
+  const dailyNetAvg = agg.activeDays > 0 ? agg.net / agg.activeDays : 0;
+  const projected = maxDay > 0 && maxDay < daysInMonth
+    ? Math.round(agg.net / maxDay * daysInMonth)
+    : agg.net;
+  const pct = target > 0 ? Math.min(100, Math.round(agg.net / target * 100)) : 0;
+  const fillCls = pct >= 85 ? 'fill-green' : pct >= 55 ? 'fill-amber' : 'fill-red';
+
+  const foreign = lookupForeignName(name);
+  const modelLabel = pnl.model === 'Custom' ? (pnl.modelCustom || 'Custom') : resolveModelDisplay(pnl.model);
+
+  document.getElementById('finCaptainHeader').innerHTML = `
+    <div class="modal-avatar">${(name[0]||'?').toUpperCase()}</div>
+    <div>
+      <div class="modal-driver-name">${name}${foreign ? `<span class="d-foreign" style="font-size:13px;margin-left:6px">→ ${foreign}</span>` : ''}</div>
+      <div class="modal-driver-meta">${monthLabel(monthKey)} · <span class="${modelBadgeClass(pnl.model)}">${modelLabel}</span></div>
+    </div>
+    <div class="modal-close" onclick="closeFinanceCaptainPanel()">×</div>`;
+
+  const signed = v => v === 0 ? '—' : `<span style="font-weight:600;color:${v > 0 ? 'var(--green)' : 'var(--red)'}">${v > 0 ? '+' : ''}${fmt(v)} SAR</span>`;
+
+  // Sort day-by-day rows
+  const sortedRows = [...monthRows].sort((a, b) => {
+    if (finCaptainSortCol === 'period')  { return finCaptainSortAsc ? a.period.localeCompare(b.period) : b.period.localeCompare(a.period); }
+    const vals = { net: r => sN(r.d.netEarnings), km: r => sN(r.d.distanceTotal), hours: r => sN(r.d.hoursOnline), orders: r => sN(r.d.orders) };
+    const fn = vals[finCaptainSortCol] || (() => 0);
+    return finCaptainSortAsc ? fn(a) - fn(b) : fn(b) - fn(a);
+  });
+  const arrow = col => finCaptainSortCol === col ? (finCaptainSortAsc ? ' ↑' : ' ↓') : '';
+  const th = (col, lbl, align) =>
+    `<th${align?' class="td-r"':''} onclick="setFinCaptainSort('${col}')" style="cursor:pointer;user-select:none${align?';text-align:right':''}">${lbl}${arrow(col)}</th>`;
+
+  const totalCosts = Math.abs(pnl.acctRent + pnl.carRent + pnl.salary + pnl.fleetCut + pnl.other);
+  const costRows = [
+    { l: 'Acct Rent', v: pnl.acctRent }, { l: 'Car Rent', v: pnl.carRent },
+    { l: 'Salary', v: pnl.salary }, { l: 'Fleet Cut', v: pnl.fleetCut }, { l: 'Other', v: pnl.other },
+  ].filter(r => r.v !== 0);
+
+  document.getElementById('finCaptainBody').innerHTML = `
+    <div class="section-label">Finance Summary — ${monthLabel(monthKey)}</div>
+    <div class="kpi-grid-modal" style="margin-bottom:12px">
+      <div class="kpi-card"><div class="kpi-card-label">Bolt Net Income</div><div class="kpi-card-value" style="color:var(--cyan);font-size:17px">${fmt(pnl.income)}<span class="kpi-card-unit"> SAR</span></div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Total Costs</div><div class="kpi-card-value" style="color:${totalCosts>0?'var(--red)':'var(--text-muted)'};font-size:17px">${totalCosts>0?'-':''}${fmt(totalCosts)}<span class="kpi-card-unit"> SAR</span></div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Net P&L</div><div class="kpi-card-value" style="color:${pnl.netPnL>=0?'var(--green)':'var(--red)'};font-size:17px">${pnl.netPnL>=0?'+':''}${fmt(pnl.netPnL)}<span class="kpi-card-unit"> SAR</span></div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Avg Daily Net</div><div class="kpi-card-value" style="font-size:17px">${dailyNetAvg>0?fmt(Math.round(dailyNetAvg)):'—'}<span class="kpi-card-unit">${dailyNetAvg>0?' SAR/day':''}</span></div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Total KM</div><div class="kpi-card-value" style="font-size:17px">${agg.distance>0?fmt(agg.distance):'—'}<span class="kpi-card-unit">${agg.distance>0?' km':''}</span></div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Days Worked</div><div class="kpi-card-value" style="font-size:17px">${agg.activeDays}<span class="kpi-card-unit"> / ${daysInMonth}</span></div></div>
+    </div>
+
+    ${target > 0 ? `
+    <div class="section-label">Target Projection — ${monthLabel(monthKey)}</div>
+    <div style="background:var(--bg-card2);border:1px solid rgba(0,212,255,.08);border-radius:3px;padding:14px 16px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+        <div style="font-size:22px;font-family:var(--mono);color:var(--text)">${fmt(agg.net)} <small style="font-size:12px;color:var(--text-muted)">SAR earned</small></div>
+        <div style="font-size:12px;color:var(--text-muted)">target: ${fmt(target)} SAR · <b>${pct}%</b></div>
+      </div>
+      <div class="modal-progress-bg"><div class="modal-progress-fill ${fillCls}" style="width:${pct}%"></div></div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:11px;flex-wrap:wrap;gap:6px">
+        <div><span style="color:var(--text-muted)">Remaining</span> <b>${fmt(Math.max(0, target - agg.net))} SAR</b></div>
+        <div><span style="color:var(--text-muted)">Projected</span> <b style="color:${pct>=85?'var(--green)':pct>=55?'var(--amber)':'var(--red)'}">${fmt(projected)} SAR</b></div>
+        <div><span style="color:var(--text-muted)">Avg/day</span> <b>${fmt(Math.round(dailyNetAvg))} SAR</b></div>
+      </div>
+    </div>` : ''}
+
+    ${costRows.length ? `
+    <div class="section-label">Cost Breakdown</div>
+    <div style="background:var(--bg-card2);border:1px solid rgba(0,212,255,.08);border-radius:3px;padding:10px 14px;margin-bottom:12px">
+      ${costRows.map(r => `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(0,212,255,.05);font-size:12px">
+        <span style="color:var(--text-muted)">${r.l}</span>
+        <span style="font-family:var(--mono);font-weight:600;color:${r.v>=0?'var(--green)':'var(--red)'}">${r.v>=0?'+':''}${fmt(r.v)} SAR</span>
+      </div>`).join('')}
+    </div>` : ''}
+
+    <div class="section-label" style="display:flex;align-items:center;justify-content:space-between">
+      <span>Day-by-Day <span style="font-size:11px;color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">— ${monthRows.length} day${monthRows.length!==1?'s':''}</span></span>
+      <span style="font-size:10px;color:var(--text-muted)">Click column header to sort</span>
+    </div>
+    ${monthRows.length > 0 ? `
+    <table class="day-table">
+      <thead><tr>
+        ${th('period','Date',false)}
+        ${th('orders','Orders',true)}
+        ${th('hours','Hours',true)}
+        ${th('net','Net SAR',true)}
+        ${th('km','KM',true)}
+      </tr></thead>
+      <tbody>
+        ${sortedRows.map(h => `<tr>
+          <td>${h.period}</td>
+          <td class="td-r">${sN(h.d.orders)||'—'}</td>
+          <td class="td-r">${sN(h.d.hoursOnline)>0?sN(h.d.hoursOnline).toFixed(1)+'h':'—'}</td>
+          <td class="td-r" style="font-weight:600;color:${sN(h.d.netEarnings)>0?'var(--bolt-green)':'var(--text-muted)'}">${fmt(sN(h.d.netEarnings))}</td>
+          <td class="td-r">${sN(h.d.distanceTotal)>0?fmt(sN(h.d.distanceTotal))+' km':'—'}</td>
+        </tr>`).join('')}
+        <tr style="background:var(--bg-card2);font-weight:700">
+          <td>Total</td>
+          <td class="td-r">${agg.orders||'—'}</td>
+          <td class="td-r">${agg.hours>0?agg.hours.toFixed(1)+'h':'—'}</td>
+          <td class="td-r" style="color:var(--bolt-green)">${fmt(agg.net)}</td>
+          <td class="td-r">${agg.distance>0?fmt(agg.distance)+' km':'—'}</td>
+        </tr>
+      </tbody>
+    </table>` : `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">No working days found in ${monthLabel(monthKey)}</div>`}
   `;
 }
 
@@ -9811,22 +10058,21 @@ function triggerWarp() {
 // ═══════════════════════════════════════════
 // SCI-FI FEATURE 3 — BIOMETRIC SCAN
 // ═══════════════════════════════════════════
-function bioScanThenOpen(id, rowEl) {
+function bioScanThenOpen(id, rowEl, periodFilter) {
   const overlay = document.getElementById('bioScanOverlay');
   const box     = document.getElementById('bioScanBox');
-  if (!overlay || !box || !rowEl) { openModal(id); return; }
+  if (!overlay || !box || !rowEl) { openModal(id, periodFilter || null); return; }
   const rect = rowEl.getBoundingClientRect();
   Object.assign(box.style, {
     top: rect.top + 'px', left: rect.left + 'px',
     width: rect.width + 'px', height: rect.height + 'px',
   });
-  // Reset scan line animation
   const line = box.querySelector('.bio-scan-line');
   if (line) { line.style.animation = 'none'; void line.offsetHeight; line.style.animation = ''; }
   overlay.classList.add('active');
   setTimeout(() => {
     overlay.classList.remove('active');
-    openModal(id);
+    openModal(id, periodFilter || null);
   }, 460);
 }
 
