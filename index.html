@@ -1893,6 +1893,7 @@ function confirmUpload() {
   invalidateAlertCache();
   renderCaptains();
   renderHistory();
+  renderFinanceTab(); // refresh Transfer Log + all Finance views after upload
   checkCortexAlerts(currentDrivers, period);
   toast(`${currentDrivers.length} drivers saved for ${period}`);
   syncToCloud(); // auto-sync to cloud — manager sees it instantly
@@ -7280,7 +7281,14 @@ function deleteCycleReceipt(td) { const a = loadCycleReceipts(); delete a[td]; s
 // Called automatically on every CSV upload (confirmUpload).
 // Only records drivers where Bolt moved money (actualPayout ≠ 0).
 function loadTransferLog() { try { return JSON.parse(localStorage.getItem(TRANSFER_LOG_KEY) || '{}'); } catch(e) { return {}; } }
-function saveTransferLog(o) { localStorage.setItem(TRANSFER_LOG_KEY, JSON.stringify(o)); }
+function saveTransferLog(o) {
+  try {
+    localStorage.setItem(TRANSFER_LOG_KEY, JSON.stringify(o));
+  } catch(e) {
+    console.error('[TransferLog] Save failed:', e);
+    toast('⚠ Transfer log could not be saved — storage may be full. Try clearing old data.');
+  }
+}
 
 function recordTransfersFromUpload(cycleDateYMD, drivers) {
   if (!cycleDateYMD || !drivers || !drivers.length) return;
