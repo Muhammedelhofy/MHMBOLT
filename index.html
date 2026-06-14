@@ -2653,6 +2653,9 @@ function renderModalBody() {
     </div>
 
     <div class="section-label">Performance <span style="font-size:11px;color:${(filterActive||singleDayActive)?'var(--bolt-green)':'var(--text-muted)'};font-weight:400;text-transform:none;letter-spacing:0">— ${perfScope} (${agg.activeDays} worked)</span></div>
+    ${(agg.gross > 0 && agg.orders === 0) ? `<div style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:3px;padding:8px 12px;margin-bottom:10px;font-size:11px;color:var(--text-muted);line-height:1.5">
+      ⓘ Bolt reported <b style="color:var(--text)">earnings only</b> for this captain — no finished rides, acceptance, utilisation, rating or distance for this category. Hours (${agg.hours>0?agg.hours.toFixed(1):'0'}h) were derived from the per-hour rate; the dashes below are <b style="color:var(--text)">not in Bolt's data</b>, not a display error.
+    </div>` : ''}
     <div class="kpi-grid-modal">
       <div class="kpi-card"><div class="kpi-card-label">Hours Online</div><div class="kpi-card-value">${agg.hours>0?agg.hours.toFixed(1):'0'}<span class="kpi-card-unit"> h</span></div></div>
       <div class="kpi-card"><div class="kpi-card-label">Orders Done</div><div class="kpi-card-value">${agg.orders}</div></div>
