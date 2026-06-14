@@ -2007,17 +2007,30 @@ function mapDriver(row) {
   const collected    = n(col(row,'Collected cash'));
   const projected    = n(col(row,'Projected payout'));
   const actual       = n(col(row,'Actual payout'));
+  const grossTotal   = n(col(row,'Gross earnings (total)'));
+  const grossPerHr   = n(col(row,'Gross earnings per hour'));
+
+  // Hours: normally Online time (min) ÷ 60. But some Bolt rows (e.g. a driver on a
+  // category Bolt reports differently) leave "Online time (min)" blank and "Finished
+  // rides" at 0 while STILL reporting real earnings and a per-hour rate. In that case
+  // recover the hours from gross ÷ gross-per-hour so the captain isn't shown as 0h /
+  // "0 worked" despite having earned money. (gross 353 ÷ 60.44/h = 5.8h, etc.)
+  let hoursOnline = +(n(col(row,'Online time (min)')) / 60).toFixed(1);
+  if (hoursOnline === 0 && grossPerHr > 0 && grossTotal > 0) {
+    hoursOnline = +(grossTotal / grossPerHr).toFixed(1);
+  }
+
   return {
     name:             col(row,'Driver'),
     email:            col(row,'Email'),
     phone:            col(row,'Phone'),
     driverId:         col(row,'Driver identifier'),
-    hoursOnline:      +(n(col(row,'Online time (min)')) / 60).toFixed(1),
+    hoursOnline,
     orders,
     acceptance:       n(col(row,'Effective acceptance rate')),
     acceptanceTotal:  n(col(row,'Total acceptance rate')),
     netEarnings:      net,
-    grossEarnings:    n(col(row,'Gross earnings (total)')),
+    grossEarnings:    grossTotal,
     tips:             n(col(row,'Rider tips')),
     campaign:         n(col(row,'Campaign earnings')),
     commission:       n(col(row,'Commission fees')),
@@ -2050,7 +2063,11 @@ function mapDriver(row) {
     fleetCut:                cut,
     driverPayout:            cut !== null ? Math.max(0, net - cut) : null,
     tier,
-    isActive:                orders > 0,
+    // "Worked that day" = had finished rides OR earned gross. The gross>0 clause catches
+    // drivers whose rides Bolt reports without a finished-rides/online-time figure (see the
+    // hours-recovery note above) — without it their earnings were gated out of the captain
+    // table, showing 0 SAR / 0 worked despite real income.
+    isActive:                orders > 0 || grossTotal > 0,
   };
 }
 function parseTier(raw) {
@@ -2262,8 +2279,8 @@ function renderFleet(drivers, period) {
   }));
   const sorted     = sortDrivers(enriched);
   let display      = showInactive ? sorted : sorted.filter(d => d.isActive);
-  if (searchQuery) {
-    const q = searchQuery.toLowerCase();
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase();
     display = display.filter(d =>
       d.name.toLowerCase().includes(q) ||
       (d.phone && d.phone.toLowerCase().includes(q)) ||
@@ -2465,7 +2482,9 @@ function toggleInactive(el) {
   if (drivers) renderFleet(drivers, period);
 }
 function setSearch(q) {
-  searchQuery = (q || '').trim();
+  // Keep the raw value (incl. trailing spaces) so multi-word names can be typed —
+  // trimming here used to wipe the space the instant it was pressed. Matching trims.
+  searchQuery = (q || '');
   currentPage = 1;
   const { drivers, period } = getFleetData();
   if (drivers) {
@@ -5046,8 +5065,8 @@ function renderSingleDay(sorted) {
   // Get + filter + sort + paginate
   let display = getDailyDisplayDrivers(sorted);
   if (!dailyShowInactive2) display = display.filter(d => d.isActive);
-  if (dailySearch2) {
-    const q = dailySearch2.toLowerCase();
+  if (dailySearch2.trim()) {
+    const q = dailySearch2.trim().toLowerCase();
     display = display.filter(d =>
       d.name.toLowerCase().includes(q) ||
       (d.phone && d.phone.toLowerCase().includes(q))
@@ -5364,7 +5383,8 @@ function setDailySort(col) {
   renderDailyView();
 }
 function setDailySearch2(q) {
-  dailySearch2 = (q || '').trim();
+  // Keep raw value so spaces / multi-word names can be typed (see setCaptainSearch). Matching trims.
+  dailySearch2 = (q || '');
   dailyPage2   = 1;
   renderDailyView();
   const el = document.getElementById('dailySearchInput');
@@ -5486,7 +5506,9 @@ function setCaptainView(v) {
   renderCaptains();
 }
 function setCaptainSearch(q) {
-  captainSearch = (q || '').trim();
+  // Keep the raw value so a space (and multi-word names like "ayman suliman") can
+  // be typed — trimming on every keystroke used to swallow the space. Matching trims.
+  captainSearch = (q || '');
   renderCaptains();
   const inp = document.getElementById('captainSearchInput');
   if (inp) { inp.value = captainSearch; inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
@@ -6024,8 +6046,8 @@ function buildCourierSummaryTable(entries, searchFilter) {
   }));
 
   // Apply search filter
-  if (searchFilter) {
-    const q = searchFilter.toLowerCase();
+  if (searchFilter && searchFilter.trim()) {
+    const q = searchFilter.trim().toLowerCase();
     couriers = couriers.filter(c => {
       const foreign = lookupForeignName(c.name) || '';
       return c.name.toLowerCase().includes(q) || foreign.toLowerCase().includes(q);
@@ -8068,8 +8090,8 @@ function renderFinanceCourierView() {
         <span style="font-size:11px;color:var(--text-muted)">${visPls.length}${visPls.length!==allPls.length?` of ${allPls.length}`:''} driver${allPls.length===1?'':'s'}${hasFilt?' <span style="color:var(--amber)">filtered</span>':''}</span>
       </div>
       <div class="fin-filter-row">
-        <input type="text" class="fin-search-inp" placeholder="Search captain…" value="${finCourierSearch.replace(/"/g,'&quot;')}"
-          oninput="finCourierSearch=this.value;renderFinanceCourierView()" autocomplete="off">
+        <input type="text" id="finCourierSearchInput" class="fin-search-inp" placeholder="Search captain…" value="${finCourierSearch.replace(/"/g,'&quot;')}"
+          oninput="setFinCourierSearch(this.value)" autocomplete="off">
         <div class="fin-dd-wrap" id="finCourierDdWrap">
           <div class="fin-dd-btn${finCourierSelected.size>0?' active':''}" onclick="toggleFinCourierDd()">
             ▾ Filter${finCourierSelected.size>0?` (${finCourierSelected.size})`:''}
@@ -8123,6 +8145,17 @@ function toggleFinCourierDd() {
   if (!dd) return;
   dd.classList.toggle('hidden');
   if (!dd.classList.contains('hidden')) dd.querySelector('input')?.focus();
+}
+function setFinCourierSearch(val) {
+  // renderFinanceCourierView() rebuilds the whole panel (incl. this input), which
+  // destroyed the element and dropped keyboard focus after every keystroke — the
+  // "silent search" glitch. Re-render, then restore focus + caret to the new input.
+  finCourierSearch = val;
+  renderFinanceCourierView();
+  requestAnimationFrame(() => {
+    const el = document.getElementById('finCourierSearchInput');
+    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  });
 }
 function filterFinCourierDdList(val) {
   const q = (val||'').toLowerCase();
