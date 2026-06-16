@@ -11,11 +11,11 @@
 :root {
   --bolt-green: #00FFB3;
   --bolt-black: #04080F;
-  --bg:         #04080F;
-  --bg-card:    #06101E;
-  --bg-card2:   #091624;
+  --bg:         #0A0F18;
+  --bg-card:    #0D1622;
+  --bg-card2:   #111E2C;
   --border:     rgba(0,212,255,.12);
-  --text:       #C8E8FF;
+  --text:       #CDEAFF;
   --text-muted: #3A6080;
   --text-dim:   #1A3550;
   --red:        #FF4466;
@@ -42,22 +42,22 @@ select option, optgroup { background: var(--bg-card); color: var(--text); }
    whole dashboard stays readable for people who can't use the dark UI.
    ══════════════════════════════════════════ */
 html[data-theme="light"] {
-  --bolt-green: #0A8F6B;
-  --bolt-black: #E8EEF4;
-  --bg:         #EEF3F8;
+  --bolt-green: #0E9D6E;
+  --bolt-black: #FFFFFF;
+  --bg:         #F8FAFC;   /* clean soft white, not grey */
   --bg-card:    #FFFFFF;
-  --bg-card2:   #F3F7FB;
-  --border:     rgba(10,80,130,.18);
-  --text:       #0C2438;
-  --text-muted: #5A7185;
-  --text-dim:   #9CB0C2;
-  --red:        #D32F4B;
-  --amber:      #B5780A;
-  --green:      #0A8F6B;
-  --cyan:       #0A7FB5;
-  --red-bg:     rgba(211,47,75,.07);
-  --shadow-sm:  0 1px 4px rgba(10,40,70,.08);
-  --shadow:     0 2px 14px rgba(10,40,70,.10);
+  --bg-card2:   #F1F5F9;
+  --border:     rgba(15,23,42,.10);
+  --text:       #1E293B;   /* crisp dark slate, not washed */
+  --text-muted: #64748B;
+  --text-dim:   #94A3B8;
+  --red:        #DC2B4B;
+  --amber:      #C2790B;
+  --green:      #0E9D6E;
+  --cyan:       #0284C7;
+  --red-bg:     rgba(220,43,75,.06);
+  --shadow-sm:  0 1px 3px rgba(15,23,42,.06);
+  --shadow:     0 2px 12px rgba(15,23,42,.08);
   --glow-green: none;
   --glow-cyan:  none;
 }
