@@ -8994,7 +8994,7 @@ function buildFinanceModals() {
       <div class="fin-form-row"><label>Ambassador Model</label>
         <select id="cpAmbModel" onchange="onCpAmbModelChange(this.value)">
           <option value="">— none —</option>
-          <option value="A">A · Saudi driver transferred to fleet (500 if net ≥ 5,000)</option>
+          <option value="A">A · Saudi driver transferred to fleet (one-time 500 at first 5,000 net)</option>
           <option value="B">B · Saudi user rented to foreigner (monthly cut)</option>
           <option value="C">C · Existing foreigner on Saudi acct (500 if net ≥ 6,000)</option>
         </select>
@@ -9158,7 +9158,7 @@ function buildFinanceModals() {
 // ═══════════════════════════════════════════
 let ambMonth = '';
 const AMB_MODELS = {
-  A: { label:'Saudi driver → fleet (bonus 500 if net ≥ 5,000)', base:500, threshold:5000, color:'#22D3EE' },
+  A: { label:'Saudi driver → fleet (one-time 500 when driver first hits 5,000 net)', base:500, threshold:5000, color:'#22D3EE' },
   B: { label:'Saudi user rented to foreigner (monthly cut)',    base:300, threshold:0,    color:'#A78BFA' },
   C: { label:'Existing foreigner on Saudi acct (500 if net ≥ 6,000)', base:500, threshold:6000, color:'#34D399' }
 };
@@ -9188,13 +9188,29 @@ function effFirstTrip(name, profile) {
   return (profile && profile.ambFirstTrip) || detectFirstTrip(name) || null;
 }
 
+// Earliest month (YYYY-MM) across all uploaded data where the driver's monthly net
+// reaches `threshold`. Used for Model A's one-time bonus. Returns null if never hit.
+function firstAchieveMonth(name, threshold) {
+  let earliest = null;
+  for (const mk of getAvailableMonths()) {            // getAvailableMonths is newest→oldest
+    const [y, m] = mk.split('-').map(Number);
+    if (getMonthlyNet(null, name, m - 1, y) >= threshold) earliest = mk; // last write = oldest
+  }
+  return earliest;
+}
+
 // Payout owed to the ambassador for one driver in one month (monthKey 'YYYY-MM').
 function ambPayoutFor(name, profile, monthlyNet, monthKey) {
   const model = profile && profile.ambassadorModel;
   if (!model || !AMB_MODELS[model]) return { owed:0, qualifies:false, reason:'—' };
   if (model === 'A') {
-    const q = monthlyNet >= 5000;
-    return { owed: q ? 500 : 0, qualifies:q, reason: q ? 'Net ≥ 5,000' : `Net ${fmt(monthlyNet)} < 5,000` };
+    // One-time 500 to the ambassador, paid in the month the driver FIRST reaches
+    // 5,000 net (any month). Paid once total — 0 in every other month.
+    const fm = firstAchieveMonth(name, 5000);
+    if (!fm)             return { owed:0,   qualifies:false, reason:`Net ${fmt(monthlyNet)} < 5,000 (not yet)` };
+    if (fm === monthKey) return { owed:500, qualifies:true,  reason:'One-time 500 · first hit 5,000' };
+    if (fm <  monthKey)  return { owed:0,   qualifies:false, reason:`Already paid · ${monthLabel(fm)}` };
+    return { owed:0, qualifies:false, reason:`Not yet · first hits ${monthLabel(fm)}` };
   }
   if (model === 'B') {
     const cut = profile.ambCut != null ? profile.ambCut : 300;
