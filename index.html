@@ -9291,6 +9291,100 @@ function refreshAmbViews() {
   if (document.getElementById('ambassadors')?.classList.contains('active')) renderAmbassadors();
 }
 
+// Normalise a 1st-trip cell from the Excel/CSV to 'YYYY-MM-DD' (or '' if blank/bad).
+// Handles a real Date object, an Excel serial number, or a text date.
+function ambNormDate(v) {
+  if (v == null || v === '') return '';
+  if (v instanceof Date && !isNaN(v)) return ymdLocal(v);
+  if (typeof v === 'number') { const d = new Date(Math.round((v - 25569) * 86400 * 1000)); return isNaN(d) ? '' : ymdLocal(d); }
+  const s = String(v).trim();
+  const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return `${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`;
+  const d = new Date(s);
+  return isNaN(d) ? '' : ymdLocal(d);
+}
+
+// Bulk-assign ambassadors from the Excel/CSV template (same columns as
+// Bolt_Ambassador_Template). Columns by position:
+// 0 Driver(Saudi) · 1 Foreigner · 2 Ambassador · 3 Model(A/B/C) · 4 1st Trip ·
+// 5 Model-A amount · 6 Model-B rent · 7 Model-C extra · 8 Notes
+function handleAmbassadorFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb    = XLSX.read(new Uint8Array(e.target.result), { type:'array', cellDates:true });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows  = XLSX.utils.sheet_to_json(sheet, { header:1, blankrows:false });
+
+      // Known driver names from data + existing profiles, for typo warnings.
+      const knownKeys = new Set();
+      getHistory().forEach(h => (Array.isArray(h.drivers)?h.drivers:[]).forEach(d => { if (d.name) knownKeys.add(driverKey(d.name)); }));
+      Object.keys(loadCourierProfiles()).forEach(k => knownKeys.add(k));
+
+      const profiles = loadCourierProfiles();
+      const mapping  = Array.isArray(nameMapping) ? [...nameMapping] : [];
+      let applied = 0, mapped = 0, unknown = [], bad = [];
+
+      rows.forEach((r, i) => {
+        const saudi = (r[0] != null ? String(r[0]) : '').trim();
+        if (!saudi) return;
+        // Skip a header row
+        if (i === 0 && /driver|saudi|account|ambassador/i.test(saudi)) return;
+
+        const foreigner = (r[1] != null ? String(r[1]) : '').trim();
+        const amb       = (r[2] != null ? String(r[2]) : '').trim();
+        const model     = (r[3] != null ? String(r[3]) : '').trim().toUpperCase();
+        if (model && !['A','B','C'].includes(model)) { bad.push(`${saudi}: model "${r[3]}"`); return; }
+
+        const key = driverKey(saudi);
+        if (!knownKeys.has(key)) unknown.push(saudi);   // still applied — activates when data arrives
+
+        const num = v => (v != null && String(v).trim() !== '') ? (parseFloat(String(v).replace(/[^\d.\-]/g,'')) || 0) : null;
+        const base = profiles[key] || defaultProfile();
+        profiles[key] = { ...base,
+          ambassador:      amb || null,
+          ambassadorModel: model || null,
+          ambFirstTrip:    ambNormDate(r[4]) || base.ambFirstTrip || null,
+          ambAmtA:         model === 'A' ? num(r[5]) : base.ambAmtA,
+          ambCut:          model === 'B' ? num(r[6]) : base.ambCut,
+          ambExtra:        model === 'C' ? num(r[7]) : base.ambExtra,
+          notes:           (r[8] != null && String(r[8]).trim()) ? String(r[8]).trim() : base.notes,
+          _t: Date.now()
+        };
+        applied++;
+
+        // Maintain the Saudi→foreigner name map when a real name is given.
+        if (foreigner) {
+          const ex = mapping.find(x => driverKey(x.saudi) === key);
+          if (ex) ex.foreign = foreigner; else mapping.push({ saudi, foreign: foreigner });
+          mapped++;
+        }
+      });
+
+      if (!applied) { toast('No ambassador rows found — check the template columns'); return; }
+
+      saveCourierProfiles(profiles);
+      if (mapped) { nameMapping = mapping; localStorage.setItem('khair_name_mapping', JSON.stringify(mapping)); }
+      syncToCloud();
+      renderAmbassadors();
+      if (typeof renderMappingList === 'function') renderMappingList();
+
+      let msg = `Applied ${applied} ambassador assignment${applied===1?'':'s'}`;
+      if (mapped)        msg += ` · ${mapped} name map${mapped===1?'':'s'}`;
+      if (unknown.length) msg += ` · ⚠ ${unknown.length} name${unknown.length===1?'':'s'} not in data yet`;
+      toast(msg);
+      if (unknown.length) console.warn('Ambassador upload — names not matched to current data (check spelling):', unknown);
+      if (bad.length)     console.warn('Ambassador upload — rows skipped (bad model):', bad);
+    } catch (err) {
+      console.error(err);
+      toast('Could not parse the file — make sure it follows the template');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  const fi = document.getElementById('ambFileInput'); if (fi) fi.value = '';
+}
+
 function renderAmbassadors() {
   const el = document.getElementById('ambassadorsContent');
   if (!el) return;
@@ -9313,6 +9407,8 @@ function renderAmbassadors() {
         <select id="ambMonthSel" onchange="setAmbMonth(this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg)">${monthOpts}</select>
         <select id="ambAssignPicker" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);min-width:220px">${pickerOpts}</select>
         <button class="save-btn" onclick="ambAssignFromPicker()">Assign / Edit</button>
+        <input type="file" id="ambFileInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleAmbassadorFile(this.files[0])">
+        <button class="save-btn" style="background:#fff;color:var(--text-muted);border:1px solid var(--border)" onclick="document.getElementById('ambFileInput').click()" title="Bulk-assign ambassadors from the Excel template">⬆ Upload Excel</button>
       </div>
     </div>`;
 
