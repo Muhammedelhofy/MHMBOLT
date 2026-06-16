@@ -8996,7 +8996,7 @@ function buildFinanceModals() {
           <option value="">— none —</option>
           <option value="A">A · Saudi driver transferred to fleet (one-time 500 at first 5,000 net)</option>
           <option value="B">B · Saudi user rented to foreigner (monthly cut)</option>
-          <option value="C">C · Existing foreigner on Saudi acct (500 if net ≥ 6,000)</option>
+          <option value="C">C · Existing foreigner on Saudi acct (one-time 500/+200 at first 6,000 net)</option>
         </select>
       </div>
       <div class="fin-form-row" id="cpAmbFirstTripRow" style="display:none"><label>1st Trip Date <span id="cpAmbFirstTripAuto" style="font-size:11px;color:var(--text-muted)"></span></label>
@@ -9160,7 +9160,7 @@ let ambMonth = '';
 const AMB_MODELS = {
   A: { label:'Saudi driver → fleet (one-time 500 when driver first hits 5,000 net)', base:500, threshold:5000, color:'#22D3EE' },
   B: { label:'Saudi user rented to foreigner (monthly cut)',    base:300, threshold:0,    color:'#A78BFA' },
-  C: { label:'Existing foreigner on Saudi acct (500 if net ≥ 6,000)', base:500, threshold:6000, color:'#34D399' }
+  C: { label:'Existing foreigner on Saudi acct (one-time 500/+200 at first 6,000 net)', base:500, threshold:6000, color:'#34D399' }
 };
 
 // Earliest YYYY-MM-DD this driver shows any trips/earnings in uploaded history.
@@ -9229,9 +9229,14 @@ function ambPayoutFor(name, profile, monthlyNet, monthKey) {
     return { owed, qualifies: owed > 0, reason: `Rent · ${billDays}/${dim} days (from day ${startDay})` };
   }
   if (model === 'C') {
-    const q = monthlyNet >= 6000;
+    // One-time 500 (+200 if customer-support add-on) to the ambassador, paid in the
+    // month the driver FIRST reaches 6,000 net (any month). Paid once total.
     const extra = profile.ambSupport ? 200 : 0;
-    return { owed: q ? 500 + extra : 0, qualifies:q, reason: q ? `Net ≥ 6,000${extra?' + support':''}` : `Net ${fmt(monthlyNet)} < 6,000` };
+    const fm = firstAchieveMonth(name, 6000);
+    if (!fm)             return { owed:0, qualifies:false, reason:`Net ${fmt(monthlyNet)} < 6,000 (not yet)` };
+    if (fm === monthKey) return { owed:500+extra, qualifies:true, reason:`One-time ${500+extra}${extra?' (+support)':''} · first hit 6,000` };
+    if (fm <  monthKey)  return { owed:0, qualifies:false, reason:`Already paid · ${monthLabel(fm)}` };
+    return { owed:0, qualifies:false, reason:`Not yet · first hits ${monthLabel(fm)}` };
   }
   return { owed:0, qualifies:false, reason:'—' };
 }
