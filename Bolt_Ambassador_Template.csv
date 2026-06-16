@@ -1,4 +1,4 @@
-Driver (Saudi account name),Foreigner (real driver),Ambassador,Model (A/B/C),1st Trip Date (YYYY-MM-DD),Model B Cut (SAR),Model C Support (Y/N),Notes
-MOHAMMED ALSAUDI,,Omar,A,,,,Saudi driver transferred to fleet
-ABDULLAH ALQAHTANI,Rakesh Kumar,Sami,B,2026-05-20,300,,Saudi user rented to foreigner
-FAHAD ALOTAIBI,John Doe,Khalid,C,,,Y,Existing foreigner + customer support
+Driver (Saudi account name),Foreigner (real driver),Ambassador,Model (A/B/C),1st Trip Date (YYYY-MM-DD),Model A monthly amount (SAR),Model B monthly rent (500 or 800),Model C extra bonus (SAR),Notes
+MOHAMMED ALSAUDI,,Omar,A,,200,,,Saudi driver; Saudi gets 500/mo + Omar 200/mo when net >= 5000
+ABDULLAH ALQAHTANI,Rakesh Kumar,Sami,B,2026-05-20,,800,,Two accounts (Bolt+Uber); foreigner rent IN entered in dashboard
+FAHAD ALOTAIBI,John Doe,Khalid,C,,,,300,Existing foreigner; one-time 500 + 300 extra at first 6000

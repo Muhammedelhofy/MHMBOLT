@@ -7225,9 +7225,10 @@ function defaultProfile() {
     other:{label:'',dir:'NONE',amount:0}, notes:'', startDate: null, funnel: null, blocked: false,
     // Ambassador referral tracking (separate from the vehicle "model" field above).
     // ambassadorModel: 'A' | 'B' | 'C' | null. ambFirstTrip overrides the auto-detected
-    // first-trip date. ambCut = ambassador's negotiated monthly cut for Model B (default 300).
-    // ambSupport = Model C customer-support add-on (+200) toggle.
-    ambassador: null, ambassadorModel: null, ambFirstTrip: null, ambCut: null, ambSupport: false };
+    // first-trip date. ambAmtA = Model A monthly ambassador amount (default 200).
+    // ambCut = Model B monthly rent paid to the ambassador (default 500; 800 for 2 accounts).
+    // ambExtra = Model C one-time extra bonus on top of the 500 (default 0).
+    ambassador: null, ambassadorModel: null, ambFirstTrip: null, ambAmtA: null, ambCut: null, ambExtra: null };
 }
 // Computes a salaried driver's pay from their net earnings: base at threshold, stepping
 // ±perK for each FULL 1,000 SAR above/below the threshold, clamped at 0 (no negative pay).
@@ -7563,13 +7564,16 @@ function computeDriverPnL(name, monthKey) {
                  : fc.type === 'PCT'  ? -(income * (fc.value || 0) / 100)
                  : 0;
   const other    = sign(p.other?.dir, p.other?.amount || 0);
-  // Ambassador bonus is money the fleet PAYS OUT (a cost) — fold it into the P&L so
-  // "rent in vs out" nets correctly. ambPayoutFor returns the owed amount by model.
-  const ambP     = ambPayoutFor(name, p, income, monthKey);
-  const ambCost  = -(ambP.owed || 0);
-  const netPnL   = income + acctRent + carRent + salary + fleetCut + other + ambCost;
+  // Bonuses are money the fleet PAYS OUT — fold into the P&L so rent-in vs out nets
+  // correctly. Two pieces: the ambassador's payout (ambPayoutFor) and, for Model A,
+  // the Saudi driver's own 500/month whenever he nets ≥ 5,000.
+  const ambP      = ambPayoutFor(name, p, income, monthKey);
+  const ambOwed   = ambP.owed || 0;
+  const saudiA    = (p.ambassadorModel === 'A' && income >= 5000) ? 500 : 0;
+  const bonusCost = -(ambOwed + saudiA);
+  const netPnL    = income + acctRent + carRent + salary + fleetCut + other + bonusCost;
   return { name, model:p.model, modelCustom:p.modelCustom, income, acctRent, carRent, salary, fleetCut, other,
-           ambCost, ambPayout:ambP, ambassador:p.ambassador||null, ambModel:p.ambassadorModel||null, netPnL, profile:p };
+           ambOwed, saudiA, bonusCost, ambPayout:ambP, ambassador:p.ambassador||null, ambModel:p.ambassadorModel||null, netPnL, profile:p };
 }
 function getDriversInMonth(monthKey) {
   const [y, m] = monthKey.split('-').map(Number);
@@ -8064,8 +8068,8 @@ function renderFinanceCourierView() {
     income: a.income + p.income, acctRent: a.acctRent + p.acctRent,
     carRent: a.carRent + p.carRent, salary: a.salary + p.salary,
     fleetCut: a.fleetCut + p.fleetCut, other: a.other + p.other,
-    ambCost: a.ambCost + p.ambCost, netPnL: a.netPnL + p.netPnL
-  }), { income:0, acctRent:0, carRent:0, salary:0, fleetCut:0, other:0, ambCost:0, netPnL:0 });
+    bonusCost: a.bonusCost + p.bonusCost, netPnL: a.netPnL + p.netPnL
+  }), { income:0, acctRent:0, carRent:0, salary:0, fleetCut:0, other:0, bonusCost:0, netPnL:0 });
   const signed = v => v === 0 ? '—' : `<span style="color:${v > 0 ? 'var(--green)' : 'var(--red)'}">${v > 0 ? '+' : ''}${fmt(v)}</span>`;
   const pnlCell = v => `<span style="font-weight:700;color:${v >= 0 ? 'var(--green)' : 'var(--red)'}">${v >= 0 ? '+' : ''}${fmt(v)}</span>`;
   const escAttr = s => String(s||'').replace(/\\/g,'\\\\').replace(/'/g, "\\'").replace(/"/g,'&quot;');
@@ -8103,7 +8107,7 @@ function renderFinanceCourierView() {
       <td style="text-align:right">${signed(p.salary)}</td>
       <td style="text-align:right">${signed(p.fleetCut)}${fcType==='PCT'?`<div style="font-size:10px;color:var(--text-muted)">${fcValue}%</div>`:''}</td>
       <td style="text-align:right">${signed(p.other)}${otherLabel?`<div style="font-size:10px;color:var(--text-muted)">${otherLabel}</div>`:''}</td>
-      <td style="text-align:right">${signed(p.ambCost)}${p.ambModel?`<div style="font-size:10px;color:${p.ambPayout&&p.ambPayout.qualifies?'var(--text-muted)':'var(--amber)'}">${p.ambassador?p.ambassador+' ':''}${p.ambModel}</div>`:''}</td>
+      <td style="text-align:right">${signed(p.bonusCost)}${(p.ambModel||p.saudiA)?`<div style="font-size:10px;color:${p.ambPayout&&p.ambPayout.qualifies?'var(--text-muted)':'var(--amber)'}">${p.ambOwed?`${p.ambassador||'Amb'} ${fmt(p.ambOwed)}`:''}${p.saudiA?`${p.ambOwed?' · ':''}Saudi ${fmt(p.saudiA)}`:''}${(!p.ambOwed&&!p.saudiA)?p.ambModel:''}</div>`:''}</td>
       <td style="text-align:right">${pnlCell(p.netPnL)}</td>
       <td style="text-align:right;white-space:nowrap">
         <button class="finance-btn finance-btn-secondary" onclick="openCourierProfileModal('${nameAttr}')" title="Permanent deal — applies to ALL months">Profile</button>
@@ -8153,7 +8157,7 @@ function renderFinanceCourierView() {
           <th class="${finThCls('salary')}"   onclick="setFinanceSort('salary')"   style="cursor:pointer;user-select:none;text-align:right">Salary ${finArrow('salary')}</th>
           <th class="${finThCls('fleetCut')}" onclick="setFinanceSort('fleetCut')" style="cursor:pointer;user-select:none;text-align:right">Fleet Cut ${finArrow('fleetCut')}</th>
           <th class="${finThCls('other')}"    onclick="setFinanceSort('other')"    style="cursor:pointer;user-select:none;text-align:right">Other ${finArrow('other')}</th>
-          <th class="${finThCls('ambCost')}"  onclick="setFinanceSort('ambCost')"  style="cursor:pointer;user-select:none;text-align:right" title="Ambassador bonus paid">Amb. ${finArrow('ambCost')}</th>
+          <th class="${finThCls('bonusCost')}"  onclick="setFinanceSort('bonusCost')"  style="cursor:pointer;user-select:none;text-align:right" title="Bonuses paid out (ambassador + Model-A Saudi 500)">Bonuses ${finArrow('bonusCost')}</th>
           <th class="${finThCls('netPnL')}"   onclick="setFinanceSort('netPnL')"   style="cursor:pointer;user-select:none;text-align:right">Net P&amp;L ${finArrow('netPnL')}</th>
           <th style="text-align:right">Actions</th>
         </tr></thead>
@@ -8167,7 +8171,7 @@ function renderFinanceCourierView() {
             <td style="text-align:right">${signed(tot.salary)}</td>
             <td style="text-align:right">${signed(tot.fleetCut)}</td>
             <td style="text-align:right">${signed(tot.other)}</td>
-            <td style="text-align:right">${signed(tot.ambCost)}</td>
+            <td style="text-align:right">${signed(tot.bonusCost)}</td>
             <td style="text-align:right">${pnlCell(tot.netPnL)}</td>
             <td></td>
           </tr>` : ''}
@@ -8994,25 +8998,26 @@ function buildFinanceModals() {
       <div class="fin-form-row"><label>Ambassador Model</label>
         <select id="cpAmbModel" onchange="onCpAmbModelChange(this.value)">
           <option value="">— none —</option>
-          <option value="A">A · Saudi driver transferred to fleet (one-time 500 at first 5,000 net)</option>
-          <option value="B">B · Saudi user rented to foreigner (monthly cut)</option>
-          <option value="C">C · Existing foreigner on Saudi acct (one-time 500/+200 at first 6,000 net)</option>
+          <option value="A">A · Saudi driver transferred to fleet (monthly amount when net ≥ 5,000)</option>
+          <option value="B">B · Saudi user rented to foreigner (monthly rent 500 / 800)</option>
+          <option value="C">C · Existing foreigner on Saudi acct (one-time 500 + extra at first 6,000)</option>
         </select>
       </div>
       <div class="fin-form-row" id="cpAmbFirstTripRow" style="display:none"><label>1st Trip Date <span id="cpAmbFirstTripAuto" style="font-size:11px;color:var(--text-muted)"></span></label>
         <input type="date" id="cpAmbFirstTrip" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box">
         <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Auto-detected from earliest data. Override here if needed. Model B rent activates from this date.</div>
       </div>
-      <div class="fin-form-row" id="cpAmbCutRow" style="display:none"><label>Ambassador monthly cut — Model B (SAR)</label>
-        <input type="number" id="cpAmbCut" placeholder="Default 300" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box">
-        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">The Saudi-user pool is up to 800 SAR; enter what the ambassador keeps after his deal with the Saudi (e.g. 300).</div>
+      <div class="fin-form-row" id="cpAmbAmtARow" style="display:none"><label>Ambassador monthly amount — Model A (SAR)</label>
+        <input type="number" id="cpAmbAmtA" placeholder="Default 200" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box">
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Paid to the ambassador every month the Saudi driver nets ≥ 5,000 (e.g. 150 or 200). The Saudi driver's own 500/month is added automatically.</div>
       </div>
-      <div class="fin-form-row" id="cpAmbSupportRow" style="display:none">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="cpAmbSupport" class="checkbox-toggle">
-          <span>Model C support add-on (+200)</span>
-          <span style="font-size:11px;color:var(--text-muted)">(photos / unblocking / customer support)</span>
-        </label>
+      <div class="fin-form-row" id="cpAmbCutRow" style="display:none"><label>Monthly rent to ambassador — Model B (SAR)</label>
+        <input type="number" id="cpAmbCut" placeholder="Default 500" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box">
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Full rent we pay the ambassador: 500 for one account (Bolt), 800 for two (Bolt + Uber). He handles the Saudi split himself. The foreigner's incoming rent goes in the Acct/Car Rent (IN) fields above.</div>
+      </div>
+      <div class="fin-form-row" id="cpAmbExtraRow" style="display:none"><label>Model C one-time extra bonus (SAR)</label>
+        <input type="number" id="cpAmbExtra" placeholder="Default 0" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box">
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">On top of the one-time 500 (paid when the foreigner first hits 6,000). Leave 0 for none.</div>
       </div>
       <div class="fin-form-row"><label>Notes (optional)</label>
         <input type="text" id="cpNotes" placeholder="Free text — e.g. Saudi owner name">
@@ -9158,9 +9163,9 @@ function buildFinanceModals() {
 // ═══════════════════════════════════════════
 let ambMonth = '';
 const AMB_MODELS = {
-  A: { label:'Saudi driver → fleet (one-time 500 when driver first hits 5,000 net)', base:500, threshold:5000, color:'#22D3EE' },
-  B: { label:'Saudi user rented to foreigner (monthly cut)',    base:300, threshold:0,    color:'#A78BFA' },
-  C: { label:'Existing foreigner on Saudi acct (one-time 500/+200 at first 6,000 net)', base:500, threshold:6000, color:'#34D399' }
+  A: { label:'Saudi driver → fleet (monthly amount to ambassador when driver nets ≥ 5,000; Saudi also gets 500/mo)', base:200, threshold:5000, color:'#22D3EE' },
+  B: { label:'Saudi user rented to foreigner (monthly rent to ambassador: 500 / 800 for 2 accounts)', base:500, threshold:0, color:'#A78BFA' },
+  C: { label:'Existing foreigner on Saudi acct (one-time 500 + extra at first 6,000 net)', base:500, threshold:6000, color:'#34D399' }
 };
 
 // Earliest YYYY-MM-DD this driver shows any trips/earnings in uploaded history.
@@ -9204,16 +9209,14 @@ function ambPayoutFor(name, profile, monthlyNet, monthKey) {
   const model = profile && profile.ambassadorModel;
   if (!model || !AMB_MODELS[model]) return { owed:0, qualifies:false, reason:'—' };
   if (model === 'A') {
-    // One-time 500 to the ambassador, paid in the month the driver FIRST reaches
-    // 5,000 net (any month). Paid once total — 0 in every other month.
-    const fm = firstAchieveMonth(name, 5000);
-    if (!fm)             return { owed:0,   qualifies:false, reason:`Net ${fmt(monthlyNet)} < 5,000 (not yet)` };
-    if (fm === monthKey) return { owed:500, qualifies:true,  reason:'One-time 500 · first hit 5,000' };
-    if (fm <  monthKey)  return { owed:0,   qualifies:false, reason:`Already paid · ${monthLabel(fm)}` };
-    return { owed:0, qualifies:false, reason:`Not yet · first hits ${monthLabel(fm)}` };
+    // Monthly amount to the ambassador, any month the Saudi driver nets ≥ 5,000.
+    // (The Saudi driver's own 500/month is added separately in computeDriverPnL.)
+    const amt = profile.ambAmtA != null ? profile.ambAmtA : 200;
+    const q = monthlyNet >= 5000;
+    return { owed: q ? amt : 0, qualifies:q, reason: q ? 'Monthly · net ≥ 5,000' : `Net ${fmt(monthlyNet)} < 5,000` };
   }
   if (model === 'B') {
-    const cut = profile.ambCut != null ? profile.ambCut : 300;
+    const cut = profile.ambCut != null ? profile.ambCut : 500;
     const ft = effFirstTrip(name, profile);
     if (!ft) return { owed:0, qualifies:false, reason:'No 1st trip yet' };
     const ftMonth = ft.slice(0,7);
@@ -9229,12 +9232,12 @@ function ambPayoutFor(name, profile, monthlyNet, monthKey) {
     return { owed, qualifies: owed > 0, reason: `Rent · ${billDays}/${dim} days (from day ${startDay})` };
   }
   if (model === 'C') {
-    // One-time 500 (+200 if customer-support add-on) to the ambassador, paid in the
-    // month the driver FIRST reaches 6,000 net (any month). Paid once total.
-    const extra = profile.ambSupport ? 200 : 0;
+    // One-time 500 + optional extra bonus to the ambassador, paid in the month the
+    // driver FIRST reaches 6,000 net (any month). Paid once total.
+    const extra = profile.ambExtra != null ? profile.ambExtra : 0;
     const fm = firstAchieveMonth(name, 6000);
     if (!fm)             return { owed:0, qualifies:false, reason:`Net ${fmt(monthlyNet)} < 6,000 (not yet)` };
-    if (fm === monthKey) return { owed:500+extra, qualifies:true, reason:`One-time ${500+extra}${extra?' (+support)':''} · first hit 6,000` };
+    if (fm === monthKey) return { owed:500+extra, qualifies:true, reason:`One-time ${500+extra}${extra?` (500+${extra})`:''} · first hit 6,000` };
     if (fm <  monthKey)  return { owed:0, qualifies:false, reason:`Already paid · ${monthLabel(fm)}` };
     return { owed:0, qualifies:false, reason:`Not yet · first hits ${monthLabel(fm)}` };
   }
@@ -9414,16 +9417,19 @@ function openCourierProfileModal(name) {
   const detected = detectFirstTrip(name);
   document.getElementById('cpAmbFirstTrip').value = profile.ambFirstTrip || detected || '';
   document.getElementById('cpAmbFirstTripAuto').textContent = detected ? `(auto: ${detected})` : '(no trips in data yet)';
+  document.getElementById('cpAmbAmtA').value = profile.ambAmtA != null ? profile.ambAmtA : '';
   document.getElementById('cpAmbCut').value = profile.ambCut != null ? profile.ambCut : '';
-  document.getElementById('cpAmbSupport').checked = !!profile.ambSupport;
+  document.getElementById('cpAmbExtra').value = profile.ambExtra != null ? profile.ambExtra : '';
   onCpAmbModelChange(profile.ambassadorModel || '');
   document.getElementById('courierProfileModal').classList.add('open');
 }
 function closeCourierProfileModal() { document.getElementById('courierProfileModal').classList.remove('open'); }
 function onCpAmbModelChange(m) {
-  document.getElementById('cpAmbFirstTripRow').style.display = m ? 'block' : 'none';
-  document.getElementById('cpAmbCutRow').style.display      = (m === 'B') ? 'block' : 'none';
-  document.getElementById('cpAmbSupportRow').style.display  = (m === 'C') ? 'block' : 'none';
+  // 1st-trip is only relevant for Model B (rent activation); A/C use first-achievement.
+  document.getElementById('cpAmbFirstTripRow').style.display = (m === 'B') ? 'block' : 'none';
+  document.getElementById('cpAmbAmtARow').style.display  = (m === 'A') ? 'block' : 'none';
+  document.getElementById('cpAmbCutRow').style.display   = (m === 'B') ? 'block' : 'none';
+  document.getElementById('cpAmbExtraRow').style.display = (m === 'C') ? 'block' : 'none';
 }
 function onCpModelChange(m) { document.getElementById('cpModelCustom').style.display = (m === 'Custom') ? 'block' : 'none'; }
 function onCpAutoSalaryToggle() {
@@ -9490,8 +9496,9 @@ function saveCourierProfileFromModal() {
     ambassador: document.getElementById('cpAmbassador').value.trim() || null,
     ambassadorModel: document.getElementById('cpAmbModel').value || null,
     ambFirstTrip: document.getElementById('cpAmbFirstTrip').value || null,
+    ambAmtA: document.getElementById('cpAmbAmtA').value !== '' ? (parseFloat(document.getElementById('cpAmbAmtA').value) || 0) : null,
     ambCut: document.getElementById('cpAmbCut').value !== '' ? (parseFloat(document.getElementById('cpAmbCut').value) || 0) : null,
-    ambSupport: document.getElementById('cpAmbSupport').checked || false
+    ambExtra: document.getElementById('cpAmbExtra').value !== '' ? (parseFloat(document.getElementById('cpAmbExtra').value) || 0) : null
   };
   if (!confirmDirNone([
     { label:'Account Rent', dir:profile.accountRent.dir, amount:profile.accountRent.amount },
