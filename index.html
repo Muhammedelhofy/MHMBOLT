@@ -9197,10 +9197,20 @@ function ambPayoutFor(name, profile, monthlyNet, monthKey) {
     return { owed: q ? 500 : 0, qualifies:q, reason: q ? 'Net ≥ 5,000' : `Net ${fmt(monthlyNet)} < 5,000` };
   }
   if (model === 'B') {
-    const ft = effFirstTrip(name, profile);
-    const active = !!(ft && ft.slice(0,7) <= monthKey);
     const cut = profile.ambCut != null ? profile.ambCut : 300;
-    return { owed: active ? cut : 0, qualifies: active, reason: active ? 'Rent active' : (ft ? `Starts ${ft}` : 'No 1st trip yet') };
+    const ft = effFirstTrip(name, profile);
+    if (!ft) return { owed:0, qualifies:false, reason:'No 1st trip yet' };
+    const ftMonth = ft.slice(0,7);
+    if (ftMonth > monthKey) return { owed:0, qualifies:false, reason:`Starts ${ft}` };
+    if (ftMonth < monthKey) return { owed:cut, qualifies:true, reason:'Rent active (full month)' };
+    // First month: charge only the days from the 1st-trip day to month end.
+    // e.g. start on the 20th of a 30-day month → 11 of 30 days billed.
+    const [yy, mm] = monthKey.split('-').map(Number);
+    const dim = new Date(yy, mm, 0).getDate();
+    const startDay = parseInt(ft.slice(8,10), 10) || 1;
+    const billDays = Math.max(0, dim - startDay + 1);
+    const owed = Math.round(cut * billDays / dim);
+    return { owed, qualifies: owed > 0, reason: `Rent · ${billDays}/${dim} days (from day ${startDay})` };
   }
   if (model === 'C') {
     const q = monthlyNet >= 6000;
