@@ -29,6 +29,66 @@
   --glow-cyan:  0 0 12px rgba(0,212,255,.3);
   --mono:       'Share Tech Mono', 'Courier New', monospace;
 }
+
+/* ── Dropdown option readability (both themes) ──
+   Native <option> popups default to OS colours (black text on white),
+   which were unreadable against the dark selects. Pin them to the theme. */
+select, option { color: var(--text); }
+select option, optgroup { background: var(--bg-card); color: var(--text); }
+
+/* ══════════════════════════════════════════
+   LIGHT THEME  (toggled via html[data-theme="light"])
+   Re-maps the core palette + the few hard-coded dark surfaces so the
+   whole dashboard stays readable for people who can't use the dark UI.
+   ══════════════════════════════════════════ */
+html[data-theme="light"] {
+  --bolt-green: #0A8F6B;
+  --bolt-black: #E8EEF4;
+  --bg:         #EEF3F8;
+  --bg-card:    #FFFFFF;
+  --bg-card2:   #F3F7FB;
+  --border:     rgba(10,80,130,.18);
+  --text:       #0C2438;
+  --text-muted: #5A7185;
+  --text-dim:   #9CB0C2;
+  --red:        #D32F4B;
+  --amber:      #B5780A;
+  --green:      #0A8F6B;
+  --cyan:       #0A7FB5;
+  --red-bg:     rgba(211,47,75,.07);
+  --shadow-sm:  0 1px 4px rgba(10,40,70,.08);
+  --shadow:     0 2px 14px rgba(10,40,70,.10);
+  --glow-green: none;
+  --glow-cyan:  none;
+}
+/* Kill the neon scan-line + heavy text glows that look broken on light */
+html[data-theme="light"] body::after { display:none; }
+html[data-theme="light"] .header-logo,
+html[data-theme="light"] .header-clock,
+html[data-theme="light"] .tab.active,
+html[data-theme="light"] .heat-high,
+html[data-theme="light"] .model-S,
+html[data-theme="light"] .model-X,
+html[data-theme="light"] .model-B,
+html[data-theme="light"] .model-F,
+html[data-theme="light"] .model-R { text-shadow:none !important; }
+/* Hard-coded dark surfaces → light equivalents */
+html[data-theme="light"] .header { background:#FFFFFF; border-bottom:1px solid rgba(10,80,130,.15); box-shadow:0 1px 8px rgba(10,40,70,.08); }
+html[data-theme="light"] .tabs   { background:#FFFFFF; border-bottom:1px solid rgba(10,80,130,.12); }
+html[data-theme="light"] .fin-dd-list,
+html[data-theme="light"] .fin-dd-search-row,
+html[data-theme="light"] .cd-dropdown-panel,
+html[data-theme="light"] .modal-panel,
+html[data-theme="light"] .owes-detail-popup,
+html[data-theme="light"] .voice-toast,
+html[data-theme="light"] .cortex-alert,
+html[data-theme="light"] .crp-box,
+html[data-theme="light"] #m8Picker,
+html[data-theme="light"] #smTooltip,
+html[data-theme="light"] #smOpsTip { background:#FFFFFF !important; }
+html[data-theme="light"] .finance-table tbody tr:hover td:first-child { background:#EAF1F8 !important; }
+html[data-theme="light"] .heat-high { color:#0A8F6B !important; }
+
 /* ── Reset + Base ── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100vh; }
@@ -1425,6 +1485,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
     <div class="sync-dot offline" id="syncDot" title="Cloud sync status"></div>
     <div class="sync-label" id="syncLabel">not synced</div>
     <button id="pullBtn" class="upload-btn-header" onclick="manualPull()" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25)">↓ Pull</button>
+    <button class="upload-btn-header" id="themeToggleBtn" onclick="toggleTheme()" title="Switch between dark and light theme">🌙 Dark</button>
     <div class="header-period" id="headerPeriod">No data</div>
     <div class="signal-bars" id="signalBars" title="System signal">
       <div class="signal-bar lit" style="height:4px;animation-delay:0s"></div>
@@ -7210,6 +7271,7 @@ let finTransferMonth      = '';        // '' = all history, 'YYYY-MM' = filtered
 // Finance By-Captain filter state
 let finCourierSearch   = '';
 let finCourierSelected = new Set();
+let finCourierAmbSelected = new Set();   // filter by ambassador name (lowercased)
 // Finance Captain Detail Panel state
 let finCaptainCtx      = null;        // { name, monthKey }
 let finCaptainSortCol  = 'period';
@@ -8030,8 +8092,10 @@ function renderFinanceTab() {
       </div>
       <div id="finBonusContent"></div>
     </div>` : ''}
-    ${buildFinanceModals()}
   `;
+  // Modals live at <body> level (not inside this panel) so they can open from
+  // any tab — the Ambassadors tab in particular, since #finance is display:none then.
+  ensureFinanceModals();
   if (financeViewMode === 'courier')         renderFinanceCourierView();
   else if (financeViewMode === 'model')      renderFinanceModelView();
   else if (financeViewMode === 'cycle')      renderFinanceCycleView();
@@ -8063,6 +8127,7 @@ function renderFinanceCourierView() {
   const q = finCourierSearch.trim().toLowerCase();
   let visPls = allPls;
   if (finCourierSelected.size > 0) visPls = visPls.filter(p => finCourierSelected.has(p.name));
+  if (finCourierAmbSelected.size > 0) visPls = visPls.filter(p => (p.ambassador||'').trim() && finCourierAmbSelected.has((p.ambassador||'').trim().toLowerCase()));
   if (q) visPls = visPls.filter(p => p.name.toLowerCase().includes(q) || (lookupForeignName(p.name)||'').toLowerCase().includes(q));
   const tot = allPls.reduce((a,p) => ({
     income: a.income + p.income, acctRent: a.acctRent + p.acctRent,
@@ -8124,8 +8189,22 @@ function renderFinanceCourierView() {
       <span>${n}${lookupForeignName(n)?`<span style="color:var(--text-muted);font-size:11px;margin-left:4px">→ ${lookupForeignName(n)}</span>`:''}</span>
     </div>`;
   }).join('');
-  const hasFilt = finCourierSearch || finCourierSelected.size > 0;
-  const tagHtml = [...finCourierSelected].map(n => `<span class="fin-tag">${n}<span class="fin-tag-x" onmousedown="event.preventDefault();_removeFinCourierSel('${encodeURIComponent(n)}')">✕</span></span>`).join('');
+  // Distinct ambassador names (from the full roster), preserving display casing.
+  const ambByLower = new Map();
+  allPls.forEach(p => { const a = (p.ambassador||'').trim(); if (a && !ambByLower.has(a.toLowerCase())) ambByLower.set(a.toLowerCase(), a); });
+  const ambNames = [...ambByLower.values()].sort((a,b)=>a.localeCompare(b));
+  const ambDdItems = ambNames.map(a => {
+    const lc = a.toLowerCase();
+    const sel = finCourierAmbSelected.has(lc);
+    const safe = encodeURIComponent(lc);
+    return `<div class="fin-dd-item${sel?' checked':''}" data-name="${escAttr(a)}" onmousedown="_toggleFinAmbInDd('${safe}')">
+      <span class="fin-dd-chk${sel?' on':''}">${sel?'✓':''}</span>
+      <span>🎖 ${a}</span>
+    </div>`;
+  }).join('') || `<div style="padding:9px 12px;font-size:12px;color:var(--text-muted)">No ambassadors tagged yet</div>`;
+  const hasFilt = finCourierSearch || finCourierSelected.size > 0 || finCourierAmbSelected.size > 0;
+  const tagHtml = [...finCourierSelected].map(n => `<span class="fin-tag">${n}<span class="fin-tag-x" onmousedown="event.preventDefault();_removeFinCourierSel('${encodeURIComponent(n)}')">✕</span></span>`).join('')
+    + [...finCourierAmbSelected].map(lc => `<span class="fin-tag" style="background:rgba(0,212,255,.08);border-color:rgba(0,212,255,.25);color:var(--cyan)">🎖 ${ambByLower.get(lc)||lc}<span class="fin-tag-x" onmousedown="event.preventDefault();_removeFinAmbSel('${encodeURIComponent(lc)}')">✕</span></span>`).join('');
   document.getElementById('financeMainContent').innerHTML = `
     <div class="finance-section">
       <div class="finance-section-header">
@@ -8144,7 +8223,16 @@ function renderFinanceCourierView() {
             <div id="finCourierDdItems">${ddItems}</div>
           </div>
         </div>
-        ${hasFilt ? `<div class="fin-tag-row">${tagHtml}${finCourierSelected.size>0||finCourierSearch?`<span style="font-size:11px;color:var(--text-muted);cursor:pointer;margin-left:4px" onclick="clearFinCourierFilter()">Clear all ✕</span>`:''}</div>` : ''}
+        <div class="fin-dd-wrap" id="finAmbDdWrap">
+          <div class="fin-dd-btn${finCourierAmbSelected.size>0?' active':''}" onclick="toggleFinAmbDd()" title="Filter captains by their ambassador">
+            🎖 Ambassador${finCourierAmbSelected.size>0?` (${finCourierAmbSelected.size})`:''}
+          </div>
+          <div class="fin-dd-list hidden" id="finAmbDd">
+            <div class="fin-dd-search-row"><input type="text" placeholder="Search ambassadors…" oninput="filterFinAmbDdList(this.value)"></div>
+            <div id="finAmbDdItems">${ambDdItems}</div>
+          </div>
+        </div>
+        ${hasFilt ? `<div class="fin-tag-row">${tagHtml}${hasFilt?`<span style="font-size:11px;color:var(--text-muted);cursor:pointer;margin-left:4px" onclick="clearFinCourierFilter()">Clear all ✕</span>`:''}</div>` : ''}
       </div>
       <div style="overflow-x:auto"><table class="finance-table">
         <thead><tr>
@@ -8224,6 +8312,31 @@ function _removeFinCourierSel(encoded) {
 function clearFinCourierFilter() {
   finCourierSearch = '';
   finCourierSelected.clear();
+  finCourierAmbSelected.clear();
+  renderFinanceCourierView();
+}
+// ── Ambassador filter dropdown (mirrors the driver multi-select) ──
+function toggleFinAmbDd() {
+  const dd = document.getElementById('finAmbDd');
+  if (!dd) return;
+  dd.classList.toggle('hidden');
+  if (!dd.classList.contains('hidden')) dd.querySelector('input')?.focus();
+}
+function filterFinAmbDdList(val) {
+  const q = (val||'').toLowerCase();
+  document.querySelectorAll('#finAmbDdItems .fin-dd-item').forEach(el => {
+    el.style.display = (el.dataset.name||'').toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+function _toggleFinAmbInDd(encoded) {
+  const lc = decodeURIComponent(encoded);
+  if (finCourierAmbSelected.has(lc)) finCourierAmbSelected.delete(lc);
+  else finCourierAmbSelected.add(lc);
+  renderFinanceCourierView();
+  requestAnimationFrame(() => { const dd = document.getElementById('finAmbDd'); if (dd) dd.classList.remove('hidden'); });
+}
+function _removeFinAmbSel(encoded) {
+  finCourierAmbSelected.delete(decodeURIComponent(encoded));
   renderFinanceCourierView();
 }
 // Close dropdown on outside click
@@ -8232,6 +8345,11 @@ document.addEventListener('click', e => {
   if (wrap && !wrap.contains(e.target)) {
     const dd = document.getElementById('finCourierDd');
     if (dd) dd.classList.add('hidden');
+  }
+  const ambWrap = document.getElementById('finAmbDdWrap');
+  if (ambWrap && !ambWrap.contains(e.target)) {
+    const ambDd = document.getElementById('finAmbDd');
+    if (ambDd) ambDd.classList.add('hidden');
   }
 });
 
@@ -8902,6 +9020,14 @@ function renderFinBonus() {
 // ═══════════════════════════════════════════
 // FINANCE MODAL HTML BUILDER
 // ═══════════════════════════════════════════
+// Mount the finance modals once, at <body> level, into a dedicated host. Keeping
+// them out of the #finance panel means they aren't hidden when that panel is
+// display:none (e.g. when the Ambassadors tab is the active panel).
+function ensureFinanceModals() {
+  let host = document.getElementById('financeModalsHost');
+  if (!host) { host = document.createElement('div'); host.id = 'financeModalsHost'; document.body.appendChild(host); }
+  if (!document.getElementById('courierProfileModal')) host.innerHTML = buildFinanceModals();
+}
 function buildFinanceModals() {
   return `
   <!-- Courier Profile Modal -->
@@ -9259,7 +9385,7 @@ function setAmbMonth(m) { ambMonth = m; renderAmbassadors(); }
 // cloud-sync logic. The modal markup is mounted by renderFinanceTab(), so ensure
 // it exists before opening (the Ambassadors tab may load before Finance ever has).
 function ambEditDriver(name) {
-  if (!document.getElementById('courierProfileModal')) renderFinanceTab();
+  ensureFinanceModals();
   openCourierProfileModal(name);
 }
 function ambAssignFromPicker() {
@@ -10418,10 +10544,31 @@ function initHoloParticles() {
   }
 }
 
+// ═══════════════════════════════════════════
+// THEME TOGGLE (dark / light)
+// ═══════════════════════════════════════════
+function applyTheme(theme) {
+  const light = theme === 'light';
+  document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) btn.textContent = light ? '☀ Light' : '🌙 Dark';
+}
+function toggleTheme() {
+  const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  try { localStorage.setItem('mohm_theme', next); } catch (e) {}
+  applyTheme(next);
+}
+function initTheme() {
+  let saved = 'dark';
+  try { saved = localStorage.getItem('mohm_theme') || 'dark'; } catch (e) {}
+  applyTheme(saved);
+}
+
 // ── INIT (DOMContentLoaded)
 // ═══════════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', () => {
+  initTheme();
   // Default cycle calendar to May 10, 2026 (first Sunday) if never set
   if (!getCycleAnchor()) setCycleAnchor('2026-05-10');
   initSettingsUI();
