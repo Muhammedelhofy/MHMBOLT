@@ -25,8 +25,8 @@
   --red-bg:     rgba(255,68,102,.08);
   --shadow-sm:  0 0 12px rgba(0,212,255,.05);
   --shadow:     0 0 24px rgba(0,212,255,.07), 0 4px 20px rgba(0,0,0,.7);
-  --glow-green: 0 0 12px rgba(0,255,179,.4);
-  --glow-cyan:  0 0 12px rgba(0,212,255,.3);
+  --glow-green: 0 0 7px rgba(0,255,179,.22);
+  --glow-cyan:  0 0 7px rgba(0,212,255,.18);
   --mono:       'Share Tech Mono', 'Courier New', monospace;
 }
 
@@ -42,7 +42,7 @@ select option, optgroup { background: var(--bg-card); color: var(--text); }
    whole dashboard stays readable for people who can't use the dark UI.
    ══════════════════════════════════════════ */
 html[data-theme="light"] {
-  --bolt-green: #0E9D6E;
+  --bolt-green: #047857;
   --bolt-black: #FFFFFF;
   --bg:         #F8FAFC;   /* clean soft white, not grey */
   --bg-card:    #FFFFFF;
@@ -53,7 +53,7 @@ html[data-theme="light"] {
   --text-dim:   #94A3B8;
   --red:        #DC2B4B;
   --amber:      #C2790B;
-  --green:      #0E9D6E;
+  --green:      #047857;
   --cyan:       #0284C7;
   --red-bg:     rgba(220,43,75,.06);
   --shadow-sm:  0 1px 3px rgba(15,23,42,.06);
@@ -86,8 +86,14 @@ html[data-theme="light"] .crp-box,
 html[data-theme="light"] #m8Picker,
 html[data-theme="light"] #smTooltip,
 html[data-theme="light"] #smOpsTip { background:#FFFFFF !important; }
-html[data-theme="light"] .finance-table tbody tr:hover td:first-child { background:#EAF1F8 !important; }
-html[data-theme="light"] .heat-high { color:#0A8F6B !important; }
+/* Row-hover on the sticky name column: light grey, not the dark navy that
+   covered the captain's name on the Captains + Finance tables. */
+html[data-theme="light"] .finance-table tbody tr:hover td:first-child,
+html[data-theme="light"] .driver-table tr.driver-row:hover td:first-child { background:#EAEEF3 !important; }
+html[data-theme="light"] .heat-high { color:#047857 !important; }
+/* A hair of depth so the white surfaces don't read as flat/plain */
+html[data-theme="light"] .kpi-card,
+html[data-theme="light"] .finance-section { box-shadow:0 1px 3px rgba(15,23,42,.06); }
 
 /* ── Reset + Base ── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
