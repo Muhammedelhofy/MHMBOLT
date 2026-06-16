@@ -1441,6 +1441,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
 <div class="tabs">
   <div class="tab active" data-tab="captains"  onclick="showTab('captains',this)">Captains</div>
   <div class="tab"        data-tab="finance"   onclick="showTab('finance',this)">Finance</div>
+  <div class="tab"        data-tab="ambassadors" onclick="showTab('ambassadors',this)">🎖 Ambassadors</div>
   <div class="tab"        data-tab="analytics" onclick="showTab('analytics',this);renderAnalytics()">Analytics</div>
   <div class="tab"        data-tab="starmap"   onclick="showTab('starmap',this)">⭐ Star Map</div>
   <div class="tab"        data-tab="settings"  onclick="showTab('settings',this)">Settings</div>
@@ -1547,6 +1548,17 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
     <div class="empty-icon">💰</div>
     <div class="empty-title">Loading Finance…</div>
     <div class="empty-sub">Click the Finance tab to load</div>
+  </div>
+</div>
+
+<!-- Ambassadors Panel -->
+<div id="ambassadors" class="panel">
+  <div id="ambassadorsContent">
+    <div class="empty-state">
+      <div class="empty-icon">🎖</div>
+      <div class="empty-title">Loading Ambassadors…</div>
+      <div class="empty-sub">Click the Ambassadors tab to load</div>
+    </div>
   </div>
 </div>
 
@@ -1788,6 +1800,7 @@ function _doShowTab(id, el) {
   el.classList.add('active');
   if (id === 'captains') renderCaptains();
   if (id === 'finance')  renderFinanceTab();
+  if (id === 'ambassadors') renderAmbassadors();
   if (id === 'starmap')  smSwitchView('home');
 }
 
@@ -7209,7 +7222,12 @@ function defaultProfile() {
     // Auto-salary: when on, the driver's salary scales with their NET earnings —
     // salaryBase at salaryThreshold net, ± salaryPerK per full 1,000 net above/below it.
     autoSalary:false, salaryBase:2000, salaryThreshold:6000, salaryPerK:500,
-    other:{label:'',dir:'NONE',amount:0}, notes:'', startDate: null, funnel: null, blocked: false };
+    other:{label:'',dir:'NONE',amount:0}, notes:'', startDate: null, funnel: null, blocked: false,
+    // Ambassador referral tracking (separate from the vehicle "model" field above).
+    // ambassadorModel: 'A' | 'B' | 'C' | null. ambFirstTrip overrides the auto-detected
+    // first-trip date. ambCut = ambassador's negotiated monthly cut for Model B (default 300).
+    // ambSupport = Model C customer-support add-on (+200) toggle.
+    ambassador: null, ambassadorModel: null, ambFirstTrip: null, ambCut: null, ambSupport: false };
 }
 // Computes a salaried driver's pay from their net earnings: base at threshold, stepping
 // ±perK for each FULL 1,000 SAR above/below the threshold, clamped at 0 (no negative pay).
@@ -7545,8 +7563,13 @@ function computeDriverPnL(name, monthKey) {
                  : fc.type === 'PCT'  ? -(income * (fc.value || 0) / 100)
                  : 0;
   const other    = sign(p.other?.dir, p.other?.amount || 0);
-  const netPnL   = income + acctRent + carRent + salary + fleetCut + other;
-  return { name, model:p.model, modelCustom:p.modelCustom, income, acctRent, carRent, salary, fleetCut, other, netPnL, profile:p };
+  // Ambassador bonus is money the fleet PAYS OUT (a cost) — fold it into the P&L so
+  // "rent in vs out" nets correctly. ambPayoutFor returns the owed amount by model.
+  const ambP     = ambPayoutFor(name, p, income, monthKey);
+  const ambCost  = -(ambP.owed || 0);
+  const netPnL   = income + acctRent + carRent + salary + fleetCut + other + ambCost;
+  return { name, model:p.model, modelCustom:p.modelCustom, income, acctRent, carRent, salary, fleetCut, other,
+           ambCost, ambPayout:ambP, ambassador:p.ambassador||null, ambModel:p.ambassadorModel||null, netPnL, profile:p };
 }
 function getDriversInMonth(monthKey) {
   const [y, m] = monthKey.split('-').map(Number);
@@ -8041,8 +8064,8 @@ function renderFinanceCourierView() {
     income: a.income + p.income, acctRent: a.acctRent + p.acctRent,
     carRent: a.carRent + p.carRent, salary: a.salary + p.salary,
     fleetCut: a.fleetCut + p.fleetCut, other: a.other + p.other,
-    netPnL: a.netPnL + p.netPnL
-  }), { income:0, acctRent:0, carRent:0, salary:0, fleetCut:0, other:0, netPnL:0 });
+    ambCost: a.ambCost + p.ambCost, netPnL: a.netPnL + p.netPnL
+  }), { income:0, acctRent:0, carRent:0, salary:0, fleetCut:0, other:0, ambCost:0, netPnL:0 });
   const signed = v => v === 0 ? '—' : `<span style="color:${v > 0 ? 'var(--green)' : 'var(--red)'}">${v > 0 ? '+' : ''}${fmt(v)}</span>`;
   const pnlCell = v => `<span style="font-weight:700;color:${v >= 0 ? 'var(--green)' : 'var(--red)'}">${v >= 0 ? '+' : ''}${fmt(v)}</span>`;
   const escAttr = s => String(s||'').replace(/\\/g,'\\\\').replace(/'/g, "\\'").replace(/"/g,'&quot;');
@@ -8062,12 +8085,25 @@ function renderFinanceCourierView() {
         ${foreign?`<span class="d-foreign">${foreign}</span>`:''}
       </td>
       <td><span class="${modelBadgeClass(p.model)}">${modelLabel}</span></td>
+      <td style="white-space:nowrap">
+        <input value="${(p.ambassador||'').replace(/"/g,'&quot;')}" placeholder="—" title="Type the ambassador's name (e.g. Omar) to tag this driver"
+          onchange="setDriverAmbassador('${nameAttr}', this.value)"
+          style="width:78px;padding:3px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--bg);color:var(--text)">
+        <select onchange="setDriverAmbModel('${nameAttr}', this.value)" title="Ambassador model A/B/C"
+          style="padding:3px 2px;border:1px solid var(--border);border-radius:5px;font-size:11px;background:var(--bg);color:var(--text);margin-left:3px">
+          <option value=""  ${!p.ambModel?'selected':''}>–</option>
+          <option value="A" ${p.ambModel==='A'?'selected':''}>A</option>
+          <option value="B" ${p.ambModel==='B'?'selected':''}>B</option>
+          <option value="C" ${p.ambModel==='C'?'selected':''}>C</option>
+        </select>
+      </td>
       <td style="text-align:right">${fmt(p.income)}</td>
       <td style="text-align:right">${signed(p.acctRent)}</td>
       <td style="text-align:right">${signed(p.carRent)}</td>
       <td style="text-align:right">${signed(p.salary)}</td>
       <td style="text-align:right">${signed(p.fleetCut)}${fcType==='PCT'?`<div style="font-size:10px;color:var(--text-muted)">${fcValue}%</div>`:''}</td>
       <td style="text-align:right">${signed(p.other)}${otherLabel?`<div style="font-size:10px;color:var(--text-muted)">${otherLabel}</div>`:''}</td>
+      <td style="text-align:right">${signed(p.ambCost)}${p.ambModel?`<div style="font-size:10px;color:${p.ambPayout&&p.ambPayout.qualifies?'var(--text-muted)':'var(--amber)'}">${p.ambassador?p.ambassador+' ':''}${p.ambModel}</div>`:''}</td>
       <td style="text-align:right">${pnlCell(p.netPnL)}</td>
       <td style="text-align:right;white-space:nowrap">
         <button class="finance-btn finance-btn-secondary" onclick="openCourierProfileModal('${nameAttr}')" title="Permanent deal — applies to ALL months">Profile</button>
@@ -8110,25 +8146,28 @@ function renderFinanceCourierView() {
         <thead><tr>
           <th class="${finThCls('name')}"    onclick="setFinanceSort('name')"    style="cursor:pointer;user-select:none">Driver ${finArrow('name')}</th>
           <th>Model</th>
+          <th>Ambassador</th>
           <th class="${finThCls('income')}"   onclick="setFinanceSort('income')"   style="cursor:pointer;user-select:none;text-align:right">Bolt Net ${finArrow('income')}</th>
           <th class="${finThCls('acctRent')}" onclick="setFinanceSort('acctRent')" style="cursor:pointer;user-select:none;text-align:right">Acct Rent ${finArrow('acctRent')}</th>
           <th class="${finThCls('carRent')}"  onclick="setFinanceSort('carRent')"  style="cursor:pointer;user-select:none;text-align:right">Car Rent ${finArrow('carRent')}</th>
           <th class="${finThCls('salary')}"   onclick="setFinanceSort('salary')"   style="cursor:pointer;user-select:none;text-align:right">Salary ${finArrow('salary')}</th>
           <th class="${finThCls('fleetCut')}" onclick="setFinanceSort('fleetCut')" style="cursor:pointer;user-select:none;text-align:right">Fleet Cut ${finArrow('fleetCut')}</th>
           <th class="${finThCls('other')}"    onclick="setFinanceSort('other')"    style="cursor:pointer;user-select:none;text-align:right">Other ${finArrow('other')}</th>
+          <th class="${finThCls('ambCost')}"  onclick="setFinanceSort('ambCost')"  style="cursor:pointer;user-select:none;text-align:right" title="Ambassador bonus paid">Amb. ${finArrow('ambCost')}</th>
           <th class="${finThCls('netPnL')}"   onclick="setFinanceSort('netPnL')"   style="cursor:pointer;user-select:none;text-align:right">Net P&amp;L ${finArrow('netPnL')}</th>
           <th style="text-align:right">Actions</th>
         </tr></thead>
         <tbody>
-          ${rows || `<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--text-muted)">No captains match your filter</td></tr>`}
+          ${rows || `<tr><td colspan="12" style="text-align:center;padding:20px;color:var(--text-muted)">No captains match your filter</td></tr>`}
           ${!hasFilt ? `<tr style="background:var(--bg-card2);font-weight:700">
-            <td colspan="2">TOTAL</td>
+            <td colspan="3">TOTAL</td>
             <td style="text-align:right">${fmt(tot.income)}</td>
             <td style="text-align:right">${signed(tot.acctRent)}</td>
             <td style="text-align:right">${signed(tot.carRent)}</td>
             <td style="text-align:right">${signed(tot.salary)}</td>
             <td style="text-align:right">${signed(tot.fleetCut)}</td>
             <td style="text-align:right">${signed(tot.other)}</td>
+            <td style="text-align:right">${signed(tot.ambCost)}</td>
             <td style="text-align:right">${pnlCell(tot.netPnL)}</td>
             <td></td>
           </tr>` : ''}
@@ -8948,6 +8987,33 @@ function buildFinanceModals() {
           <option value="H">H</option>
         </select>
       </div>
+      <div class="fin-form-row" style="border-top:1px dashed var(--border);padding-top:12px;margin-top:4px">
+        <label>🎖 Ambassador (who referred this driver)</label>
+        <input type="text" id="cpAmbassador" placeholder="Ambassador name — leave blank if none">
+      </div>
+      <div class="fin-form-row"><label>Ambassador Model</label>
+        <select id="cpAmbModel" onchange="onCpAmbModelChange(this.value)">
+          <option value="">— none —</option>
+          <option value="A">A · Saudi driver transferred to fleet (500 if net ≥ 5,000)</option>
+          <option value="B">B · Saudi user rented to foreigner (monthly cut)</option>
+          <option value="C">C · Existing foreigner on Saudi acct (500 if net ≥ 6,000)</option>
+        </select>
+      </div>
+      <div class="fin-form-row" id="cpAmbFirstTripRow" style="display:none"><label>1st Trip Date <span id="cpAmbFirstTripAuto" style="font-size:11px;color:var(--text-muted)"></span></label>
+        <input type="date" id="cpAmbFirstTrip" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box">
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Auto-detected from earliest data. Override here if needed. Model B rent activates from this date.</div>
+      </div>
+      <div class="fin-form-row" id="cpAmbCutRow" style="display:none"><label>Ambassador monthly cut — Model B (SAR)</label>
+        <input type="number" id="cpAmbCut" placeholder="Default 300" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);box-sizing:border-box">
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">The Saudi-user pool is up to 800 SAR; enter what the ambassador keeps after his deal with the Saudi (e.g. 300).</div>
+      </div>
+      <div class="fin-form-row" id="cpAmbSupportRow" style="display:none">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="cpAmbSupport" class="checkbox-toggle">
+          <span>Model C support add-on (+200)</span>
+          <span style="font-size:11px;color:var(--text-muted)">(photos / unblocking / customer support)</span>
+        </label>
+      </div>
       <div class="fin-form-row"><label>Notes (optional)</label>
         <input type="text" id="cpNotes" placeholder="Free text — e.g. Saudi owner name">
       </div>
@@ -9088,6 +9154,201 @@ function buildFinanceModals() {
 }
 
 // ═══════════════════════════════════════════
+// AMBASSADORS TAB
+// ═══════════════════════════════════════════
+let ambMonth = '';
+const AMB_MODELS = {
+  A: { label:'Saudi driver → fleet (bonus 500 if net ≥ 5,000)', base:500, threshold:5000, color:'#22D3EE' },
+  B: { label:'Saudi user rented to foreigner (monthly cut)',    base:300, threshold:0,    color:'#A78BFA' },
+  C: { label:'Existing foreigner on Saudi acct (500 if net ≥ 6,000)', base:500, threshold:6000, color:'#34D399' }
+};
+
+// Earliest YYYY-MM-DD this driver shows any trips/earnings in uploaded history.
+function detectFirstTrip(name) {
+  const nk = driverKey(name);
+  let best = null;
+  for (const h of getHistory()) {
+    const drivers = Array.isArray(h.drivers) ? h.drivers : [];
+    const d = drivers.find(x => driverKey(x.name) === nk);
+    if (!d) continue;
+    if (!((d.orders||0) > 0 || (d.netEarnings||0) > 0)) continue;
+    const k = periodSortKey(h.period);
+    if (!k) continue;
+    if (best === null || k < best.k) best = { k, pInfo: h.periodInfo };
+  }
+  if (!best) return null;
+  const s = best.pInfo && best.pInfo.start;
+  if (s) return s.year + '-' + String(s.month+1).padStart(2,'0') + '-' + String(s.day).padStart(2,'0');
+  const d = new Date(best.k);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+// Effective first-trip date — manual override beats auto-detect.
+function effFirstTrip(name, profile) {
+  return (profile && profile.ambFirstTrip) || detectFirstTrip(name) || null;
+}
+
+// Payout owed to the ambassador for one driver in one month (monthKey 'YYYY-MM').
+function ambPayoutFor(name, profile, monthlyNet, monthKey) {
+  const model = profile && profile.ambassadorModel;
+  if (!model || !AMB_MODELS[model]) return { owed:0, qualifies:false, reason:'—' };
+  if (model === 'A') {
+    const q = monthlyNet >= 5000;
+    return { owed: q ? 500 : 0, qualifies:q, reason: q ? 'Net ≥ 5,000' : `Net ${fmt(monthlyNet)} < 5,000` };
+  }
+  if (model === 'B') {
+    const ft = effFirstTrip(name, profile);
+    const active = !!(ft && ft.slice(0,7) <= monthKey);
+    const cut = profile.ambCut != null ? profile.ambCut : 300;
+    return { owed: active ? cut : 0, qualifies: active, reason: active ? 'Rent active' : (ft ? `Starts ${ft}` : 'No 1st trip yet') };
+  }
+  if (model === 'C') {
+    const q = monthlyNet >= 6000;
+    const extra = profile.ambSupport ? 200 : 0;
+    return { owed: q ? 500 + extra : 0, qualifies:q, reason: q ? `Net ≥ 6,000${extra?' + support':''}` : `Net ${fmt(monthlyNet)} < 6,000` };
+  }
+  return { owed:0, qualifies:false, reason:'—' };
+}
+
+// Every driver name ever seen in history, plus any profile-only keys.
+function getAllDriverNames() {
+  const map = new Map();
+  getHistory().forEach(h => (Array.isArray(h.drivers)?h.drivers:[]).forEach(d => { if (d.name) map.set(driverKey(d.name), d.name.trim()); }));
+  const profiles = loadCourierProfiles();
+  Object.keys(profiles).forEach(k => { if (!map.has(k)) map.set(k, k); });
+  return [...map.values()].sort((a,b)=>a.localeCompare(b));
+}
+
+function setAmbMonth(m) { ambMonth = m; renderAmbassadors(); }
+
+// Opens the courier profile modal for a driver, reusing all the existing save +
+// cloud-sync logic. The modal markup is mounted by renderFinanceTab(), so ensure
+// it exists before opening (the Ambassadors tab may load before Finance ever has).
+function ambEditDriver(name) {
+  if (!document.getElementById('courierProfileModal')) renderFinanceTab();
+  openCourierProfileModal(name);
+}
+function ambAssignFromPicker() {
+  const sel = document.getElementById('ambAssignPicker');
+  const name = sel && sel.value;
+  if (!name) { toast('Pick a driver first'); return; }
+  ambEditDriver(name);
+}
+
+// Inline quick-edit from the Finance By-Captain table — just type the ambassador's
+// name / pick a model, no long modal. Detailed Model-B cut / Model-C support / 1st-trip
+// override stay in the full Profile modal + Ambassadors tab (defaults apply otherwise).
+function setDriverAmbassador(name, val) {
+  const p = getCourierProfile(name);
+  p.ambassador = (val || '').trim() || null;
+  upsertCourierProfile(name, p);
+  refreshAmbViews();
+  syncToCloud();
+}
+function setDriverAmbModel(name, model) {
+  const p = getCourierProfile(name);
+  p.ambassadorModel = model || null;
+  upsertCourierProfile(name, p);
+  refreshAmbViews();
+  syncToCloud();
+}
+function refreshAmbViews() {
+  if (document.getElementById('finance')?.classList.contains('active') && financeViewMode === 'courier') renderFinanceCourierView();
+  if (document.getElementById('ambassadors')?.classList.contains('active')) renderAmbassadors();
+}
+
+function renderAmbassadors() {
+  const el = document.getElementById('ambassadorsContent');
+  if (!el) return;
+  const months = getAvailableMonths();
+  if (!ambMonth) ambMonth = defaultMonth();
+  const monthKey = ambMonth;
+  const [yy, mm] = monthKey.split('-').map(Number);
+  const monthIdx = mm - 1, year = yy;
+
+  const profiles = loadCourierProfiles();
+  const allNames = getAllDriverNames();
+  const pickerOpts = ['<option value="">— pick a driver to assign / edit —</option>']
+    .concat(allNames.map(n => { const p = profiles[driverKey(n)]; const tag = p&&p.ambassador?` · 🎖 ${p.ambassador}`:''; return `<option value="${n.replace(/"/g,'&quot;')}">${n}${tag}</option>`; })).join('');
+  const monthOpts = (months.length ? months : [monthKey]).map(m => `<option value="${m}" ${m===monthKey?'selected':''}>${monthLabel(m)}</option>`).join('');
+
+  const toolbar = `
+    <div style="padding:16px 4px 8px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">
+      <div style="font-size:18px;font-weight:800">🎖 Ambassadors</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="ambMonthSel" onchange="setAmbMonth(this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg)">${monthOpts}</select>
+        <select id="ambAssignPicker" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);min-width:220px">${pickerOpts}</select>
+        <button class="save-btn" onclick="ambAssignFromPicker()">Assign / Edit</button>
+      </div>
+    </div>`;
+
+  // Gather assigned drivers
+  const assigned = [];
+  Object.keys(profiles).forEach(key => {
+    const p = profiles[key];
+    if (!p || !p.ambassador || !p.ambassadorModel) return;
+    let name = key;
+    for (const h of getHistory()) { const d=(Array.isArray(h.drivers)?h.drivers:[]).find(x=>driverKey(x.name)===key); if(d){name=d.name.trim();break;} }
+    const net = getMonthlyNet(null, name, monthIdx, year);
+    const payout = ambPayoutFor(name, p, net, monthKey);
+    assigned.push({ name, profile:p, net, payout, ft: effFirstTrip(name, p), ambassador:p.ambassador.trim(), model:p.ambassadorModel });
+  });
+
+  if (!assigned.length) {
+    el.innerHTML = toolbar +
+      `<div class="empty-state"><div class="empty-icon">🎖</div><div class="empty-title">No ambassador referrals yet</div><div class="empty-sub">Pick a driver above → set their Ambassador name + Model (A / B / C) → Save. They'll appear here grouped by ambassador with monthly income, 1st-trip date and the amount owed.</div></div>`;
+    return;
+  }
+
+  const groups = {};
+  assigned.forEach(a => { const k = a.ambassador.toLowerCase(); (groups[k] = groups[k] || { name:a.ambassador, rows:[] }).rows.push(a); });
+  const groupList = Object.values(groups).sort((a,b)=>a.name.localeCompare(b.name));
+  const totalOwed = assigned.reduce((s,a)=>s+a.payout.owed,0);
+
+  const modelChip = m => `<span style="display:inline-block;min-width:18px;text-align:center;font-weight:900;font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;background:${AMB_MODELS[m].color}22;color:${AMB_MODELS[m].color};border:1px solid ${AMB_MODELS[m].color}66" title="Model ${m} — ${AMB_MODELS[m].label}">${m}</span>`;
+
+  let html = toolbar + `
+    <div style="display:flex;flex-wrap:wrap;gap:12px;padding:4px 4px 16px">
+      <div class="kpi-card"><div class="kpi-card-label">Ambassadors</div><div class="kpi-card-value">${groupList.length}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Drivers referred</div><div class="kpi-card-value">${assigned.length}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Owed · ${monthLabel(monthKey)}</div><div class="kpi-card-value" style="color:var(--bolt-green)">${fmt(totalOwed)}<span class="kpi-card-unit"> SAR</span></div></div>
+    </div>`;
+
+  groupList.forEach(g => {
+    const subOwed = g.rows.reduce((s,r)=>s+r.payout.owed,0);
+    const rows = g.rows.sort((a,b)=>b.payout.owed-a.payout.owed).map(r => {
+      const foreign = lookupForeignName(r.name);
+      const q = r.payout.qualifies;
+      const safeName = r.name.replace(/'/g,"\\'");
+      return `<tr style="border-top:1px solid var(--border)">
+        <td style="padding:8px 10px"><span style="font-weight:600">${r.name}</span>${foreign?`<span style="color:var(--text-muted);font-size:11px"> (${foreign})</span>`:''}</td>
+        <td style="padding:8px 10px;text-align:center">${modelChip(r.model)}</td>
+        <td style="padding:8px 10px;text-align:center;font-family:var(--mono);font-size:12px;color:var(--text-muted)">${r.ft||'—'}</td>
+        <td style="padding:8px 10px;text-align:right;font-family:var(--mono)">${fmt(r.net)}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700;color:${r.payout.owed>0?'var(--bolt-green)':'var(--text-muted)'}">${fmt(r.payout.owed)}</td>
+        <td style="padding:8px 10px;font-size:11px;color:${q?'var(--bolt-green)':'var(--amber)'}">${r.payout.reason}</td>
+        <td style="padding:8px 10px;text-align:center"><button class="save-btn" style="padding:3px 8px;font-size:11px" onclick="ambEditDriver('${safeName}')">Edit</button></td>
+      </tr>`;
+    }).join('');
+    html += `
+      <div style="background:var(--bg-card2);border:1px solid var(--border);border-radius:10px;margin:0 4px 14px;overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(0,255,179,.06)">
+          <div style="font-weight:800;font-size:14px">🎖 ${g.name}</div>
+          <div style="font-size:12px;color:var(--text-muted)">${g.rows.length} driver${g.rows.length>1?'s':''} · owed <b style="color:var(--bolt-green)">${fmt(subOwed)} SAR</b></div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em">
+            <th style="padding:6px 10px">Driver</th><th style="padding:6px 10px;text-align:center">Model</th><th style="padding:6px 10px;text-align:center">1st Trip</th><th style="padding:6px 10px;text-align:right">Net (mo)</th><th style="padding:6px 10px;text-align:right">Owed</th><th style="padding:6px 10px">Status</th><th></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  });
+
+  el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════
 // MODAL INTERACTIONS
 // ═══════════════════════════════════════════
 function openCourierProfileModal(name) {
@@ -9116,9 +9377,23 @@ function openCourierProfileModal(name) {
   document.getElementById('cpStartDate').value = profile.startDate || '';
   document.getElementById('cpFunnel').value = profile.funnel || '';
   document.getElementById('cpBlocked').checked = !!profile.blocked;
+  // Ambassador fields
+  document.getElementById('cpAmbassador').value = profile.ambassador || '';
+  document.getElementById('cpAmbModel').value = profile.ambassadorModel || '';
+  const detected = detectFirstTrip(name);
+  document.getElementById('cpAmbFirstTrip').value = profile.ambFirstTrip || detected || '';
+  document.getElementById('cpAmbFirstTripAuto').textContent = detected ? `(auto: ${detected})` : '(no trips in data yet)';
+  document.getElementById('cpAmbCut').value = profile.ambCut != null ? profile.ambCut : '';
+  document.getElementById('cpAmbSupport').checked = !!profile.ambSupport;
+  onCpAmbModelChange(profile.ambassadorModel || '');
   document.getElementById('courierProfileModal').classList.add('open');
 }
 function closeCourierProfileModal() { document.getElementById('courierProfileModal').classList.remove('open'); }
+function onCpAmbModelChange(m) {
+  document.getElementById('cpAmbFirstTripRow').style.display = m ? 'block' : 'none';
+  document.getElementById('cpAmbCutRow').style.display      = (m === 'B') ? 'block' : 'none';
+  document.getElementById('cpAmbSupportRow').style.display  = (m === 'C') ? 'block' : 'none';
+}
 function onCpModelChange(m) { document.getElementById('cpModelCustom').style.display = (m === 'Custom') ? 'block' : 'none'; }
 function onCpAutoSalaryToggle() {
   const on = document.getElementById('cpAutoSalary').checked;
@@ -9180,7 +9455,12 @@ function saveCourierProfileFromModal() {
     notes: document.getElementById('cpNotes').value || '',
     startDate: document.getElementById('cpStartDate').value || null,
     funnel: document.getElementById('cpFunnel').value || null,
-    blocked: document.getElementById('cpBlocked').checked || false
+    blocked: document.getElementById('cpBlocked').checked || false,
+    ambassador: document.getElementById('cpAmbassador').value.trim() || null,
+    ambassadorModel: document.getElementById('cpAmbModel').value || null,
+    ambFirstTrip: document.getElementById('cpAmbFirstTrip').value || null,
+    ambCut: document.getElementById('cpAmbCut').value !== '' ? (parseFloat(document.getElementById('cpAmbCut').value) || 0) : null,
+    ambSupport: document.getElementById('cpAmbSupport').checked || false
   };
   if (!confirmDirNone([
     { label:'Account Rent', dir:profile.accountRent.dir, amount:profile.accountRent.amount },
@@ -9190,6 +9470,7 @@ function saveCourierProfileFromModal() {
   upsertCourierProfile(name, profile);
   closeCourierProfileModal();
   renderFinanceTab();
+  if (document.getElementById('ambassadors')?.classList.contains('active')) renderAmbassadors();
   syncToCloud();
   toast(`Saved profile for ${name}`);
 }
