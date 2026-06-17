@@ -53,7 +53,8 @@ module.exports = async function handler(req, res) {
   if (!date) return res.status(400).json({ ok: false, error: 'date required (yyyy-MM-dd)' });
 
   try {
-    const d       = new Date(date + 'T00:00:00Z');
+    // Saudi Arabia is UTC+3 (no DST) — align with Bolt dashboard day boundaries
+    const d       = new Date(date + 'T00:00:00+03:00');
     const startTs = Math.floor(d.getTime() / 1000);
     const endTs   = startTs + 86400;
 
@@ -98,38 +99,32 @@ module.exports = async function handler(req, res) {
       if (order.driver_phone) dr.phone = order.driver_phone;
 
       const p = order.order_price;
-      if (p) {
-        // campaign: Bolt uses different field names across API versions — try all
-        const campaign = Number(p.campaign_earnings) || Number(p.campaign_bonus) ||
-                         Number(p.campaign_amount)   || Number(p.campaign) ||
-                         Number(order.campaign_earnings) || 0;
-        const reimburse = Number(p.expense_reimbursements) || Number(p.reimbursement) ||
-                          Number(p.reimbursements) || 0;
-        const cancelFee = Number(p.cancellation_fee) || Number(p.cancellation_fees) || 0;
+      const hasEarnings = p && p.net_earnings != null;
+      if (hasEarnings) {
+        const ridePrice  = Number(p.ride_price)     || 0;
+        const bookingFee = Number(p.booking_fee)    || 0;
+        const tip        = Number(p.tip)            || 0;
+        const tollFee    = Number(p.toll_fee)       || 0;
+        const cancelFee  = Number(p.cancellation_fee) || 0;
 
-        dr.netEarnings   += Number(p.net_earnings) || 0;
-        dr.grossEarnings += Number(p.ride_price)   || 0;
-        dr.tips          += Number(p.tip)          || 0;
-        dr.commission    += Number(p.commission)   || 0;
-        dr.bookingFees   += Number(p.booking_fee)  || 0;
-        dr.campaign      = (dr.campaign || 0) + campaign;
-        dr.reimbursements = (dr.reimbursements || 0) + reimburse;
-        dr.cancellationFees = (dr.cancellationFees || 0) + cancelFee;
-        if (order.payment_method === 'cash') dr.cashEarnings += Number(p.ride_price) || 0;
+        // grossEarnings = ride_price + booking_fee (matches Bolt's "Gross earnings" definition)
+        dr.netEarnings      += Number(p.net_earnings) || 0;
+        dr.grossEarnings    += ridePrice + bookingFee;
+        dr.tips             += tip;
+        dr.commission       += Number(p.commission)  || 0;
+        dr.bookingFees      += bookingFee;
+        dr.tollFees          = (dr.tollFees || 0) + tollFee;
+        dr.cancellationFees  = (dr.cancellationFees || 0) + cancelFee;
+        dr.campaign          = (dr.campaign || 0);   // not in orders; fetched separately below
+        if (order.payment_method === 'cash') dr.cashEarnings += ridePrice;
+        dr.orders++;
       }
       dr.distanceTotal += Number(order.ride_distance) || 0;
-      dr.orders++;
       dr._cnt++;
     }
 
-    // Log first order's price fields so we can verify field names in Vercel logs
-    if (allOrders.length > 0) {
-      console.log('BOLT_ORDER_SAMPLE order_price fields:', JSON.stringify(allOrders[0].order_price));
-      console.log('BOLT_ORDER_SAMPLE top-level fields:', Object.keys(allOrders[0]).join(', '));
-    }
-
     // 4. Finalise + round
-    const r2 = v => Math.round(v * 100) / 100;
+    const r2 = v => Math.round((v || 0) * 100) / 100;
     const drivers = Object.values(driverMap).map(dr => {
       if (dr._cnt > 0) dr.distanceAvg = r2(dr.distanceTotal / dr._cnt);
       dr.netEarnings      = r2(dr.netEarnings);
@@ -137,19 +132,17 @@ module.exports = async function handler(req, res) {
       dr.tips             = r2(dr.tips);
       dr.commission       = r2(dr.commission);
       dr.bookingFees      = r2(dr.bookingFees);
+      dr.tollFees         = r2(dr.tollFees);
       dr.cashEarnings     = r2(dr.cashEarnings);
       dr.distanceTotal    = r2(dr.distanceTotal);
-      dr.campaign         = r2(dr.campaign || 0);
-      dr.reimbursements   = r2(dr.reimbursements || 0);
-      dr.cancellationFees = r2(dr.cancellationFees || 0);
+      dr.campaign         = r2(dr.campaign);
+      dr.cancellationFees = r2(dr.cancellationFees);
       dr.isActive         = dr.orders > 0 || dr.grossEarnings > 0;
       delete dr._cnt;
       return dr;
     });
 
-    // rawSample helps verify field mapping without reading Vercel logs
-    const rawSample = allOrders.length > 0 ? { order_price: allOrders[0].order_price, keys: Object.keys(allOrders[0]) } : null;
-    res.json({ ok: true, date, totalOrders: allOrders.length, driverCount: drivers.length, drivers, rawSample });
+    res.json({ ok: true, date, totalOrders: allOrders.length, driverCount: drivers.length, drivers });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
