@@ -1453,6 +1453,22 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
   </div>
 </div>
 
+<!-- ── Bolt API Sync Modal ── -->
+<div class="confirm-overlay" id="boltSyncOverlay" style="display:none">
+  <div class="confirm-box">
+    <div class="confirm-icon">⚡</div>
+    <div class="confirm-title">Sync from Bolt API</div>
+    <div class="confirm-note">Fetches all orders for the selected date directly from Bolt and saves them as a history entry.</div>
+    <div class="confirm-label">Date to sync</div>
+    <input type="date" id="boltSyncDateInput" class="confirm-input">
+    <div id="boltSyncStatus" style="min-height:20px;font-size:12px;color:var(--bolt-green);text-align:center;margin-top:6px"></div>
+    <div class="confirm-actions">
+      <button class="confirm-btn-primary" id="boltSyncConfirmBtn" onclick="runBoltSync()">⚡ Sync</button>
+      <button class="confirm-btn-secondary" onclick="closeBoltSync()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Driver Detail Panel ── -->
 <div class="modal-overlay" id="modalOverlay" onclick="closeModal()"></div>
 <div class="modal-panel" id="modalPanel">
@@ -1500,6 +1516,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
       <div class="signal-bar lit" style="height:13px;animation-delay:.9s"></div>
       <div class="signal-bar"     style="height:16px"></div>
     </div>
+    <button class="upload-btn-header" id="boltSyncBtn" onclick="openBoltSync()" style="display:none" title="Sync from Bolt API">⚡ Bolt Sync</button>
     <button class="upload-btn-header" onclick="document.getElementById('fileInput').click()">↑ Upload</button>
   </div>
 </div>
@@ -1983,6 +2000,65 @@ function cancelUpload() {
   pendingDrivers = null;
   pendingFilename = '';
   document.getElementById('confirmOverlay').classList.remove('open');
+}
+
+// ── Bolt API Sync ──
+(async function initBoltSyncBtn() {
+  try {
+    const r = await fetch('/api/bolt/status');
+    const j = await r.json();
+    if (j.configured) document.getElementById('boltSyncBtn').style.display = '';
+  } catch(e) { /* serve.ps1 not running with proxy — hide button */ }
+})();
+
+function openBoltSync() {
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  const iso = yesterday.toISOString().slice(0, 10);
+  document.getElementById('boltSyncDateInput').value = iso;
+  document.getElementById('boltSyncStatus').textContent = '';
+  document.getElementById('boltSyncConfirmBtn').disabled = false;
+  document.getElementById('boltSyncOverlay').style.display = 'flex';
+}
+
+function closeBoltSync() {
+  document.getElementById('boltSyncOverlay').style.display = 'none';
+}
+
+async function runBoltSync() {
+  const date = document.getElementById('boltSyncDateInput').value;
+  if (!date) return;
+  const btn = document.getElementById('boltSyncConfirmBtn');
+  const status = document.getElementById('boltSyncStatus');
+  btn.disabled = true;
+  status.textContent = 'Connecting to Bolt…';
+  try {
+    const r = await fetch('/api/bolt/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date })
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'Unknown error');
+
+    // Convert date "yyyy-MM-dd" to the period format the dashboard uses ("DD Mon YYYY")
+    const [yr, mo, dy] = date.split('-').map(Number);
+    const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][mo-1];
+    const period = `${String(dy).padStart(2,'0')} ${mn} ${yr}`;
+
+    const pInfo = { start:{ day:dy, month:mo-1, year:yr }, end:{ day:dy, month:mo-1, year:yr } };
+    saveToHistory(period, j.drivers, 'bolt-api-sync', pInfo);
+
+    status.style.color = 'var(--bolt-green)';
+    status.textContent = `✓ Saved ${j.driverCount} drivers, ${j.totalOrders} orders`;
+    toast(`⚡ Bolt Sync: ${j.totalOrders} orders for ${j.driverCount} drivers on ${period}`);
+    setTimeout(closeBoltSync, 1800);
+    currentDrivers = j.drivers; currentPeriod = period; currentPeriodInfo = pInfo;
+    renderCaptains();
+  } catch(e) {
+    status.style.color = 'var(--red, #f66)';
+    status.textContent = 'Error: ' + e.message;
+    btn.disabled = false;
+  }
 }
 
 // ── Date format helpers ──
