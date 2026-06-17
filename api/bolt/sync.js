@@ -62,23 +62,21 @@ module.exports = async function handler(req, res) {
     const companyIds = compResp.data?.company_ids ?? [];
     if (!companyIds.length) throw new Error('getCompanies returned no company IDs');
 
-    // 2. Paginate all orders for the day
+    // 2. Paginate all orders for the day — send ALL company IDs in one request
     const allOrders = [];
-    for (const cid of companyIds) {
-      let offset = 0;
-      const limit  = 500;
-      let total    = Infinity;
+    let offset = 0;
+    const limit = 500;
+    let total = Infinity;
 
-      while (allOrders.length < total) {
-        const resp   = await boltAPI('POST', '/fleetIntegration/v1/getFleetOrders', {
-          offset, limit, company_ids: [cid], start_ts: startTs, end_ts: endTs
-        });
-        const orders = resp.data?.orders ?? [];
-        total        = Number(resp.data?.total_orders ?? 0);
-        for (const o of orders) allOrders.push(o);
-        if (orders.length < limit) break;
-        offset += orders.length;
-      }
+    while (allOrders.length < total) {
+      const resp   = await boltAPI('POST', '/fleetIntegration/v1/getFleetOrders', {
+        offset, limit, company_ids: companyIds, start_ts: startTs, end_ts: endTs
+      });
+      const orders = resp.data?.orders ?? [];
+      total        = Number(resp.data?.total_orders ?? 0);
+      for (const o of orders) allOrders.push(o);
+      if (orders.length < limit) break;
+      offset += orders.length;
     }
 
     // 3. Aggregate per driver
