@@ -163,6 +163,11 @@ module.exports = async function handler(req, res) {
         dr.tollFees        += Number(p.toll_fee)      || 0;
         dr.cancellationFees += Number(p.cancellation_fee) || 0;
         if (order.payment_method === 'cash') dr.cashEarnings += ridePrice;
+        // Ride duration for utilization: accepted → finished
+        if (order.order_finished_timestamp && order.order_accepted_timestamp) {
+          dr._rideSeconds = (dr._rideSeconds || 0) +
+            (order.order_finished_timestamp - order.order_accepted_timestamp);
+        }
         dr.orders++;
       }
       dr.distanceTotal += Number(order.ride_distance) || 0;
@@ -174,6 +179,9 @@ module.exports = async function handler(req, res) {
     const drivers = Object.values(driverMap).map(dr => {
       const secs = hoursOnlineMap[dr.driverId] || 0;
       dr.hoursOnline  = r2(secs / 3600);
+      dr.utilization  = secs > 0 ? r2((dr._rideSeconds || 0) / secs * 100) : 0;
+      dr.finishRate   = dr._cnt > 0 ? r2(dr.orders / dr._cnt * 100) : 0;
+      delete dr._rideSeconds;
 
       const prof = profileMap[dr.driverId];
       if (prof) {
