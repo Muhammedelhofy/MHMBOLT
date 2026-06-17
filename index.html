@@ -2015,13 +2015,18 @@ function openBoltSync() {
   const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
   const iso = yesterday.toISOString().slice(0, 10);
   document.getElementById('boltSyncDateInput').value = iso;
+  document.getElementById('boltSyncDateInput').max = new Date().toISOString().slice(0, 10);
   document.getElementById('boltSyncStatus').textContent = '';
   document.getElementById('boltSyncConfirmBtn').disabled = false;
-  document.getElementById('boltSyncOverlay').style.display = 'flex';
+  const ov = document.getElementById('boltSyncOverlay');
+  ov.style.display = 'flex';
+  ov.classList.add('open');
 }
 
 function closeBoltSync() {
-  document.getElementById('boltSyncOverlay').style.display = 'none';
+  const ov = document.getElementById('boltSyncOverlay');
+  ov.classList.remove('open');
+  ov.style.display = 'none';
 }
 
 async function runBoltSync() {
