@@ -3913,11 +3913,10 @@ function triggerDataIngestion() {
   }
   window.m8NetActivate = activateNet;
 
+  let _neuralRAF = null, _neuralIdleTimer = null;
   function drawNeural(ts) {
     ctx.clearRect(0,0,W,H);
     const t = ts/1000;
-    // Idle pulse: activate random edge occasionally
-    if (!isActive && Math.random()<0.015) { const e=edges[Math.floor(Math.random()*edges.length)]; e.active=true; e.t=0; }
     // Draw edges
     edges.forEach(e => {
       const na=nodes[e.a], nb=nodes[e.b];
@@ -3940,9 +3939,27 @@ function triggerDataIngestion() {
       const col=i===0?`rgba(0,255,179,${glow})`:`rgba(0,212,255,${glow*0.7})`;
       ctx.fillStyle=col; ctx.beginPath(); ctx.arc(n.x,n.y,n.r+n.pulse*2,0,Math.PI*2); ctx.fill();
     });
-    requestAnimationFrame(drawNeural);
+    // Stop RAF when nothing is moving; idle timer fires a pulse every 2.5 s
+    const anyActive = edges.some(e => e.active) || nodes.some(n => n.pulse > 0.05);
+    if (anyActive) {
+      _neuralRAF = requestAnimationFrame(drawNeural);
+    } else {
+      _neuralRAF = null;
+      if (!_neuralIdleTimer) _neuralIdleTimer = setTimeout(function() {
+        _neuralIdleTimer = null;
+        const e = edges[Math.floor(Math.random()*edges.length)];
+        e.active = true; e.t = 0;
+        _neuralRAF = requestAnimationFrame(drawNeural);
+      }, 2500);
+    }
   }
-  requestAnimationFrame(drawNeural);
+  // Expose kick — called on every M8 interaction to burst-animate the orb
+  window.m8NeuralKick = function() {
+    if (_neuralIdleTimer) { clearTimeout(_neuralIdleTimer); _neuralIdleTimer = null; }
+    edges.forEach(e => { if (Math.random() < 0.65) { e.active = true; e.t = 0; } });
+    if (!_neuralRAF) _neuralRAF = requestAnimationFrame(drawNeural);
+  };
+  _neuralRAF = requestAnimationFrame(drawNeural);
 })();
 
 // Voice waveform via Web Audio API
@@ -6288,6 +6305,23 @@ const TIER_DAYS = 26;
 function bonusTiers() {
   const top = loadSettings().monthlyTarget || 6000;
   return [Math.max(0, top - 2000), Math.max(0, top - 1000), top]; // e.g. [4000, 5000, 6000]
+}
+// Bolt bonus step function — mirrors M8/lib/finance.js bonusFor()
+const BOLT_BONUS_TIERS = [
+  { floor: 6000, gross: 2500, company: 1250 },
+  { floor: 5000, gross: 2000, company: 1000 },
+  { floor: 4000, gross: 1500, company:  750 },
+];
+function bonusFor(net) {
+  for (const t of BOLT_BONUS_TIERS) { if ((net||0) >= t.floor) return { ...t, tierFloor: t.floor }; }
+  return { gross: 0, company: 0, tierFloor: null };
+}
+function bonusGapFor(net) {
+  for (let i = BOLT_BONUS_TIERS.length - 1; i >= 0; i--) {
+    const t = BOLT_BONUS_TIERS[i];
+    if ((net||0) < t.floor) return { sarToNext: t.floor - (net||0), unlocks: t.company, floor: t.floor };
+  }
+  return null;
 }
 // Classify a daily SAR rate. Returns band 0-3 + matching colour classes + the tier it lands in.
 function paceTier(perDay) {
@@ -11888,12 +11922,104 @@ m8PickIntel = function(type) {
 // each intent to the matching picker handler so results render inline and the
 // picker stays open for chaining. Understands names (EN + AR, fuzzy), tabs,
 // sorts, view modes, fleet intel, briefings and dossiers.
+// ── M8 Finance Cards ─────────────────────────────────────────────────────────
+function _m8Sar(v) { return Math.round(v||0).toLocaleString('en-US'); }
+function _m8TierLabel(f) { return f>=6000?'T6 (6k+)':f>=5000?'T5 (5k)':'T4 (4k)'; }
+
+function m8ShowFleetFinance() {
+  const monthKey = defaultMonth();
+  const names = getDriversInMonth(monthKey);
+  if (!names.length) { m8PickShow(`<span class="vt-err">No data for ${monthLabel(monthKey)}</span><div class="vt-hint">Upload a CSV first</div>`); return; }
+  const pls = names.map(n => computeDriverPnL(n, monthKey)).filter(p => p.income > 0 || p.hasProfile);
+  const totalIncome = pls.reduce((s,p) => s + p.income, 0);
+  const totalPnL    = pls.reduce((s,p) => s + p.netPnL, 0);
+  const totalCosts  = totalIncome - totalPnL;
+
+  // Bonus per driver
+  let bonusTotal = 0;
+  const atTier = [], nearTier = [];
+  pls.forEach(p => {
+    const b = bonusFor(p.income);
+    const g = bonusGapFor(p.income);
+    bonusTotal += b.company;
+    if (b.tierFloor) atTier.push({ name: p.name, net: p.income, ...b });
+    else if (g && g.sarToNext <= 500) nearTier.push({ name: p.name, net: p.income, ...g });
+  });
+
+  const netColor  = totalPnL >= 0 ? 'var(--bolt-green)' : 'var(--red)';
+  const pnlWithBonus = totalPnL + bonusTotal;
+
+  let html = `<div style="font-family:var(--mono);font-size:11px;line-height:1.8;min-width:220px">
+    <div style="color:var(--bolt-green);letter-spacing:.1em;margin-bottom:6px;font-size:10px">FLEET P&L — ${monthLabel(monthKey)}</div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Revenue collected</span><span style="color:var(--bolt-green)">${_m8Sar(totalIncome)} SAR</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Costs (salary/rent)</span><span style="color:var(--red)">${_m8Sar(totalCosts)} SAR</span></div>
+    <div style="border-top:1px solid rgba(0,255,179,.15);margin:4px 0;padding-top:4px;display:flex;justify-content:space-between">
+      <span>Deal net</span><span style="color:${netColor}">${_m8Sar(totalPnL)} SAR</span>
+    </div>`;
+
+  if (bonusTotal > 0 || atTier.length) {
+    html += `<div style="margin-top:6px;color:var(--cyan);font-size:10px;letter-spacing:.08em">BOLT BONUS</div>`;
+    atTier.forEach(d => {
+      html += `<div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">✅ ${d.name} <span style="font-size:9px">${_m8TierLabel(d.tierFloor)}</span></span><span style="color:var(--bolt-green)">+${_m8Sar(d.company)} SAR</span></div>`;
+    });
+    nearTier.forEach(d => {
+      html += `<div style="color:var(--amber);font-size:10px">⚡ ${d.name} — ${_m8Sar(d.sarToNext)} SAR to unlock +${_m8Sar(d.unlocks)} SAR</div>`;
+    });
+    html += `<div style="border-top:1px solid rgba(0,212,255,.1);margin-top:4px;padding-top:4px;display:flex;justify-content:space-between">
+      <span style="color:var(--text-muted)">Total (deals + bonus)</span><span style="color:var(--bolt-green);font-size:12px">${_m8Sar(pnlWithBonus)} SAR</span>
+    </div>`;
+  }
+  html += `</div>`;
+  m8PickShow(html);
+}
+
+function m8ShowDriverFinance(name) {
+  const monthKey = defaultMonth();
+  const pl = computeDriverPnL(name, monthKey);
+  if (!pl.income && !pl.hasProfile) { m8PickShow(`<span class="vt-err">No data for ${name}</span>`); return; }
+  const b = bonusFor(pl.income);
+  const g = bonusGapFor(pl.income);
+  const combined = pl.netPnL + b.company;
+  const netColor = pl.netPnL >= 0 ? 'var(--bolt-green)' : 'var(--red)';
+
+  let html = `<div style="font-family:var(--mono);font-size:11px;line-height:1.8">
+    <div style="color:var(--bolt-green);letter-spacing:.08em;font-size:10px;margin-bottom:5px">${name} — ${monthLabel(monthKey)}</div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Driver net earned</span><span>${_m8Sar(pl.income)} SAR</span></div>`;
+  if (pl.salary) html += `<div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Salary paid</span><span style="color:var(--red)">${_m8Sar(-pl.salary)} SAR</span></div>`;
+  if (pl.carRent) html += `<div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Car rent</span><span style="color:${pl.carRent>0?'var(--bolt-green)':'var(--red)'}">${pl.carRent>0?'+':''}${_m8Sar(pl.carRent)} SAR</span></div>`;
+  if (pl.acctRent) html += `<div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">Acct rent</span><span style="color:${pl.acctRent>0?'var(--bolt-green)':'var(--red)'}">${pl.acctRent>0?'+':''}${_m8Sar(pl.acctRent)} SAR</span></div>`;
+  html += `<div style="border-top:1px solid rgba(0,255,179,.15);margin:4px 0;padding-top:4px;display:flex;justify-content:space-between">
+    <span>Fleet keeps</span><span style="color:${netColor}">${_m8Sar(pl.netPnL)} SAR</span>
+  </div>`;
+  if (b.tierFloor) {
+    html += `<div style="color:var(--cyan);font-size:10px;margin-top:5px">BOLT BONUS: ${_m8TierLabel(b.tierFloor)} → +${_m8Sar(b.company)} SAR</div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:2px">
+      <span style="color:var(--text-muted)">Combined</span><span style="color:var(--bolt-green)">${_m8Sar(combined)} SAR</span>
+    </div>`;
+  } else if (g) {
+    html += `<div style="color:var(--amber);font-size:10px;margin-top:5px">⚡ ${_m8Sar(g.sarToNext)} SAR to ${_m8TierLabel(g.floor)} → +${_m8Sar(g.unlocks)} SAR bonus</div>`;
+  }
+  if (!pl.hasProfile) html += `<div style="color:var(--text-muted);font-size:9px;margin-top:4px">No cost profile set — showing revenue only</div>`;
+  html += `</div>`;
+  m8PickShow(html);
+}
+
 function m8SmartCommand(arg) {
   const box  = document.getElementById('m8Smart');
   const text = (arg != null ? arg : (box ? box.value : '')).trim();
   if (!text) return;
   if (box) box.value = '';
   fireM8Pulse(); // Effect E
+  if (window.m8NeuralKick) m8NeuralKick(); // burst-animate the orb on every command
+
+  // Finance pre-check: must run BEFORE parseVoiceCommand so driver+finance phrases
+  // ("Ahmed profit", "Khalid P&L") aren't swallowed by the driver dossier parser.
+  const _finRe = /\b(p&l|pnl|profit|margin|what.*keep|bottom.?line|how much.*make|costs? (?:me|us)|bonus|tier)\b/i;
+  if (_finRe.test(text)) {
+    const _fs = findDriverByVoice(text);
+    if (_fs.length) { m8ShowDriverFinance(_fs[0].n); return; }
+    m8ShowFleetFinance(); return;
+  }
 
   const cmd = parseVoiceCommand(text);
   switch (cmd.type) {
@@ -11920,14 +12046,25 @@ function m8SmartCommand(arg) {
     case 'help':
     case 'wake':         m8PickShow(`<div style="color:var(--text-muted);line-height:1.8">Type or say:<br>• a captain's name → dossier<br>• <span style="color:var(--bolt-green)">compare</span> / <span style="color:var(--bolt-green)">radar</span> → views<br>• <span style="color:var(--bolt-green)">who's offline</span> · <span style="color:var(--bolt-green)">top driver</span> · <span style="color:var(--bolt-green)">below target</span><br>• <span style="color:var(--bolt-green)">sort by hours/earnings/orders</span><br>• <span style="color:var(--bolt-green)">finance</span> · <span style="color:var(--bolt-green)">analytics</span> · <span style="color:var(--bolt-green)">settings</span><br>• <span style="color:var(--bolt-green)">yesterday report</span> · <span style="color:var(--bolt-green)">briefing</span></div>`); break;
     default: {
-      // Tolerant fallbacks for phrasings the strict parser misses (e.g. plurals).
       const l = text.toLowerCase();
+      // Finance / P&L / bonus intents — check before sort fallbacks
+      const isFinance = /\b(p&l|pnl|profit|margin|what.*keep|bottom.?line|how much.*make|how much.*earn|costs? me|costs? us)\b/i.test(l);
+      const isBonus   = /\b(bonus|tier|4k|5k|6k|who.*tier|tier.*who)\b/i.test(l);
+      const finDriver = isFinance && findDriverByVoice(text);
+      if (isFinance && finDriver && finDriver.length) { m8ShowDriverFinance(finDriver[0].n); break; }
+      if (isFinance) { m8ShowFleetFinance(); break; }
+      if (isBonus)   { m8ShowFleetFinance(); break; } // bonus card reuses fleet finance view
+      // Driver + finance keyword without explicit finance phrasing: "Ahmed profit" / "Ahmed P&L"
+      const scored = findDriverByVoice(text);
+      const hasFinWord = /\b(profit|p&l|pnl|cost|margin|keep|earn|bonus)\b/i.test(l);
+      if (scored.length && hasFinWord) { m8ShowDriverFinance(scored[0].n); break; }
+      // Sort fallbacks
       if      (/\bhour/.test(l))                m8PickCmd('sort', 'hours');
       else if (/\bgross/.test(l))               m8PickCmd('sort', 'gross');
       else if (/\bearn|\bnet|\bsar/.test(l))    m8PickCmd('sort', 'net');
       else if (/\border|\bride|\btrip/.test(l)) m8PickCmd('sort', 'orders');
       else if (/\baccept/.test(l))              m8PickCmd('sort', 'accept');
-      else m8PickShow(`<span class="vt-err">Didn't catch "<i>${text.replace(/</g,'&lt;')}</i>"</span><div class="vt-hint">Try a captain's name · "compare" · "who's offline" · "top driver" · "below target" · "finance"</div>`);
+      else m8PickShow(`<span class="vt-err">Didn't catch "<i>${text.replace(/</g,'&lt;')}</i>"</span><div class="vt-hint">Try: "P&L" · "bonus" · "Ahmed profit" · "compare" · "who's offline" · "top driver"</div>`);
     }
   }
 }
