@@ -11245,6 +11245,16 @@ document.addEventListener('DOMContentLoaded', () => {
   initMissionClock();
   m8UpdateIdleOrb();
   initHoloParticles(); // Effect F
+  // Restore last sync time from localStorage so header doesn't say "not synced" after a refresh
+  const lastSync = localStorage.getItem('khair_last_sync');
+  if (lastSync) {
+    const d = new Date(lastSync);
+    if (!isNaN(d)) {
+      const time = d.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+      const lbl = document.getElementById('syncLabel');
+      if (lbl) lbl.textContent = `synced ${time}`;
+    }
+  }
 });
 
 // ═══════════════════════════════════════════
