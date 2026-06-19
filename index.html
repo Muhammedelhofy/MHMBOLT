@@ -6978,11 +6978,13 @@ function saveManualBlockEvent() {
   closeBlockForm();
   renderModalBody();
   toast('Block event saved');
+  syncToCloud();
 }
 function deleteBlockEvent(id) {
   saveBlockLog(getBlockLog().filter(e => e.id !== id));
   renderModalBody();
   toast('Block event removed');
+  syncToCloud();
 }
 function parseBoltSuspensionText(text, driverId, driverName) {
   const events = [];
@@ -7049,6 +7051,7 @@ function importBoltSuspensionHistory() {
   closeBlockForm();
   renderModalBody();
   toast('Imported ' + fresh.length + ' block event' + (fresh.length!==1?'s':'') + ' for ' + driverName);
+  syncToCloud();
 }
 function exportBlockLogCSV() {
   const log = getBlockLog().sort((a, b) => periodSortKey(b.dateBlocked) - periodSortKey(a.dateBlocked));
@@ -7185,6 +7188,7 @@ async function syncToCloud() {
     khair_cycle_receipts:   JSON.parse(localStorage.getItem(CYCLE_RECEIPTS_KEY)    || '{}'),
     khair_transfer_log:     JSON.parse(localStorage.getItem(TRANSFER_LOG_KEY)      || '{}'),
     khair_cycle_anchor:     localStorage.getItem(CYCLE_ANCHOR_KEY) || '',
+    khair_block_log:        getBlockLog(),
     version: 2
   };
 
@@ -7273,6 +7277,13 @@ async function fetchFromCloud() {
   // Cycle anchor: cloud always wins — it is shared fleet config
   if (r.khair_cycle_anchor) {
     setCycleAnchor(r.khair_cycle_anchor);
+  }
+  // Block log: merge cloud + local (union by id, no duplicates)
+  if (Array.isArray(r.khair_block_log) && r.khair_block_log.length) {
+    const local = getBlockLog();
+    const ids = new Set(local.map(e => e.id));
+    const merged2 = [...local, ...r.khair_block_log.filter(e => !ids.has(e.id))];
+    saveBlockLog(merged2);
   }
   setSyncStatus('synced', 'synced ✓');
   localStorage.setItem('khair_last_sync', new Date().toISOString());
