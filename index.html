@@ -1366,6 +1366,45 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
   .cmd-row > .cmd-badges { display:none; }
   .cmd-brief-stats { grid-template-columns:repeat(3,1fr); }
 }
+
+/* ── Mobile layout (≤ 600px) ── */
+@media(max-width:600px){
+  /* Header: collapse to logo + sync dot + theme toggle only */
+  .header { padding:8px 12px; gap:8px; }
+  .header-title { display:none; }
+  .header-sep   { display:none; }
+  .header-period { display:none; }
+  .signal-bars  { display:none; }
+  .mission-clock { display:none; }
+  #pullBtn      { display:none !important; }
+  .sync-label   { font-size:10px; max-width:70px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* Tabs: horizontal scroll instead of wrap */
+  .tabs { overflow-x:auto; padding:0 8px; gap:0; white-space:nowrap; flex-wrap:nowrap; }
+  .tab  { padding:9px 10px; font-size:10px; flex-shrink:0; }
+
+  /* KPI summary grid: 2 columns */
+  .summary-grid { grid-template-columns:repeat(2,1fr) !important; gap:8px; }
+  .kpi-card     { padding:10px 12px; }
+
+  /* Tables: always horizontal-scroll */
+  .table-wrap, .history-table-wrap { overflow-x:auto !important; }
+  .driver-table, .finance-table, .cap-table { min-width:640px; }
+
+  /* Finance period bar: stack vertically */
+  .fin-period-bar { flex-direction:column; align-items:flex-start; gap:8px; }
+  .view-toggle    { width:100%; overflow-x:auto; flex-wrap:nowrap; }
+  .view-toggle-btn { flex-shrink:0; font-size:10px; padding:5px 10px; }
+
+  /* Finance export buttons: wrap */
+  .finance-btn { font-size:11px; padding:5px 10px; }
+
+  /* Modal: full width */
+  .modal-panel { width:100vw !important; max-width:100vw; border-radius:0; }
+
+  /* M8 panel: full width */
+  #m8Panel { width:calc(100vw - 16px) !important; left:8px !important; right:8px !important; }
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -6413,7 +6452,13 @@ function buildCourierSummaryTable(entries, searchFilter) {
     const stretch   = (target > 0 && projMonth >= tier.t3 + 1000)
       ? ` <span class="tier-over" title="On pace to reach ${fmt(Math.floor(projMonth/1000)*1000)}+ SAR this month">${Math.floor(projMonth/1000)}k</span>`
       : '';
-    const gapLabel  = target > 0 ? `→ ${fmt(projMonth)}/mo${stretch}` : '';
+    // "SAR to next tier" hint — how much more projected net needed to climb one tier.
+    const nextTierAmt = tier.band === 0 ? tier.t1 : tier.band === 1 ? tier.t2 : tier.band === 2 ? tier.t3 : 0;
+    const toNextTier  = (tier.band < 3 && nextTierAmt > 0) ? Math.max(0, Math.round(nextTierAmt - tier.proj)) : 0;
+    const toNextHint  = toNextTier > 0
+      ? ` <span style="font-size:10px;color:var(--text-muted)">· ${fmt(toNextTier)} to ${nextTierAmt/1000}k</span>`
+      : '';
+    const gapLabel  = target > 0 ? `→ ${fmt(projMonth)}/mo${stretch}${toNextHint}` : '';
     const gapTitle  = target > 0
       ? `${c.name}: ${c.days}d worked at ${fmt(Math.round(perDay))}/day.\n`
         + `If sustained over ${TIER_DAYS} working days → projected ${fmt(projMonth)} this month → ${tierName}.\n`
@@ -6813,8 +6858,12 @@ function setSyncStatus(state, label) {
 function updateShareUI(binId) {
   const input = document.getElementById('shareInput');
   if (input) input.value = getShareUrl(binId);
+  const time = new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
   const t = document.getElementById('lastSyncTime');
-  if (t) t.textContent = `Last synced: ${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`;
+  if (t) t.textContent = `Last synced: ${time}`;
+  // Show sync time in header label
+  const lbl = document.getElementById('syncLabel');
+  if (lbl) lbl.textContent = `synced ${time}`;
 }
 
 function copyShareLink() {
@@ -8627,6 +8676,13 @@ function renderFinanceTab() {
         <span style="font-size:11px;color:var(--text-muted)">Bolt campaign bonuses — paid in full to each captain</span>
       </div>
       <div id="finBonusContent"></div>
+    </div>
+    <div class="finance-section" style="margin-top:18px">
+      <div class="finance-section-header">
+        <span class="finance-section-title">Fleet Bolt Tier Bonus</span>
+        <span style="font-size:11px;color:var(--text-muted)">Bolt pays the fleet for each captain who hits a monthly net tier (750 / 1,000 / 1,250 SAR)</span>
+      </div>
+      <div id="finFleetBonusContent"></div>
     </div>` : ''}
   `;
   // Modals live at <body> level (not inside this panel) so they can open from
@@ -8636,7 +8692,7 @@ function renderFinanceTab() {
   else if (financeViewMode === 'model')      renderFinanceModelView();
   else if (financeViewMode === 'cycle')      renderFinanceCycleView();
   else if (financeViewMode === 'transfers')  renderFinanceTransferView();
-  if (!isTransfers) renderFinBonus();
+  if (!isTransfers) { renderFinBonus(); renderFleetBoltBonus(); }
 }
 
 function renderFinanceCourierView() {
@@ -9553,6 +9609,58 @@ function renderFinBonus() {
   </table>`;
 }
 
+function renderFleetBoltBonus() {
+  const el = document.getElementById('finFleetBonusContent');
+  if (!el) return;
+  const monthKey = financeMonth;
+  const [t1, t2, t3] = bonusTiers();
+  // Fleet's share of Bolt tier bonus per driver: 750 / 1000 / 1250 SAR (50% of 1500/2000/2500)
+  const fleetBonusFor = net => net >= t3 ? 1250 : net >= t2 ? 1000 : net >= t1 ? 750 : 0;
+  const tierLabel     = net => net >= t3 ? `${fmt(t3)} tier` : net >= t2 ? `${fmt(t2)} tier` : net >= t1 ? `${fmt(t1)} tier` : 'below tier';
+  const tierClass     = net => net >= t3 ? 'tier-txt-3' : net >= t2 ? 'tier-txt-2' : net >= t1 ? 'tier-txt-1' : 'tier-txt-0';
+
+  const drivers = getDriversInMonth(monthKey);
+  if (!drivers.length) {
+    el.innerHTML = `<div class="finance-empty">No driver data for ${monthLabel(monthKey)}</div>`;
+    return;
+  }
+  const rows = drivers
+    .map(name => { const pl = computeDriverPnL(name, monthKey); return { name, net: pl.income, bonus: fleetBonusFor(pl.income) }; })
+    .sort((a, b) => b.net - a.net);
+
+  const totalBonus = rows.reduce((s, r) => s + r.bonus, 0);
+  const earners    = rows.filter(r => r.bonus > 0);
+
+  el.innerHTML = `
+    ${totalBonus > 0
+      ? `<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:rgba(0,255,179,.06);border:1px solid rgba(0,255,179,.2);border-radius:3px;margin-bottom:12px">
+           <span style="font-size:13px;color:var(--text-muted)">${earners.length} captain${earners.length===1?'':'s'} hit a tier →</span>
+           <span style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--bolt-green)">+${fmt(totalBonus)} SAR</span>
+           <span style="font-size:11px;color:var(--text-muted)">fleet earns from Bolt this month</span>
+         </div>`
+      : `<div style="padding:10px 14px;color:var(--text-muted);font-size:13px">No drivers hit a tier yet this month (${fmt(t1)} / ${fmt(t2)} / ${fmt(t3)} SAR thresholds)</div>`}
+    <table class="finance-table">
+      <thead><tr>
+        <th>Captain</th>
+        <th style="text-align:right">Monthly Net</th>
+        <th style="text-align:right">Tier</th>
+        <th style="text-align:right">Fleet Bonus</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `<tr>
+          <td>${r.name}</td>
+          <td style="text-align:right;font-family:var(--mono)">${fmt(r.net)}</td>
+          <td style="text-align:right" class="${tierClass(r.net)}">${tierLabel(r.net)}</td>
+          <td style="text-align:right;font-family:var(--mono);font-weight:600;color:${r.bonus>0?'var(--green)':'var(--text-muted)'}">${r.bonus>0?'+'+fmt(r.bonus):'—'}</td>
+        </tr>`).join('')}
+        <tr style="background:var(--bg-card2);font-weight:700">
+          <td colspan="3">TOTAL FLEET BOLT BONUS</td>
+          <td style="text-align:right;color:var(--green)">+${fmt(totalBonus)} SAR</td>
+        </tr>
+      </tbody>
+    </table>`;
+}
+
 // ═══════════════════════════════════════════
 // FINANCE MODAL HTML BUILDER
 // ═══════════════════════════════════════════
@@ -10033,8 +10141,9 @@ function handleAmbassadorFile(file) {
       if (typeof renderMappingList === 'function') renderMappingList();
 
       let msg = `Applied ${applied} ambassador assignment${applied===1?'':'s'}`;
-      if (mapped)        msg += ` · ${mapped} name map${mapped===1?'':'s'}`;
+      if (mapped)         msg += ` · ${mapped} name map${mapped===1?'':'s'}`;
       if (unknown.length) msg += ` · ⚠ ${unknown.length} name${unknown.length===1?'':'s'} not in data yet`;
+      if (bad.length)     msg += ` · ❌ ${bad.length} row${bad.length===1?'':'s'} skipped (bad model — use A, B or C)`;
       toast(msg);
       if (unknown.length) console.warn('Ambassador upload — names not matched to current data (check spelling):', unknown);
       if (bad.length)     console.warn('Ambassador upload — rows skipped (bad model):', bad);
