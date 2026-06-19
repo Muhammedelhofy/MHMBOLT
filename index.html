@@ -1526,6 +1526,7 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
   <div class="tab active" data-tab="captains"  onclick="showTab('captains',this)">Captains</div>
   <div class="tab"        data-tab="finance"   onclick="showTab('finance',this)">Finance</div>
   <div class="tab"        data-tab="ambassadors" onclick="showTab('ambassadors',this)">🎖 Ambassadors</div>
+  <div class="tab"        data-tab="blocks"     onclick="showTab('blocks',this);renderBlocks()">⛔ Blocks</div>
   <div class="tab"        data-tab="analytics" onclick="showTab('analytics',this);renderAnalytics()">Analytics</div>
   <div class="tab"        data-tab="starmap"   onclick="showTab('starmap',this)">⭐ Star Map</div>
   <div class="tab"        data-tab="settings"  onclick="showTab('settings',this)">Settings</div>
@@ -1642,6 +1643,17 @@ body::after { animation:scanline 10s linear infinite; } /* keep scanline */
       <div class="empty-icon">🎖</div>
       <div class="empty-title">Loading Ambassadors…</div>
       <div class="empty-sub">Click the Ambassadors tab to load</div>
+    </div>
+  </div>
+</div>
+
+<!-- Blocks Panel -->
+<div id="blocks" class="panel">
+  <div id="blocksContent">
+    <div class="empty-state">
+      <div class="empty-icon">⛔</div>
+      <div class="empty-title">No block data yet</div>
+      <div class="empty-sub">Run a Bolt sync or add block events manually</div>
     </div>
   </div>
 </div>
@@ -1885,6 +1897,7 @@ function _doShowTab(id, el) {
   if (id === 'captains') renderCaptains();
   if (id === 'finance')  renderFinanceTab();
   if (id === 'ambassadors') renderAmbassadors();
+  if (id === 'blocks')    renderBlocks();
   if (id === 'starmap')  smSwitchView('home');
 }
 
@@ -7069,6 +7082,156 @@ function exportBlockLogCSV() {
   a.click(); URL.revokeObjectURL(url);
 }
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ═══════════════════════════════════════════
+// BLOCKS TAB
+// ═══════════════════════════════════════════
+let blocksFilter = 'active'; // 'active' | 'all'
+let blocksSearch = '';
+let blocksExpanded = new Set();
+
+function renderBlocks() {
+  const el = document.getElementById('blocksContent');
+  if (!el) return;
+  const all = getBlockLog();
+  if (!all.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">⛔</div><div class="empty-title">No block data yet</div><div class="empty-sub">Run a Bolt sync or add block events via a driver modal</div></div>`;
+    return;
+  }
+
+  // Stats
+  const currentlyBlocked = all.filter(e => !e.dateUnblocked);
+  const blockedDriverNames = [...new Set(currentlyBlocked.map(e => e.driverName))];
+  const allDriverNames     = [...new Set(all.map(e => e.driverName))];
+  // Most blocked driver
+  const freq = {};
+  for (const e of all) freq[e.driverName] = (freq[e.driverName] || 0) + 1;
+  const topDriver = Object.entries(freq).sort((a,b) => b[1]-a[1])[0];
+
+  // Filter + search
+  const q = blocksSearch.trim().toLowerCase();
+  let filtered = blocksFilter === 'active'
+    ? all.filter(e => !e.dateUnblocked)
+    : all;
+  if (q) filtered = filtered.filter(e => e.driverName.toLowerCase().includes(q) || e.reason.toLowerCase().includes(q));
+
+  // Group by driver for the table
+  const byDriver = {};
+  for (const e of filtered) {
+    if (!byDriver[e.driverName]) byDriver[e.driverName] = [];
+    byDriver[e.driverName].push(e);
+  }
+  // Sort drivers: currently blocked first, then by event count desc
+  const driverList = Object.entries(byDriver).sort(([na, ea], [nb, eb]) => {
+    const aBlocked = ea.some(e => !e.dateUnblocked) ? 1 : 0;
+    const bBlocked = eb.some(e => !e.dateUnblocked) ? 1 : 0;
+    if (bBlocked !== aBlocked) return bBlocked - aBlocked;
+    return eb.length - ea.length;
+  });
+
+  const daysBetween = (d1, d2) => {
+    try {
+      const p = s => { const [d,m,y] = s.split(' '); const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(m); return new Date(+y, mo, +d); };
+      return Math.round(Math.abs(p(d2) - p(d1)) / 86400000);
+    } catch { return '?'; }
+  };
+
+  const driverRows = driverList.map(([name, events]) => {
+    const isCurrentlyBlocked = events.some(e => !e.dateUnblocked);
+    const expanded = blocksExpanded.has(name);
+    const latestBlock = events.find(e => !e.dateUnblocked) || events.sort((a,b) => periodSortKey(b.dateBlocked)-periodSortKey(a.dateBlocked))[0];
+    const totalEvents = (all.filter(e => e.driverName === name)).length;
+
+    const eventRows = events
+      .sort((a,b) => periodSortKey(b.dateBlocked) - periodSortKey(a.dateBlocked))
+      .map(e => {
+        const ongoing = !e.dateUnblocked;
+        const days = ongoing ? daysBetween(e.dateBlocked, new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}).replace(/ /g,' ')) : (e.dateUnblocked ? daysBetween(e.dateBlocked, e.dateUnblocked) : '?');
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+          <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);white-space:nowrap">${e.dateBlocked}</td>
+          <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);white-space:nowrap">${e.dateUnblocked || '—'}</td>
+          <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);text-align:center">${days}${ongoing?'<span style="font-size:9px;color:var(--red)"> ongoing</span>':''}</td>
+          <td style="padding:6px 10px"><span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;letter-spacing:.05em;background:${ongoing?'rgba(255,68,102,.15)':'rgba(0,255,179,.1)'};color:${ongoing?'var(--red)':'var(--green)'}">${ongoing?'BLOCKED':'RESOLVED'}</span></td>
+          <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);max-width:340px;white-space:normal;line-height:1.4">${e.reason}</td>
+        </tr>`;
+      }).join('');
+
+    return `<div style="background:var(--bg-card);border:1px solid ${isCurrentlyBlocked?'rgba(255,68,102,.3)':'rgba(255,255,255,.06)'};border-radius:6px;margin-bottom:8px;overflow:hidden">
+      <div onclick="blocksToggle('${name.replace(/'/g,"\\'")}');renderBlocks()" style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;user-select:none">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-weight:700;font-size:13px;color:var(--text)">${name}</span>
+            ${isCurrentlyBlocked ? `<span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:2px;background:rgba(255,68,102,.15);color:var(--red);letter-spacing:.06em;border:1px solid rgba(255,68,102,.3)">BLOCKED</span>` : ''}
+          </div>
+          ${isCurrentlyBlocked ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;line-height:1.4">${latestBlock.reason.split('\n')[0]}</div>` : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;flex-shrink:0">
+          <div style="text-align:center">
+            <div style="font-size:18px;font-weight:700;color:${isCurrentlyBlocked?'var(--red)':'var(--text-muted)'}">${totalEvents}</div>
+            <div style="font-size:9px;color:var(--text-muted);letter-spacing:.04em">EVENTS</div>
+          </div>
+          <div style="font-size:16px;color:var(--text-muted);transition:transform .2s;transform:rotate(${expanded?'90':'0'}deg)">›</div>
+        </div>
+      </div>
+      ${expanded ? `<div style="border-top:1px solid rgba(255,255,255,.06);overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:rgba(0,0,0,.2)">
+            <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:left;letter-spacing:.05em;font-weight:600;white-space:nowrap">DATE BLOCKED</th>
+            <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:left;letter-spacing:.05em;font-weight:600;white-space:nowrap">DATE UNBLOCKED</th>
+            <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:center;letter-spacing:.05em;font-weight:600">DAYS</th>
+            <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:left;letter-spacing:.05em;font-weight:600">STATUS</th>
+            <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:left;letter-spacing:.05em;font-weight:600">REASON</th>
+          </tr></thead>
+          <tbody>${eventRows}</tbody>
+        </table>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="padding:16px 0 8px">
+      <!-- Summary cards -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+        <div style="background:rgba(255,68,102,.08);border:1px solid rgba(255,68,102,.25);border-radius:6px;padding:12px 18px;min-width:120px">
+          <div style="font-size:28px;font-weight:700;color:var(--red)">${blockedDriverNames.length}</div>
+          <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">CURRENTLY BLOCKED</div>
+          ${blockedDriverNames.length ? `<div style="font-size:10px;color:var(--red);margin-top:4px;line-height:1.4">${blockedDriverNames.join(' · ')}</div>` : ''}
+        </div>
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:100px">
+          <div style="font-size:28px;font-weight:700;color:var(--text)">${all.length}</div>
+          <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">TOTAL EVENTS</div>
+        </div>
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:100px">
+          <div style="font-size:28px;font-weight:700;color:var(--text)">${allDriverNames.length}</div>
+          <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">DRIVERS AFFECTED</div>
+        </div>
+        ${topDriver ? `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:120px">
+          <div style="font-size:14px;font-weight:700;color:var(--amber)">${topDriver[0]}</div>
+          <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">MOST BLOCKED · ${topDriver[1]} events</div>
+        </div>` : ''}
+      </div>
+
+      <!-- Controls -->
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+        <div style="display:flex;gap:4px">
+          <button onclick="blocksFilter='active';renderBlocks()" style="padding:5px 14px;font-size:11px;font-weight:700;border-radius:2px;cursor:pointer;letter-spacing:.04em;border:1px solid ${blocksFilter==='active'?'rgba(255,68,102,.4)':'rgba(255,255,255,.1)'};background:${blocksFilter==='active'?'rgba(255,68,102,.15)':'transparent'};color:${blocksFilter==='active'?'var(--red)':'var(--text-muted)'}">CURRENTLY BLOCKED</button>
+          <button onclick="blocksFilter='all';renderBlocks()" style="padding:5px 14px;font-size:11px;font-weight:700;border-radius:2px;cursor:pointer;letter-spacing:.04em;border:1px solid ${blocksFilter==='all'?'rgba(0,212,255,.4)':'rgba(255,255,255,.1)'};background:${blocksFilter==='all'?'rgba(0,212,255,.1)':'transparent'};color:${blocksFilter==='all'?'var(--cyan)':'var(--text-muted)'}">ALL HISTORY</button>
+        </div>
+        <input type="text" placeholder="Search driver or reason…" value="${blocksSearch}"
+          oninput="blocksSearch=this.value;renderBlocks()"
+          style="padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);flex:1;min-width:180px;max-width:300px">
+        <button onclick="exportBlockLogCSV()" style="padding:5px 14px;font-size:11px;font-weight:700;border-radius:2px;cursor:pointer;letter-spacing:.04em;border:1px solid rgba(255,255,255,.15);background:transparent;color:var(--text-muted);margin-left:auto">⬇ EXPORT CSV</button>
+      </div>
+
+      <!-- Driver list -->
+      ${driverList.length ? driverRows : `<div style="text-align:center;padding:40px 0;color:var(--text-muted);font-size:13px">${q ? 'No results for "'+q+'"' : 'No currently blocked drivers'}</div>`}
+    </div>`;
+}
+
+function blocksToggle(name) {
+  if (blocksExpanded.has(name)) blocksExpanded.delete(name);
+  else blocksExpanded.add(name);
+}
 
 const _r2 = v => Math.round((v || 0) * 100) / 100;  // round to 2 decimals
 
