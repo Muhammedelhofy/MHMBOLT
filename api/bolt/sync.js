@@ -188,6 +188,10 @@ module.exports = async function handler(req, res) {
         dr.rating = prof.driver_rating || 0;
         dr.score  = prof.driver_score  || 0;
         if (!dr.name && prof.first_name) dr.name = `${prof.first_name} ${prof.last_name || ''}`.trim();
+        dr.boltState            = prof.state || '';
+        dr.boltSuspensionReason = prof.suspension_reason || '';
+        dr.hasCashPayment       = prof.has_cash_payment ?? null;
+        dr.vehiclePlate         = prof.active_vehicle?.reg_number || '';
       }
 
       if (dr._cnt > 0) dr.distanceAvg = r2(dr.distanceTotal / dr._cnt);

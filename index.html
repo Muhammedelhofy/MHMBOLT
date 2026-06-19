@@ -2052,6 +2052,7 @@ async function runBoltSync() {
 
     const pInfo = { start:{ day:dy, month:mo-1, year:yr }, end:{ day:dy, month:mo-1, year:yr } };
     saveToHistory(period, j.drivers, 'bolt-api-sync', pInfo);
+    updateBlockLog(period, j.drivers);
 
     status.style.color = 'var(--bolt-green)';
     status.textContent = `✓ Saved ${j.driverCount} drivers, ${j.totalOrders} orders`;
@@ -2565,7 +2566,7 @@ function driverRow(d, target, pInfo, s, rank) {
         <div class="avatar ${d.isActive?'':'av-inactive'}">${init}</div>
         <div><div class="d-name">${d.name}</div>${foreignName?`<div class="d-foreign">${foreignName}</div>`:''}<div class="d-meta">${d.phone||d.email||'—'}</div></div>
       </div></td>
-      <td><span class="tier ${tierClass}">${d.tier.englishName}</span></td>
+      <td><span class="tier ${tierClass}">${d.tier.englishName}</span>${d.boltState && d.boltState !== 'active' ? `<span class="status-badge" style="background:rgba(255,68,102,.12);color:var(--red);border:1px solid rgba(255,68,102,.3);margin-left:5px;font-size:8px">${d.boltState.toUpperCase()}</span>` : ''}</td>
       <td class="td-r kv">${(d.hoursOnline||0).toFixed?((d.hoursOnline||0).toFixed(1)):(d.hoursOnline||0)}<span style="font-size:11px;color:var(--text-dim)">h</span></td>
       <td class="td-r kv">${d.orders||0}</td>
       <td class="td-r ${d.isActive?accFlag:'kv-muted'}">${d.isActive?(d.acceptance||0)+'%':'—'}</td>
@@ -2741,7 +2742,7 @@ function openModal(id, periodFilter) {
     <div class="modal-avatar">${d.name[0].toUpperCase()}</div>
     <div>
       <div class="modal-driver-name">${d.name}${modalForeignName ? `<span class="d-foreign" style="font-size:13px;margin-left:6px;">→ ${modalForeignName}</span>` : ''}</div>
-      <div class="modal-driver-meta"><span class="tier ${tc}" style="margin-right:6px">${d.tier.englishName}</span>${d.phone||''}${d.email?' · '+d.email:''}</div>
+      <div class="modal-driver-meta"><span class="tier ${tc}" style="margin-right:6px">${d.tier.englishName}</span>${d.boltState && d.boltState !== 'active' ? `<span class="status-badge" style="background:rgba(255,68,102,.15);color:var(--red);border:1px solid rgba(255,68,102,.4);margin-right:6px;font-size:9px">${d.boltState.toUpperCase()}</span>` : ''}${d.phone||''}${d.email?' · '+d.email:''}${d.vehiclePlate?' · '+d.vehiclePlate:''}</div>
     </div>
     <div class="modal-close" onclick="closeModal()">×</div>`;
 
@@ -2798,6 +2799,10 @@ function renderModalBody() {
 
   document.getElementById('modalBody').innerHTML = `
     ${singleDayActive?`<div class="modal-filter-banner">📅 Showing <b>${scopeLbl}</b> only. <span onclick="showModalFullMonth()" style="cursor:pointer;text-decoration:underline">Show full month</span></div>`:filterActive?`<div class="modal-filter-banner">🔎 Filtered to <b>${scopeLbl}</b> — performance, earnings &amp; day-by-day below show this month only. <span onclick="setModalMonth('all')" style="cursor:pointer;text-decoration:underline">Show all months</span></div>`:''}
+    ${d.boltState && d.boltState !== 'active' ? `<div style="background:rgba(255,68,102,.08);border:1px solid rgba(255,68,102,.35);border-radius:3px;padding:10px 14px;margin-bottom:12px">
+      <div style="color:var(--red);font-weight:700;letter-spacing:.05em;font-size:12px;margin-bottom:${d.boltSuspensionReason?'5px':'0'}">⛔ DRIVER ${d.boltState.toUpperCase()} ON BOLT PLATFORM</div>
+      ${d.boltSuspensionReason?`<div style="font-size:11px;color:var(--text-muted)">Reason: ${d.boltSuspensionReason}</div>`:''}
+    </div>` : ''}
     <div class="target-section">
       <div class="target-section-title">Monthly Target — ${fmt(effTarget)} SAR${effTarget!==target?`<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">(prorated from ${fmt(target)})</span>`:''}<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">· current month</span></div>
       <div class="target-big">
@@ -2895,6 +2900,83 @@ function renderModalBody() {
         </tr>
       </tbody>
     </table>` : `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">No days for ${scopeLbl||'this period'}</div>`}
+
+    ${(()=>{
+      const blocks     = getDriverBlockHistory(d.driverId, d.name);
+      const activeBlock = blocks.find(e => !e.dateUnblocked);
+      const esc = s => String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+      const dayCount = e => {
+        try {
+          const parse = s => { const m=s.match(/(\d{1,2})\s(\w{3})\s(\d{4})/); return m?new Date(`${m[2]} ${m[1]} ${m[3]}`):null; };
+          const t1=parse(e.dateBlocked); const t2=e.dateUnblocked?parse(e.dateUnblocked):new Date();
+          return t1&&t2?Math.max(1,Math.round((t2-t1)/86400000)):'—';
+        } catch { return '—'; }
+      };
+      return `
+        <div class="section-label" style="margin-top:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <span>Block History <span style="font-size:11px;color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">— ${blocks.length} event${blocks.length!==1?'s':''}</span></span>
+          <div style="display:flex;align-items:center;gap:8px">
+            ${activeBlock?`<span style="font-size:10px;font-weight:700;color:var(--red);letter-spacing:.06em">● CURRENTLY BLOCKED</span>`:`<span style="font-size:10px;color:var(--green);letter-spacing:.04em">✓ No active block</span>`}
+            <button onclick="openBlockForm('${esc(d.driverId)}','${esc(d.name)}')" style="background:rgba(0,212,255,.1);color:var(--cyan);border:1px solid rgba(0,212,255,.3);border-radius:2px;padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.04em">+ ADD BLOCK</button>
+          </div>
+        </div>
+
+        <div id="blockFormWrap" style="display:none;background:var(--bg-card2);border:1px solid rgba(0,212,255,.15);border-radius:3px;padding:12px 14px;margin-bottom:10px">
+          <div style="display:flex;gap:6px;margin-bottom:12px">
+            <button id="bfModeBtn1" onclick="setBlockFormMode('single')" style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:2px;cursor:pointer;border:1px solid rgba(0,212,255,.4);background:rgba(0,212,255,.2);color:var(--cyan);letter-spacing:.04em">Single Event</button>
+            <button id="bfModeBtn2" onclick="setBlockFormMode('paste')"  style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:2px;cursor:pointer;border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--text-muted);letter-spacing:.04em">Paste from Bolt Portal</button>
+          </div>
+          <div id="bfSingleMode">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+              <div>
+                <div style="font-size:9px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Date Blocked *</div>
+                <input type="date" id="bfDateBlocked" style="width:100%;box-sizing:border-box;background:var(--bg-card);border:1px solid rgba(0,212,255,.2);border-radius:2px;color:var(--text);padding:5px 8px;font-size:12px">
+              </div>
+              <div>
+                <div style="font-size:9px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Date Unblocked (blank = ongoing)</div>
+                <input type="date" id="bfDateUnblocked" style="width:100%;box-sizing:border-box;background:var(--bg-card);border:1px solid rgba(0,212,255,.2);border-radius:2px;color:var(--text);padding:5px 8px;font-size:12px">
+              </div>
+            </div>
+            <div style="margin-bottom:10px">
+              <div style="font-size:9px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Suspension Reason *</div>
+              <textarea id="bfReason" rows="3" placeholder="Paste the suspension message from Bolt portal…" style="width:100%;box-sizing:border-box;background:var(--bg-card);border:1px solid rgba(0,212,255,.2);border-radius:2px;color:var(--text);padding:6px 8px;font-size:12px;resize:vertical;font-family:inherit;line-height:1.5"></textarea>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button onclick="saveManualBlockEvent()" style="background:rgba(0,255,179,.14);color:var(--bolt-green);border:1px solid rgba(0,255,179,.4);border-radius:2px;padding:5px 16px;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.04em">SAVE</button>
+              <button onclick="closeBlockForm()" style="background:transparent;color:var(--text-muted);border:1px solid rgba(255,255,255,.1);border-radius:2px;padding:5px 12px;font-size:11px;cursor:pointer">Cancel</button>
+            </div>
+          </div>
+          <div id="bfPasteMode" style="display:none">
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;line-height:1.5">Open the driver on <b style="color:var(--text)">Bolt Fleet portal → Suspension history</b>, select all text on that section and paste it below. All events will be imported at once.</div>
+            <textarea id="bfBoltPaste" rows="8" placeholder="Paste the full Suspension history section from the Bolt portal here…" style="width:100%;box-sizing:border-box;background:var(--bg-card);border:1px solid rgba(0,212,255,.2);border-radius:2px;color:var(--text);padding:8px 10px;font-size:12px;resize:vertical;font-family:inherit;line-height:1.5;margin-bottom:10px"></textarea>
+            <div style="display:flex;gap:8px">
+              <button onclick="importBoltSuspensionHistory()" style="background:rgba(0,255,179,.14);color:var(--bolt-green);border:1px solid rgba(0,255,179,.4);border-radius:2px;padding:5px 16px;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.04em">IMPORT ALL</button>
+              <button onclick="closeBlockForm()" style="background:transparent;color:var(--text-muted);border:1px solid rgba(255,255,255,.1);border-radius:2px;padding:5px 12px;font-size:11px;cursor:pointer">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        ${blocks.length ? `
+        <table class="day-table">
+          <thead><tr>
+            <th>Date Blocked</th><th>Date Unblocked</th><th class="td-r">Days</th><th>Status</th><th>Reason</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${blocks.map(e => {
+              const still = !e.dateUnblocked;
+              const dc    = dayCount(e);
+              return `<tr>
+                <td style="color:var(--red);font-weight:600;white-space:nowrap">${e.dateBlocked}</td>
+                <td style="color:${still?'var(--text-muted)':'var(--green)'};white-space:nowrap">${e.dateUnblocked||'—'}</td>
+                <td class="td-r" style="font-family:var(--mono)">${dc}${typeof dc==='number'&&still?'<span style="color:var(--text-muted);font-size:10px"> ongoing</span>':''}</td>
+                <td><span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;letter-spacing:.05em;white-space:nowrap;background:${still?'rgba(255,68,102,.15)':'rgba(0,255,179,.1)'};color:${still?'var(--red)':'var(--green)'}">${still?'BLOCKED':'RESOLVED'}</span>${e.source==='manual'?'<span style="font-size:8px;color:var(--text-muted);margin-left:4px">manual</span>':''}</td>
+                <td style="font-size:11px;color:var(--text-muted);max-width:200px;white-space:normal;line-height:1.4">${e.reason}</td>
+                <td><span onclick="deleteBlockEvent('${esc(e.id)}')" title="Remove" style="cursor:pointer;color:var(--text-muted);font-size:13px;padding:2px 5px;border-radius:2px;transition:color .15s" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text-muted)'">✕</span></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>` : `<div style="padding:14px 0;font-size:12px;color:var(--text-muted)">No block events yet — click <b>+ ADD BLOCK</b> to enter history from the Bolt portal.</div>`}`;
+    })()}
   `;
 }
 function closeModal() {
@@ -5873,6 +5955,18 @@ function renderCaptains() {
       ${searchBar}
     </div>
     ${kpiCardsHtml ? `<div class="summary-grid" style="margin-bottom:16px">${kpiCardsHtml}</div>` : ''}
+    ${(()=>{
+      const openBlocks = getBlockLog().filter(e => !e.dateUnblocked);
+      if (!openBlocks.length) return '';
+      const names = openBlocks.map(e => e.driverName).join(' · ');
+      return `<div style="background:rgba(255,68,102,.08);border:1px solid rgba(255,68,102,.35);border-radius:3px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div>
+          <div style="color:var(--red);font-weight:700;font-size:12px;letter-spacing:.05em;margin-bottom:4px">⛔ ${openBlocks.length} DRIVER${openBlocks.length>1?'S':''} CURRENTLY BLOCKED ON BOLT</div>
+          <div style="font-size:11px;color:var(--text-muted)">${names}</div>
+        </div>
+        <button onclick="exportBlockLogCSV()" style="background:rgba(255,68,102,.15);color:var(--red);border:1px solid rgba(255,68,102,.35);border-radius:2px;padding:5px 12px;font-size:11px;cursor:pointer;font-weight:700;white-space:nowrap;letter-spacing:.04em">⬇ EXPORT BLOCK REPORT</button>
+      </div>`;
+    })()}
     <div id="captainsInner">${innerHtml}</div>`;
 
   if (captainView === 'compare') renderCompareView(comparePool);
@@ -6798,6 +6892,181 @@ const CLOUD_MAX_BYTES    = 96 * 1024;   // TOTAL payload budget (~4KB headroom u
 const CLOUD_DEFAULT_DAYS = 60;          // target retention if size allows (was 30)
 const CLOUD_FMT          = 'c1';        // marker written alongside khair_history
 
+// ── Block Log ────────────────────────────────────────────────────────────────
+function getBlockLog() {
+  try { return JSON.parse(localStorage.getItem('khair_block_log') || '[]'); } catch { return []; }
+}
+function saveBlockLog(log) {
+  try { localStorage.setItem('khair_block_log', JSON.stringify(log)); } catch(e) {}
+}
+// Called after every sync. Compares today's driver states with the previous
+// synced day and records when a driver transitions blocked ↔ active.
+function updateBlockLog(period, newDrivers) {
+  const log = getBlockLog();
+  const prevEntry = [...getHistory()]
+    .filter(h => h.period !== period)
+    .sort((a, b) => periodSortKey(b.period) - periodSortKey(a.period))[0];
+  const prevMap = {};
+  if (prevEntry) {
+    for (const d of (prevEntry.drivers || [])) prevMap[d.driverId || driverKey(d.name)] = d;
+  }
+  for (const d of newDrivers) {
+    if (!d.boltState) continue;
+    const k = d.driverId || driverKey(d.name);
+    const prev = prevMap[k];
+    const wasBlocked = prev?.boltState && prev.boltState !== 'active';
+    const isBlocked  = d.boltState !== 'active';
+    if (!wasBlocked && isBlocked) {
+      if (!log.some(e => e.id === k + '_' + period)) {
+        log.push({ id: k + '_' + period, driverId: d.driverId || '', driverName: d.name,
+          dateBlocked: period, dateUnblocked: null, reason: d.boltSuspensionReason || 'No reason provided' });
+      }
+    } else if (wasBlocked && !isBlocked) {
+      const open = [...log].reverse().find(e =>
+        !e.dateUnblocked &&
+        ((e.driverId && d.driverId && e.driverId === d.driverId) ||
+         driverKey(e.driverName) === driverKey(d.name))
+      );
+      if (open) open.dateUnblocked = period;
+    }
+  }
+  saveBlockLog(log);
+}
+function getDriverBlockHistory(driverId, name) {
+  return getBlockLog()
+    .filter(e => (driverId && e.driverId === driverId) || driverKey(e.driverName) === driverKey(name))
+    .sort((a, b) => periodSortKey(b.dateBlocked) - periodSortKey(a.dateBlocked));
+}
+function htmlDateToPeriod(s) {
+  const [y,m,d] = s.split('-').map(Number);
+  return `${String(d).padStart(2,'0')} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m-1]} ${y}`;
+}
+function openBlockForm(driverId, name) {
+  const wrap = document.getElementById('blockFormWrap');
+  if (!wrap) return;
+  wrap.dataset.driverId   = driverId;
+  wrap.dataset.driverName = name;
+  wrap.style.display = 'block';
+  document.getElementById('bfDateBlocked').value   = '';
+  document.getElementById('bfDateUnblocked').value = '';
+  document.getElementById('bfReason').value        = '';
+}
+function closeBlockForm() {
+  const wrap = document.getElementById('blockFormWrap');
+  if (wrap) wrap.style.display = 'none';
+}
+function saveManualBlockEvent() {
+  const wrap       = document.getElementById('blockFormWrap');
+  const driverId   = wrap?.dataset.driverId   || '';
+  const driverName = wrap?.dataset.driverName || '';
+  const dateBlocked   = document.getElementById('bfDateBlocked').value;
+  const dateUnblocked = document.getElementById('bfDateUnblocked').value;
+  const reason        = document.getElementById('bfReason').value.trim();
+  if (!dateBlocked) { toast('Please select the date the driver was blocked'); return; }
+  if (!reason)      { toast('Please enter the suspension reason'); return; }
+  const log    = getBlockLog();
+  const period = htmlDateToPeriod(dateBlocked);
+  const k      = driverId || driverKey(driverName);
+  log.push({
+    id: k + '_' + period + '_' + Date.now(),
+    driverId, driverName,
+    dateBlocked: period,
+    dateUnblocked: dateUnblocked ? htmlDateToPeriod(dateUnblocked) : null,
+    reason, source: 'manual'
+  });
+  saveBlockLog(log);
+  closeBlockForm();
+  renderModalBody();
+  toast('Block event saved');
+}
+function deleteBlockEvent(id) {
+  saveBlockLog(getBlockLog().filter(e => e.id !== id));
+  renderModalBody();
+  toast('Block event removed');
+}
+function parseBoltSuspensionText(text, driverId, driverName) {
+  const events = [];
+  const lines = text.split('\n').map(l => l.trim());
+  const fmtDate = s => {
+    const m = s.trim().match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
+    return m ? String(m[1]).padStart(2,'0') + ' ' + m[2] + ' ' + m[3] : s.trim();
+  };
+  const k = driverId || driverName.toLowerCase().replace(/\s+/g,'');
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line || /^(suspension history|this section)/i.test(line)) { i++; continue; }
+    const isStart = line.startsWith('"') || /^(your account|you cannot)/i.test(line);
+    if (!isStart) { i++; continue; }
+    const rLines = [];
+    while (i < lines.length) {
+      const l = lines[i];
+      if (/^(\d{1,2}\s+\w+\s+\d{4}\s*-|From\s+\d)/i.test(l)) break;
+      rLines.push(l.replace(/^"|"$/g,'').trim());
+      i++;
+    }
+    const reason = rLines.filter(Boolean).join('\n').trim();
+    if (!reason || i >= lines.length) continue;
+    const dateLine = lines[i]; i++;
+    let dateBlocked = null, dateUnblocked = null;
+    const fromM  = dateLine.match(/^From\s+(\d{1,2}\s+\w+\s+\d{4})/i);
+    const rangeM = dateLine.match(/^(\d{1,2}\s+\w+\s+\d{4})\s*-\s*(\d{1,2}\s+\w+\s+\d{4})/);
+    if      (fromM)  { dateBlocked = fromM[1]; }
+    else if (rangeM) { dateBlocked = rangeM[1]; dateUnblocked = rangeM[2]; }
+    else continue;
+    if (i < lines.length && /^ongoing$/i.test(lines[i])) { dateUnblocked = null; i++; }
+    const db = fmtDate(dateBlocked);
+    events.push({ id: k+'_'+db.replace(/\s/g,'')+'_'+events.length, driverId, driverName,
+      dateBlocked: db, dateUnblocked: dateUnblocked ? fmtDate(dateUnblocked) : null,
+      reason, source: 'manual' });
+  }
+  return events;
+}
+function setBlockFormMode(mode) {
+  const s = document.getElementById('bfSingleMode');
+  const p = document.getElementById('bfPasteMode');
+  const b1 = document.getElementById('bfModeBtn1');
+  const b2 = document.getElementById('bfModeBtn2');
+  if (s)  s.style.display  = mode==='single'?'block':'none';
+  if (p)  p.style.display  = mode==='paste' ?'block':'none';
+  const on  = 'background:rgba(0,212,255,.2);color:var(--cyan);border-color:rgba(0,212,255,.4)';
+  const off = 'background:transparent;color:var(--text-muted);border-color:rgba(255,255,255,.1)';
+  if (b1) b1.style.cssText += ';' + (mode==='single'?on:off);
+  if (b2) b2.style.cssText += ';' + (mode==='paste' ?on:off);
+}
+function importBoltSuspensionHistory() {
+  const wrap       = document.getElementById('blockFormWrap');
+  const driverId   = wrap?.dataset.driverId   || '';
+  const driverName = wrap?.dataset.driverName || '';
+  const text = document.getElementById('bfBoltPaste')?.value || '';
+  if (!text.trim()) { toast('Paste the suspension history text first'); return; }
+  const events = parseBoltSuspensionText(text, driverId, driverName);
+  if (!events.length) { toast('Could not parse any events — check the pasted text'); return; }
+  const log  = getBlockLog();
+  const ids  = new Set(log.map(e => e.id));
+  const fresh = events.filter(e => !ids.has(e.id));
+  saveBlockLog([...log, ...fresh]);
+  closeBlockForm();
+  renderModalBody();
+  toast('Imported ' + fresh.length + ' block event' + (fresh.length!==1?'s':'') + ' for ' + driverName);
+}
+function exportBlockLogCSV() {
+  const log = getBlockLog().sort((a, b) => periodSortKey(b.dateBlocked) - periodSortKey(a.dateBlocked));
+  if (!log.length) { toast('No block events recorded yet — sync a few days first'); return; }
+  const rows = [['Driver', 'Date Blocked', 'Date Unblocked', 'Status', 'Reason']];
+  for (const e of log) {
+    rows.push([`"${e.driverName}"`, e.dateBlocked, e.dateUnblocked || '—',
+      e.dateUnblocked ? 'Resolved' : 'Still Blocked', `"${e.reason}"`]);
+  }
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url;
+  a.download = `block-report-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 const _r2 = v => Math.round((v || 0) * 100) / 100;  // round to 2 decimals
 
 function packDriver(d) {
@@ -6813,6 +7082,10 @@ function packDriver(d) {
   if (d.fleetCut     != null) o.fc = _r2(d.fleetCut);      // 0 is meaningful here → keep
   if (d.driverPayout != null) o.dp = _r2(d.driverPayout);
   putS('cat', d.activeCategories);
+  putS('bs', d.boltState);
+  putS('bsr', d.boltSuspensionReason);
+  putS('vp', d.vehiclePlate);
+  if (d.hasCashPayment != null) o.hcp = d.hasCashPayment ? 1 : 0;
   if (d.isActive) o.a = 1;
   putN('gia', d.grossInApp); putN('act', d.acceptanceTotal); putN('ce', d.cashEarnings); putN('cf', d.cancellationFees);
   putN('tf', d.tollFees); putN('er', d.expenseReimbursements); putN('bf', d.bookingFees); putN('rr', d.refundsToRiders);
@@ -6833,6 +7106,8 @@ function unpackDriver(o) {
     finishRate: o.fr || 0,
     fleetCut: o.fc ?? null, driverPayout: o.dp ?? null,
     activeCategories: o.cat || '', isActive: !!o.a,
+    boltState: o.bs || '', boltSuspensionReason: o.bsr || '',
+    vehiclePlate: o.vp || '', hasCashPayment: o.hcp != null ? !!o.hcp : null,
     grossInApp: o.gia || 0, acceptanceTotal: o.act || 0, cashEarnings: o.ce || 0, cancellationFees: o.cf || 0,
     tollFees: o.tf || 0, expenseReimbursements: o.er || 0, bookingFees: o.bf || 0, refundsToRiders: o.rr || 0,
     commissionDiscountInApp: o.cdi || 0, commissionDiscountCash: o.cdc || 0,
