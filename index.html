@@ -1924,6 +1924,24 @@ function initSettingsUI() {
   if (typeof renderSbStatus === 'function') renderSbStatus();
 }
 
+// ── Auto-configure Supabase from server on first load ──────────────────────
+// Fetches /api/bolt/config (which reads SUPABASE_URL + SUPABASE_ANON_KEY from
+// Vercel env vars) so any new browser auto-connects without needing the share link.
+async function autoConfigSupabase() {
+  if (IS_FILE_ORIGIN) return false;
+  try {
+    const r = await fetch('/api/bolt/config');
+    if (!r.ok) return false;
+    const j = await r.json();
+    if (j.ok && j.supabaseUrl && j.supabaseAnonKey) {
+      localStorage.setItem(SB_URL_STORE, j.supabaseUrl);
+      localStorage.setItem(SB_KEY_STORE, j.supabaseAnonKey);
+      return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
 // ── System Status card (Settings tab) ──────────────────────────────────────
 let _sysStatusLoading = false;
 async function loadSysStatus() {
@@ -11322,8 +11340,20 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!document.hidden && (supabaseOn() || getBinId())) fetchFromCloud();
     }, 60 * 60 * 1000);
   } else {
-    autoLoadLatest();
-    renderHistory();
+    // No Supabase config in this browser — try to auto-configure from the server,
+    // then fetch cloud data. Falls back to local-only if the server isn't available.
+    autoConfigSupabase().then(configured => {
+      if (configured) {
+        fetchFromCloud().then(() => {
+          autoLoadLatest();
+          renderHistory();
+          updateShareUI(getBinId());
+        });
+      } else {
+        autoLoadLatest();
+        renderHistory();
+      }
+    });
   }
   initMissionClock();
   m8UpdateIdleOrb();
