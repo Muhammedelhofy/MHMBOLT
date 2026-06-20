@@ -1834,6 +1834,15 @@ create policy "team access" on fleet_data
   </div>
 
   <div class="settings-section">
+    <div class="st-title">🔧 System Status</div>
+    <div class="st-desc">Live health of the Bolt API connection, Supabase database, and the nightly auto-sync.</div>
+    <div id="sysStatusBody" style="margin-top:10px;font-size:12px;font-family:var(--mono);line-height:2">
+      <span style="color:var(--text-muted)">Checking…</span>
+    </div>
+    <button class="save-btn" style="margin-top:10px" onclick="loadSysStatus()">↺ Refresh</button>
+  </div>
+
+  <div class="settings-section">
     <div class="st-title">Diagnostics</div>
     <div class="st-desc" id="buildVersionLine" style="font-family:monospace;font-size:11px;color:var(--text-muted);">Loading version…</div>
     <div class="st-desc" id="storageStatsLine" style="font-family:monospace;font-size:11px;color:var(--text-muted);margin-top:6px;">Loading storage stats…</div>
@@ -1915,6 +1924,45 @@ function initSettingsUI() {
   if (typeof renderSbStatus === 'function') renderSbStatus();
 }
 
+// ── System Status card (Settings tab) ──────────────────────────────────────
+let _sysStatusLoading = false;
+async function loadSysStatus() {
+  const box = document.getElementById('sysStatusBody');
+  if (!box || _sysStatusLoading) return;
+  _sysStatusLoading = true;
+  box.innerHTML = '<span style="color:var(--text-muted)">Checking…</span>';
+  try {
+    const r = await fetch('/api/bolt/health');
+    const j = await r.json();
+    const ok  = s => `<span style="color:var(--green)">✓ ${s}</span>`;
+    const err = s => `<span style="color:var(--red)">✗ ${s}</span>`;
+    const warn = s => `<span style="color:var(--amber)">${s}</span>`;
+
+    let html = '';
+    html += '<div>' + (j.bolt?.ok   ? ok('Bolt API connected')      : err('Bolt API — ' + (j.bolt?.error  || 'unreachable'))) + '</div>';
+    html += '<div>' + (j.supabase?.ok ? ok('Supabase connected')    : err('Supabase — ' + (j.supabase?.error || 'unreachable'))) + '</div>';
+
+    if (j.lastCron) {
+      const lc  = j.lastCron;
+      const ts  = new Date(lc.ts).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+      const age = Math.round((Date.now() - new Date(lc.ts).getTime()) / 3600000);
+      const ageStr = age < 1 ? 'just now' : age === 1 ? '1 hr ago' : age < 25 ? `${age} hrs ago` : warn(`${Math.round(age/24)} days ago — check Vercel logs`);
+      if (lc.ok) {
+        html += `<div>${ok(`Last auto-sync: ${ts} (${ageStr}) — ${lc.drivers} drivers, ${lc.orders} orders`)}</div>`;
+      } else {
+        html += `<div>${err(`Last auto-sync FAILED: ${ts} — ${lc.error || 'unknown error'}`)}</div>`;
+      }
+    } else {
+      html += '<div>' + warn('No auto-sync record yet — cron has not run or CRON_SECRET is not set in Vercel') + '</div>';
+    }
+    box.innerHTML = html;
+  } catch(e) {
+    box.innerHTML = '<span style="color:var(--text-muted)">Could not reach /api/bolt/health — open via Vercel deploy, not a local file</span>';
+  } finally {
+    _sysStatusLoading = false;
+  }
+}
+
 // ═══════════════════════════════════════════
 // TAB NAV
 // ═══════════════════════════════════════════
@@ -1938,6 +1986,7 @@ function _doShowTab(id, el) {
   if (id === 'ambassadors') renderAmbassadors();
   if (id === 'blocks')    renderBlocks();
   if (id === 'starmap')  smSwitchView('home');
+  if (id === 'settings') loadSysStatus();
 }
 
 // ═══════════════════════════════════════════

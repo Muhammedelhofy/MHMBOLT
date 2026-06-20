@@ -139,13 +139,21 @@ async function writeFleetData(record) {
   if (!resp.ok) throw new Error(`Supabase write: ${resp.status} ${await resp.text()}`);
 }
 
+// ── Supabase: write last_cron result ─────────────────────────────────────────
+async function writeCronLog(entry) {
+  try {
+    const existing = await readFleetData();
+    await writeFleetData({ ...existing, last_cron: entry });
+  } catch (_) { /* best-effort — don't mask the original error */ }
+}
+
 // ── Handler ──────────────────────────────────────────────────────────────────
 module.exports = async function handler(req, res) {
-  if (process.env.CRON_SECRET) {
-    const auth = (req.headers["authorization"] || "");
-    if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-      return res.status(401).json({ ok: false, error: "unauthorized" });
-    }
+  // CRON_SECRET is required — set it in Vercel env vars.
+  // Vercel automatically sends it as Bearer <CRON_SECRET> on all cron invocations.
+  const auth = (req.headers["authorization"] || "");
+  if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ ok: false, error: "unauthorized" });
   }
 
   if (!process.env.BOLT_CLIENT_ID || !process.env.BOLT_CLIENT_SECRET) {
@@ -279,12 +287,15 @@ module.exports = async function handler(req, res) {
 
     await writeFleetData({ ...existing, fmt: "c1", h: trimmed });
 
+    await writeCronLog({ ts: now.toISOString(), ok: true, drivers: drivers.length, orders: allOrders.length });
+
     return res.status(200).json({
       ok: true, date, drivers: drivers.length, orders: allOrders.length,
       message: `Fleet synced for ${date} — ${drivers.length} drivers, ${allOrders.length} orders`,
     });
   } catch (e) {
     console.error("[cron-sync]", e.message);
+    await writeCronLog({ ts: new Date().toISOString(), ok: false, error: e.message });
     return res.status(500).json({ ok: false, error: e.message });
   }
 };
