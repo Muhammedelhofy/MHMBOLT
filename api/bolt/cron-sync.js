@@ -82,6 +82,18 @@ async function writeFleetData(record) {
   if (!resp.ok) throw new Error(`Supabase write: ${resp.status} ${await resp.text()}`);
 }
 
+async function writeBackup(existingData, date) {
+  try {
+    const url  = `${process.env.SUPABASE_URL}/rest/v1/fleet_data_backup`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { ...sbHeaders(), Prefer: "resolution=merge-duplicates,return=minimal" },
+      body:   JSON.stringify({ id: SB_ROW_ID, backup_date: date, data: existingData, backed_up_at: new Date().toISOString() }),
+    });
+    if (!resp.ok) console.warn("[cron-sync] backup write failed:", resp.status, await resp.text());
+  } catch (e) { console.warn("[cron-sync] backup failed:", e.message); }
+}
+
 async function writeCronLog(entry) {
   try {
     const existing = await readFleetData();
@@ -109,8 +121,9 @@ module.exports = async function handler(req, res) {
   try {
     const { allOrders, drivers } = await fetchAndAggregateFleet(date);
 
-    const entry   = packEntry({ period: date, uploadedAt: now.toISOString(), totalOrders: allOrders.length, drivers });
+    const entry    = packEntry({ period: date, uploadedAt: now.toISOString(), totalOrders: allOrders.length, drivers });
     const existing = await readFleetData();
+    await writeBackup(existing, date);          // snapshot before overwrite
     const history  = Array.isArray(existing.h) ? existing.h : [];
     const idx      = history.findIndex(e => e.p === date);
     if (idx >= 0) history[idx] = entry; else history.unshift(entry);
