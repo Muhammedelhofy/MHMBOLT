@@ -1,3 +1,14 @@
 {
-  "version": 2
+  "version": 2,
+  "functions": {
+    "api/bolt/cron-sync.js": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/bolt/cron-sync",
+      "schedule": "0 21 * * *"
+    }
+  ]
 }
