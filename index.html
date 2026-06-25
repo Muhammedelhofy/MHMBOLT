@@ -110,13 +110,8 @@ body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: v
 @keyframes scanline   { 0%{top:-2px;opacity:0} 5%{opacity:1} 90%{opacity:.6} 100%{top:100vh;opacity:0} }
 @keyframes border-flow{ 0%{opacity:.4} 50%{opacity:1} 100%{opacity:.4} }
 
-/* ── Scan line overlay ── */
-body::after {
-  content:''; position:fixed; top:0; left:0; right:0; height:2px; z-index:9999; pointer-events:none;
-  background: linear-gradient(90deg,transparent,rgba(0,212,255,.5),rgba(0,255,179,.8),rgba(0,212,255,.5),transparent);
-  box-shadow: 0 0 10px rgba(0,212,255,.6);
-  animation: scanline 60s linear infinite;
-}
+/* ── Scan line overlay (disabled — the dropping line was distracting) ── */
+body::after { display:none !important; }
 
 /* ── Header ── */
 .header {
@@ -937,7 +932,7 @@ body::before {
   animation:grid-drift 25s linear infinite;
 }
 /* Ambient orb — top right */
-body::after { animation:scanline 10s linear infinite; } /* keep scanline */
+/* scanline removed — body::after stays hidden */
 .ambient-orb {
   position:fixed; pointer-events:none; z-index:0;
   border-radius:50%; filter:blur(80px); opacity:.07;
