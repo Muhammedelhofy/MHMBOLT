@@ -13,14 +13,14 @@
      calmed from neon-white, and muted/dim raised to legible — keeps the
      cyan/green sci-fi glow. */
   --bolt-green: #00FFB3;
-  --bolt-black: #0B131E;
-  --bg:         #111A26;
-  --bg-card:    #16212F;
-  --bg-card2:   #1C2A3A;
-  --border:     rgba(0,212,255,.14);
-  --text:       #C7D7E6;
-  --text-muted: #708EAA;
-  --text-dim:   #4A6580;
+  --bolt-black: #141F2D;
+  --bg:         #1A2533;
+  --bg-card:    #212E3D;
+  --bg-card2:   #29384A;
+  --border:     rgba(120,180,225,.13);
+  --text:       #C0CEDC;
+  --text-muted: #849EB6;
+  --text-dim:   #5C7691;
   --red:        #FF4466;
   --amber:      #FFAA00;
   --green:      #00FFB3;
@@ -183,11 +183,12 @@ body::after {
 .driver-cell { display:flex; align-items:center; gap:10px; }
 .avatar { width:32px; height:32px; border-radius:50%; background:rgba(0,212,255,.07); border:1px solid rgba(0,212,255,.3); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:13px; color:var(--cyan); flex-shrink:0; text-shadow:0 0 8px rgba(0,212,255,.5); box-shadow:0 0 8px rgba(0,212,255,.18); }
 .avatar.av-inactive { background:rgba(255,255,255,.03); border-color:rgba(255,255,255,.08); color:var(--text-muted); text-shadow:none; box-shadow:none; border-radius:50%; }
-/* "LEFT FLEET" — driver in history but absent from the current roster (departed). */
-.driver-table tr.left-row td { opacity:.6; }
-.avatar.av-left { background:rgba(255,68,102,.06); border-color:rgba(255,68,102,.30); color:var(--red); text-shadow:none; box-shadow:none; border-radius:50%; }
-.left-badge { display:inline-block; margin-left:7px; padding:1px 6px; border-radius:2px; font-size:8px; font-weight:700; letter-spacing:.08em; color:var(--red); background:rgba(255,68,102,.12); border:1px solid rgba(255,68,102,.32); vertical-align:middle; text-transform:uppercase; }
-.left-row .d-name { text-decoration:line-through; text-decoration-color:rgba(255,68,102,.5); }
+/* "LEFT FLEET" — driver in history but absent from the current roster (departed).
+   Solid badge (no row-opacity dimming, which washed it out) so it stays obvious. */
+.driver-table tr.left-row td { background:rgba(255,68,102,.06); }
+.avatar.av-left { background:rgba(255,68,102,.08); border-color:rgba(255,68,102,.40); color:var(--red); text-shadow:none; box-shadow:none; border-radius:50%; }
+.left-badge { display:inline-block; margin-left:7px; padding:2px 7px; border-radius:3px; font-size:8.5px; font-weight:800; letter-spacing:.07em; color:#fff; background:#FF4466; border:1px solid #FF4466; vertical-align:middle; text-transform:uppercase; box-shadow:0 0 9px rgba(255,68,102,.55); }
+.left-row .d-name { text-decoration:line-through; text-decoration-color:rgba(255,68,102,.6); }
 .d-name  { font-weight:600; font-size:13px; white-space:nowrap; color:var(--text); }
 .d-meta  { font-size:11px; color:var(--text-muted); }
 .tier { font-size:9px; font-weight:700; padding:3px 8px; border-radius:2px; white-space:nowrap; letter-spacing:.08em; text-transform:uppercase; }
@@ -6424,6 +6425,14 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const s = loadSettings();
   const target = s.monthlyTarget;
 
+  // Current roster = drivers present in the MOST RECENT period across ALL history
+  // (not just the selected days). A captain in this table but absent from the
+  // current roster has LEFT the fleet — flagged with a "LEFT FLEET" badge.
+  const _fullHist = getHistory();
+  let _latest = null, _lk = -Infinity;
+  _fullHist.forEach(h => { const k = periodSortKey(h.period); if (k > _lk) { _lk = k; _latest = h; } });
+  const rosterKeys = new Set((_latest?.drivers || []).filter(d => d.name).map(d => driverKey(d.name)));
+
   // Working-month basis for pace tracking, derived from the actual month in view.
   // Model: a captain takes ~1 day off per week, so a working month is ≈ 6/7 of the
   // calendar month. This is the LOOSE basis the user asked for — it scales naturally
@@ -6542,8 +6551,10 @@ function buildCourierSummaryTable(entries, searchFilter) {
     const foreign = lookupForeignName(c.name);
     const displayName = foreign || c.name;
     const isBlocked = !!getCourierProfile(c.name)?.blocked;
+    const hasLeft = rosterKeys.size > 0 && !rosterKeys.has(driverKey(c.name));
     const badge = modelBadge(c.name) + funnelBadge(c.name)
-      + (isBlocked ? `<span style="display:inline-flex;align-items:center;font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;margin-left:4px;background:rgba(255,68,102,.15);border:1px solid rgba(255,68,102,.4);color:var(--red);letter-spacing:.06em">🚫 BLOCKED</span>` : '');
+      + (isBlocked ? `<span style="display:inline-flex;align-items:center;font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;margin-left:4px;background:rgba(255,68,102,.15);border:1px solid rgba(255,68,102,.4);color:var(--red);letter-spacing:.06em">🚫 BLOCKED</span>` : '')
+      + (hasLeft ? `<span class="left-badge">LEFT FLEET</span>` : '');
     const nameHTML = foreign
       ? `<div class="d-name">${c.name}${badge}</div><div class="d-foreign">${foreign}</div>`
       : `<div class="d-name">${c.name}${badge}</div>`;
@@ -6605,7 +6616,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
       ? `${fmt(c.net)} <span style="font-size:10px;color:var(--green);font-weight:600" title="Net includes ${fmt(c.campaign)} SAR Bolt bonus">★${fmt(c.campaign)}</span>`
       : `${fmt(c.net)}`;
 
-    return `<tr class="driver-row" style="cursor:pointer;${isBlocked?'opacity:.55;background:rgba(255,68,102,.04)':''}" ${clickAttr}>
+    return `<tr class="driver-row${hasLeft?' left-row':''}" style="cursor:pointer;${isBlocked?'opacity:.55;background:rgba(255,68,102,.04)':''}" ${clickAttr}>
       <td><div class="driver-cell">
         <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:rgba(0,212,255,.6);min-width:22px;text-align:right;flex-shrink:0;text-shadow:0 0 8px rgba(0,212,255,.5)">${idx+1}</span>
         <div>${nameHTML}${owesBadge}${cashBadgeHtml}</div>
