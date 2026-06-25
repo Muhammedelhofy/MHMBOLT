@@ -1,0 +1,41 @@
+{
+  "build": 150,
+  "branch": "feat/miss-logger",
+  "title": "Router Miss Logger / self-widening router",
+  "model": "claude-sonnet-4-6",
+  "effort": "HIGH",
+  "status": "READY_FOR_REVIEW",
+  "deployed_to_prod": false,
+  "files_owned": [
+    "M8/lib/miss-logger.js",
+    "M8/migrations/B150_router_misses.sql",
+    "M8/tests/build150-miss-logger-test.ps1",
+    "M8/tests/BUILD150_LIVE_TEST.md",
+    "reports/build-150-done.json"
+  ],
+  "orchestrator_changes": {
+    "file": "M8/lib/orchestrator.js",
+    "require_added": "const { logMiss, detectMissRead, fetchRecentMisses, buildMissPacket } = require('./miss-logger');",
+    "hook_site": "capabilityFallback return path (~line 3093)",
+    "read_command_site": "after learn-status block, before command-center block"
+  },
+  "supabase": {
+    "project": "ltqpoupferwituusxwal",
+    "table_created": "m8_router_misses",
+    "migration_applied": true
+  },
+  "test_results": {
+    "ps_test": "75 PASS / 0 FAIL",
+    "live_test_doc": "M8/tests/BUILD150_LIVE_TEST.md"
+  },
+  "privacy": {
+    "redacts_digits": true,
+    "redacts_currency_codes": true,
+    "redacts_money_nouns": true,
+    "raw_message_never_stored": true,
+    "money_turn_content_redacted": true
+  },
+  "new_authority": false,
+  "blocks_response": false,
+  "notes": "Fire-and-forget only. A Supabase timeout never delays or changes M8's reply. No new authority granted — logs for human review only, owner commits any routing changes."
+}
