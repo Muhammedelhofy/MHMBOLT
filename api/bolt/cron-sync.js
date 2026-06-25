@@ -21,6 +21,23 @@ const SB_ROW_ID = "fleet";
 // ── c1 pack helpers (mirrors index.html packDriver/packEntry) ─────────────────
 const _r2 = v => Math.round((v || 0) * 100) / 100;
 
+const _MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const _MONTH_MAP = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
+
+// Convert "yyyy-MM-dd" → the period format the dashboard stores/reads ("DD Mon YYYY"),
+// identical to runBoltSync() in index.html. The dashboard keys history by this string.
+function toDashboardPeriod(ymd) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return `${String(d).padStart(2, "0")} ${_MONTHS[m - 1]} ${y}`;
+}
+
+// Mirror of index.html periodSortKey for "DD Mon YYYY" so stored history stays newest-first.
+function periodSortKey(p) {
+  const m = String(p || "").match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
+  if (!m) return 0;
+  return new Date(Number(m[3]), _MONTH_MAP[m[2]] ?? 0, Number(m[1])).getTime();
+}
+
 function packDriver(d) {
   const o = {};
   const putS = (k, v) => { if (v) o[k] = v; };
@@ -125,16 +142,21 @@ module.exports = async function handler(req, res) {
   try {
     const { allOrders, drivers } = await fetchAndAggregateFleet(date);
 
-    const entry    = packEntry({ period: date, uploadedAt: now.toISOString(), totalOrders: allOrders.length, drivers });
+    // Write into `khair_history` with the dashboard's "DD Mon YYYY" period — the
+    // key + format the dashboard actually reads. (The old `h`/`fmt` keys were
+    // never read by the dashboard, so every auto-synced day was invisible.)
+    const period   = toDashboardPeriod(date);
+    const entry    = packEntry({ period, uploadedAt: now.toISOString(), totalOrders: allOrders.length, drivers });
     const existing = await readFleetData();
     await writeBackup(existing, date);          // snapshot before overwrite
-    const history  = Array.isArray(existing.h) ? existing.h : [];
-    const idx      = history.findIndex(e => e.p === date);
+    const history  = Array.isArray(existing.khair_history) ? existing.khair_history : [];
+    const idx      = history.findIndex(e => e.p === period);
     if (idx >= 0) history[idx] = entry; else history.unshift(entry);
-    history.sort((a, b) => (b.p > a.p ? 1 : b.p < a.p ? -1 : 0));
+    history.sort((a, b) => periodSortKey(b.p) - periodSortKey(a.p));
 
-    await writeFleetData({ ...existing, fmt: "c1", h: history.slice(0, 60) });
-    await writeCronLog({ ts: now.toISOString(), ok: true, drivers: drivers.length, orders: allOrders.length });
+    // Supabase has no 100KB cap → keep the full history, same as the dashboard does.
+    await writeFleetData({ ...existing, khair_fmt: "c1", khair_history: history });
+    await writeCronLog({ ts: now.toISOString(), ok: true, period, drivers: drivers.length, orders: allOrders.length });
 
     return res.status(200).json({
       ok: true, date, drivers: drivers.length, orders: allOrders.length,
