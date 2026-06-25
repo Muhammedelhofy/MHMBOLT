@@ -2860,6 +2860,9 @@ function openModal(id, periodFilter) {
   const tc      = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Platinum:'tier-platinum',Diamond:'tier-diamond',Active:'tier-active'})[d.tier?.englishName]||'tier-none';
   // Full history for this driver (since their first working day), not just one month.
   const fullHistory = getDriverAllHistory(d.driverId, d.name);
+  // "First seen" = earliest day this captain appears in the dashboard's history.
+  const _firstSeenMs = driverFirstSeenMs(d.name);
+  const firstSeenStr = _firstSeenMs ? new Date(_firstSeenMs).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : null;
   // Store everything the body renderer needs so the month filter can re-render
   // without re-deriving the driver lookup. Inherit the Captains screen's month filter
   // so the card opens on the same month the list is showing (e.g. June selected → card
@@ -2875,6 +2878,7 @@ function openModal(id, periodFilter) {
     <div>
       <div class="modal-driver-name">${d.name}${modalForeignName ? `<span class="d-foreign" style="font-size:13px;margin-left:6px;">→ ${modalForeignName}</span>` : ''}</div>
       <div class="modal-driver-meta"><span class="tier ${tc}" style="margin-right:6px">${d.tier.englishName}</span>${d.boltState && d.boltState !== 'active' ? `<span class="status-badge" style="background:rgba(255,68,102,.15);color:var(--red);border:1px solid rgba(255,68,102,.4);margin-right:6px;font-size:9px">${d.boltState.toUpperCase()}</span>` : ''}${d.phone||''}${d.email?' · '+d.email:''}${d.vehiclePlate?' · '+d.vehiclePlate:''}</div>
+      ${firstSeenStr ? `<div style="font-size:10px;color:var(--text-dim);margin-top:3px">First seen ${firstSeenStr}</div>` : ''}
     </div>
     <div class="modal-close" onclick="closeModal()">×</div>`;
 
