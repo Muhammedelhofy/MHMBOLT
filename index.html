@@ -9,15 +9,18 @@
    MOHM FLEET — M8 Theme
    ══════════════════════════════════════════ */
 :root {
+  /* Eye-comfy dark: canvas lifted off pure-black to a soft slate-navy, text
+     calmed from neon-white, and muted/dim raised to legible — keeps the
+     cyan/green sci-fi glow. */
   --bolt-green: #00FFB3;
-  --bolt-black: #04080F;
-  --bg:         #0A0F18;
-  --bg-card:    #0D1622;
-  --bg-card2:   #111E2C;
-  --border:     rgba(0,212,255,.12);
-  --text:       #CDEAFF;
-  --text-muted: #3A6080;
-  --text-dim:   #1A3550;
+  --bolt-black: #0B131E;
+  --bg:         #111A26;
+  --bg-card:    #16212F;
+  --bg-card2:   #1C2A3A;
+  --border:     rgba(0,212,255,.14);
+  --text:       #C7D7E6;
+  --text-muted: #708EAA;
+  --text-dim:   #4A6580;
   --red:        #FF4466;
   --amber:      #FFAA00;
   --green:      #00FFB3;
@@ -116,7 +119,7 @@ body::after {
 
 /* ── Header ── */
 .header {
-  background: #020A14; color: var(--text); padding: 10px 24px;
+  background: var(--bolt-black); color: var(--text); padding: 10px 24px;
   display: flex; align-items: center; gap: 14px;
   position: sticky; top: 0; z-index: 100;
   border-bottom: 1px solid rgba(0,255,179,.25);
@@ -132,7 +135,7 @@ body::after {
 .upload-btn-header:hover { background:rgba(0,255,179,.08); box-shadow:var(--glow-green); }
 
 /* ── Tabs ── */
-.tabs { display:flex; border-bottom:1px solid rgba(0,212,255,.1); background:#020A14; padding:0 24px; position:sticky; top:44px; z-index:90; }
+.tabs { display:flex; border-bottom:1px solid rgba(0,212,255,.1); background:var(--bolt-black); padding:0 24px; position:sticky; top:44px; z-index:90; }
 .tab { padding:11px 16px; font-size:11px; font-weight:500; cursor:pointer; border-bottom:2px solid transparent; color:var(--text-muted); transition:all .15s; user-select:none; letter-spacing:.08em; text-transform:uppercase; }
 .tab.active { color:var(--bolt-green); border-bottom-color:var(--bolt-green); text-shadow:0 0 10px rgba(0,255,179,.5); }
 .tab:hover:not(.active) { color:var(--cyan); }
@@ -180,6 +183,11 @@ body::after {
 .driver-cell { display:flex; align-items:center; gap:10px; }
 .avatar { width:32px; height:32px; border-radius:50%; background:rgba(0,212,255,.07); border:1px solid rgba(0,212,255,.3); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:13px; color:var(--cyan); flex-shrink:0; text-shadow:0 0 8px rgba(0,212,255,.5); box-shadow:0 0 8px rgba(0,212,255,.18); }
 .avatar.av-inactive { background:rgba(255,255,255,.03); border-color:rgba(255,255,255,.08); color:var(--text-muted); text-shadow:none; box-shadow:none; border-radius:50%; }
+/* "LEFT FLEET" — driver in history but absent from the current roster (departed). */
+.driver-table tr.left-row td { opacity:.6; }
+.avatar.av-left { background:rgba(255,68,102,.06); border-color:rgba(255,68,102,.30); color:var(--red); text-shadow:none; box-shadow:none; border-radius:50%; }
+.left-badge { display:inline-block; margin-left:7px; padding:1px 6px; border-radius:2px; font-size:8px; font-weight:700; letter-spacing:.08em; color:var(--red); background:rgba(255,68,102,.12); border:1px solid rgba(255,68,102,.32); vertical-align:middle; text-transform:uppercase; }
+.left-row .d-name { text-decoration:line-through; text-decoration-color:rgba(255,68,102,.5); }
 .d-name  { font-weight:600; font-size:13px; white-space:nowrap; color:var(--text); }
 .d-meta  { font-size:11px; color:var(--text-muted); }
 .tier { font-size:9px; font-weight:700; padding:3px 8px; border-radius:2px; white-space:nowrap; letter-spacing:.08em; text-transform:uppercase; }
@@ -2508,7 +2516,14 @@ function buildAggregatedDrivers(history) {
       if (d.finishRateAll > 0) { agg._finishAllSum  += d.finishRateAll; agg._finishAllCount++; }
     });
   });
-  return [...map.values()].map(agg => ({
+  // Current roster = drivers present in the MOST RECENT period. Anyone in the
+  // aggregate but missing from it has LEFT the fleet (distinct from merely
+  // inactive = still on the roster but didn't drive that day).
+  let latest = null, latestKey = -Infinity;
+  history.forEach(h => { const k = periodSortKey(h.period); if (k > latestKey) { latestKey = k; latest = h; } });
+  const rosterKeys = new Set((latest?.drivers || []).map(d => (d.name || '').trim().toLowerCase() || (d.driverId || '').trim()));
+
+  return [...map.entries()].map(([key, agg]) => ({
     ...agg,
     isActive:      agg.orders > 0,
     acceptance:    agg._activeDays > 0    ? Math.round(agg._acceptSum / agg._activeDays) : 0,
@@ -2518,6 +2533,7 @@ function buildAggregatedDrivers(history) {
     finishRateAll: agg._finishAllCount > 0? Math.round(agg._finishAllSum / agg._finishAllCount) : 0,
     monthlyNet:    agg.netEarnings,
     fleetCut:      null,
+    removed:       rosterKeys.size > 0 && !rosterKeys.has(key),
   }));
 }
 
@@ -2679,11 +2695,11 @@ function driverRow(d, target, pInfo, s, rank) {
   const rankBadgeCls = rank===1?'rank-1':rank===2?'rank-2':rank===3?'rank-3':'rank-n';
   const rankLabel    = rank<=3 ? rank : rank;
   return `
-    <tr class="driver-row ${d.isActive?'':'inactive-row'}${isRedFlagged?' holo-glitch':''}" onclick="openModal('${d.driverId||d.name}')">
+    <tr class="driver-row ${d.isActive?'':'inactive-row'}${d.removed?' left-row':''}${isRedFlagged?' holo-glitch':''}" onclick="openModal('${d.driverId||d.name}')">
       <td><div class="driver-cell">
         <span class="rank-badge ${rankBadgeCls}">${rankLabel}</span>
-        <div class="avatar ${d.isActive?'':'av-inactive'}">${init}</div>
-        <div><div class="d-name">${d.name}</div>${foreignName?`<div class="d-foreign">${foreignName}</div>`:''}<div class="d-meta">${d.phone||d.email||'—'}</div></div>
+        <div class="avatar ${d.removed?'av-left':(d.isActive?'':'av-inactive')}">${init}</div>
+        <div><div class="d-name">${d.name}${d.removed?'<span class="left-badge">LEFT FLEET</span>':''}</div>${foreignName?`<div class="d-foreign">${foreignName}</div>`:''}<div class="d-meta">${d.phone||d.email||'—'}</div></div>
       </div></td>
       <td><span class="tier ${tierClass}">${d.tier.englishName}</span>${d.boltState && d.boltState !== 'active' ? `<span class="status-badge" style="background:rgba(255,68,102,.12);color:var(--red);border:1px solid rgba(255,68,102,.3);margin-left:5px;font-size:8px">${d.boltState.toUpperCase()}</span>` : ''}</td>
       <td class="td-r kv">${(d.hoursOnline||0).toFixed?((d.hoursOnline||0).toFixed(1)):(d.hoursOnline||0)}<span style="font-size:11px;color:var(--text-dim)">h</span></td>
