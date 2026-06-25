@@ -5856,6 +5856,7 @@ function defaultSumMonth() {
 }
 let sumModelFilter      = 'all';     // 'all' | 'S' | 'F' | 'R' (display codes)
 let sumFunnelFilter     = 'all';     // 'all' | 'N' | 'M' | 'Y' | 'H'
+let sumStatusFilter     = 'all';     // 'all' | 'current' (on roster) | 'left' (departed)
 let sumFleetSortCol     = 'date';    // sort column for By Day table
 let sumFleetSortAsc     = true;
 let sumCourierSortCol   = 'gross';   // sort column for By Captain table
@@ -5914,6 +5915,7 @@ function setCaptainSearch(q) {
 }
 function setSumModelFilter(m) { sumModelFilter = m; renderCaptains(); }
 function setSumFunnelFilter(f) { sumFunnelFilter = f; renderCaptains(); }
+function setSumStatusFilter(v) { sumStatusFilter = v; currentPage = 1; renderCaptains(); }
 function m8OpenDriverReport() {
   const q = (document.getElementById('m8ReportDriver')?.value || '').trim();
   if (!q) return;
@@ -6056,6 +6058,12 @@ function renderCaptains() {
         <button class="sort-btn ${sumFunnelFilter==='all'?'active':''}" onclick="setSumFunnelFilter('all')" style="font-size:9px;padding:2px 7px">All</button>
         ${['N','M','Y','H'].map(f=>`<span class="funnel-badge funnel-${f}" onclick="setSumFunnelFilter(sumFunnelFilter==='${f}'?'all':'${f}')" style="cursor:pointer;opacity:${sumFunnelFilter===f||sumFunnelFilter==='all'?1:.35};transition:opacity .15s" title="Filter referral ${f}">${f}</span>`).join('')}
       </div>
+    </div>
+    <div class="ctrl-group" style="gap:4px;padding:0 8px;border-left:1px solid rgba(0,212,255,.1)">
+      <span style="font-size:8px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Status</span>
+      <button class="sort-btn ${sumStatusFilter==='all'?'active':''}"     onclick="setSumStatusFilter('all')"     style="font-size:9px;padding:3px 7px" title="All captains">All</button>
+      <button class="sort-btn ${sumStatusFilter==='current'?'active':''}" onclick="setSumStatusFilter('current')" style="font-size:9px;padding:3px 7px" title="Only captains still on the current roster">Current</button>
+      <button class="sort-btn ${sumStatusFilter==='left'?'active':''}"    onclick="setSumStatusFilter('left')"    style="font-size:9px;padding:3px 7px;${sumStatusFilter==='left'?'background:rgba(255,68,102,.18);border-color:rgba(255,68,102,.5);color:var(--red)':''}" title="Only captains who left the fleet">Left Fleet</button>
     </div>
     <div class="ctrl-group" style="gap:4px;padding:0 8px;border-left:1px solid rgba(0,212,255,.1)">
       <span style="font-size:8px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Sort</span>
@@ -6543,6 +6551,13 @@ function buildCourierSummaryTable(entries, searchFilter) {
   if (sumModelFilter !== 'all') { const t = resolveModelDisplay(sumModelFilter); filtered = filtered.filter(c => getModel(c.name) === t); }
   if (sumFunnelFilter !== 'all') { filtered = filtered.filter(c => getFunnel(c.name) === sumFunnelFilter); }
   if (!filtered.length && (sumModelFilter !== 'all' || sumFunnelFilter !== 'all')) filtered = couriers;
+  // Apply status filter (current roster vs departed). Only when a roster is known.
+  if (sumStatusFilter !== 'all' && rosterKeys.size > 0) {
+    filtered = filtered.filter(c => {
+      const left = !rosterKeys.has(driverKey(c.name));
+      return sumStatusFilter === 'left' ? left : !left;
+    });
+  }
 
   const singlePeriod = summarySelectedDays?.size === 1 ? [...summarySelectedDays][0] : null;
   const esc = s => (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
