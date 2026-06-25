@@ -117,20 +117,26 @@ async function fetchAndAggregateFleet(date) {
   }
 
   // 5. Aggregate orders per driver
+  const blankDriver = uuid => ({
+    name: "", driverId: uuid, phone: "",
+    orders: 0, hoursOnline: 0, rating: 0, score: 0,
+    netEarnings: 0, grossEarnings: 0, tips: 0,
+    commission: 0, bookingFees: 0, tollFees: 0,
+    cancellationFees: 0, cashEarnings: 0,
+    distanceTotal: 0, distanceAvg: 0,
+    isActive: false, _cnt: 0,
+  });
+
+  // Seed the map with EVERY registered driver from the roster (getDrivers),
+  // so drivers who had no orders on this date still appear (inactive, all-zero).
+  // Without this the synced driver count only reflects drivers who drove that
+  // day, undercounting vs the main Bolt dashboard's full roster.
   const driverMap = {};
+  for (const uuid of Object.keys(profileMap)) driverMap[uuid] = blankDriver(uuid);
+
   for (const order of allOrders) {
     const uuid = order.driver_uuid;
-    if (!driverMap[uuid]) {
-      driverMap[uuid] = {
-        name: "", driverId: uuid, phone: "",
-        orders: 0, hoursOnline: 0, rating: 0, score: 0,
-        netEarnings: 0, grossEarnings: 0, tips: 0,
-        commission: 0, bookingFees: 0, tollFees: 0,
-        cancellationFees: 0, cashEarnings: 0,
-        distanceTotal: 0, distanceAvg: 0,
-        isActive: false, _cnt: 0,
-      };
-    }
+    if (!driverMap[uuid]) driverMap[uuid] = blankDriver(uuid);
     const dr = driverMap[uuid];
     if (order.driver_name)  dr.name  = order.driver_name;
     if (order.driver_phone) dr.phone = order.driver_phone;

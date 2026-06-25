@@ -115,8 +115,12 @@ module.exports = async function handler(req, res) {
   }
 
   const now      = new Date();
-  const saudiNow = new Date(now.getTime() + 3 * 60 * 60 * 1000);
-  const date     = saudiNow.toISOString().slice(0, 10);
+  // Cron fires at 21:00 UTC = 00:00 Riyadh. Sync the Riyadh day that just
+  // COMPLETED (yesterday) — not the day that just started, which has zero
+  // elapsed hours and would store an empty 0-driver/0-order entry.
+  const saudiNow   = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+  const saudiYday  = new Date(saudiNow.getTime() - 86400 * 1000);
+  const date       = saudiYday.toISOString().slice(0, 10);
 
   try {
     const { allOrders, drivers } = await fetchAndAggregateFleet(date);
