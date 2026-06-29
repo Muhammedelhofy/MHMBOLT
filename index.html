@@ -166,6 +166,14 @@ body::after { display:none !important; }
 .spacer { flex:1; }
 .filter-inactive { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-muted); cursor:pointer; user-select:none; }
 .filter-inactive input { accent-color:var(--bolt-green); }
+/* ── Captain table Filter / Sort control groups ── */
+.cap-controls { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.cap-ctl { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:5px 10px; border:1px solid rgba(0,212,255,.14); border-radius:4px; background:rgba(0,212,255,.025); }
+.cap-ctl-label { font-size:9px; font-weight:700; color:var(--cyan); text-transform:uppercase; letter-spacing:.12em; }
+.cap-ctl-sub { font-size:8px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.1em; }
+.cap-ctl-gap { margin-left:6px; padding-left:8px; border-left:1px solid rgba(0,212,255,.12); }
+.cap-sort-select { font-size:11px; padding:4px 8px; }
+.cap-sort-dir { min-width:64px; text-align:center; }
 
 /* ── Driver table ── */
 .table-wrap { background:var(--bg-card); border:1px solid var(--border); border-radius:3px; overflow:hidden; box-shadow:var(--shadow); }
@@ -2469,6 +2477,34 @@ function aggregateDriverRows(rows) {
   return a;
 }
 
+// A captain has LEFT the fleet only after a SUSTAINED absence: DEPARTED_GAP_DAYS
+// with no activity, measured from the newest day of data we hold. A normal day —
+// or even a week — off keeps them CURRENT. So "Current" = the whole fleet minus
+// the captains who have left, exactly as the manager thinks of it.
+//
+// (The old rule — "in the single most recent period" — was fragile two ways: a
+// fresh/empty just-synced day, cron writing today before anyone has driven, made
+// the roster empty so nobody was current; and a captain's day off wrongly read as
+// "left". A trailing-gap test fixes both.) Keys mirror buildAggregatedDrivers'
+// map key (trimmed-lowercase name, driverId fallback) so they compare 1:1.
+const DEPARTED_GAP_DAYS = 14;
+function getDepartedKeys() {
+  const dated = getHistory()
+    .map(h => ({ k: periodSortKey(h.period), drivers: Array.isArray(h.drivers) ? h.drivers : [] }))
+    .filter(e => isFinite(e.k) && e.k > 0);
+  if (!dated.length) return new Set();
+  const refKey = Math.max(...dated.map(e => e.k)); // newest day of data (incl. an empty just-synced day)
+  const lastSeen = new Map();                       // driver key → most recent day they appear
+  dated.forEach(e => e.drivers.forEach(d => {
+    const key = (d.name || '').trim().toLowerCase() || (d.driverId || '').trim();
+    if (!key) return;
+    if (!lastSeen.has(key) || e.k > lastSeen.get(key)) lastSeen.set(key, e.k);
+  }));
+  const departed = new Set();
+  lastSeen.forEach((k, key) => { if ((refKey - k) / 86400000 > DEPARTED_GAP_DAYS) departed.add(key); });
+  return departed;
+}
+
 // ═══════════════════════════════════════════
 // RENDER FLEET TAB
 // ═══════════════════════════════════════════
@@ -2513,12 +2549,9 @@ function buildAggregatedDrivers(history) {
       if (d.finishRateAll > 0) { agg._finishAllSum  += d.finishRateAll; agg._finishAllCount++; }
     });
   });
-  // Current roster = drivers present in the MOST RECENT period. Anyone in the
-  // aggregate but missing from it has LEFT the fleet (distinct from merely
-  // inactive = still on the roster but didn't drive that day).
-  let latest = null, latestKey = -Infinity;
-  history.forEach(h => { const k = periodSortKey(h.period); if (k > latestKey) { latestKey = k; latest = h; } });
-  const rosterKeys = new Set((latest?.drivers || []).map(d => (d.name || '').trim().toLowerCase() || (d.driverId || '').trim()));
+  // LEFT fleet = a sustained absence (see getDepartedKeys); everyone else is current,
+  // distinct from merely inactive = still on the roster but didn't drive that day.
+  const departedKeys = getDepartedKeys();
 
   return [...map.entries()].map(([key, agg]) => ({
     ...agg,
@@ -2530,7 +2563,7 @@ function buildAggregatedDrivers(history) {
     finishRateAll: agg._finishAllCount > 0? Math.round(agg._finishAllSum / agg._finishAllCount) : 0,
     monthlyNet:    agg.netEarnings,
     fleetCut:      null,
-    removed:       rosterKeys.size > 0 && !rosterKeys.has(key),
+    removed:       departedKeys.has(key),
   }));
 }
 
@@ -5898,6 +5931,18 @@ function setSumCourierSort(col) {
   else { sumCourierSortCol = col; sumCourierSortAsc = false; }
   renderCaptains();
 }
+// Sort dropdown: pick a column without toggling direction. Names read best A→Z,
+// every other metric reads best high→low, so default the direction accordingly.
+function setSumSortCol(col) {
+  sumCourierSortCol = col;
+  sumCourierSortAsc = (col === 'name');
+  renderCaptains();
+}
+// Direction toggle button next to the Sort dropdown.
+function toggleSumSortDir() {
+  sumCourierSortAsc = !sumCourierSortAsc;
+  renderCaptains();
+}
 
 // ── Captain view helpers ──
 function setCaptainView(v) {
@@ -6043,33 +6088,48 @@ function renderCaptains() {
       id="captainSearchInput" style="margin-left:auto;min-width:150px">
   ` : '';
 
-  const isSortModel  = sumCourierSortCol === 'model';
-  const isSortFunnel = sumCourierSortCol === 'funnel';
-  const isSortCombo  = sumCourierSortCol === 'combo';
+  // Filter (who shows) and Sort (the order) split into two clearly labelled groups.
+  // Every sort option lives in one dropdown — including the model/referral group
+  // sorts that aren't table columns — so there's a single, obvious place to sort;
+  // clicking a column header is still a shortcut and stays in sync with it.
+  const sumSortOptions = [
+    ['net',    'Net SAR (achieved)'],
+    ['target', 'Target progress'],
+    ['gross',  'Gross SAR'],
+    ['days',   'Days worked'],
+    ['earnhr', 'Earn / hr'],
+    ['hrs',    'Hours'],
+    ['accept', 'Acceptance %'],
+    ['util',   'Utilisation %'],
+    ['rides',  'Rides'],
+    ['dist',   'Distance'],
+    ['name',   'Captain (A–Z)'],
+    ['model',  'Model'],
+    ['funnel', 'Referral'],
+    ['combo',  'Model + Referral'],
+  ];
   const filterSortBar = captainView === 'captain' ? `
-    <div class="ctrl-group" style="flex-direction:column;align-items:flex-start;gap:3px;padding:0 8px;border-left:1px solid rgba(0,212,255,.1)">
-      <div style="display:flex;align-items:center;gap:5px">
-        <span style="font-size:8px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;min-width:28px">Model</span>
-        <button class="sort-btn ${sumModelFilter==='all'?'active':''}" onclick="setSumModelFilter('all')" style="font-size:9px;padding:2px 7px">All</button>
+    <div class="cap-controls">
+      <div class="cap-ctl">
+        <span class="cap-ctl-label">Filter</span>
+        <span class="cap-ctl-sub">Model</span>
+        <button class="sort-btn ${sumModelFilter==='all'?'active':''}" onclick="setSumModelFilter('all')" style="padding:2px 7px">All</button>
         ${['S','F','R'].map(m=>`<span class="model-badge model-${m}" onclick="setSumModelFilter(sumModelFilter==='${m}'?'all':'${m}')" style="cursor:pointer;opacity:${resolveModelDisplay(sumModelFilter)===m||sumModelFilter==='all'?1:.35};transition:opacity .15s" title="Filter model ${m}">${m}</span>`).join('')}
-      </div>
-      <div style="display:flex;align-items:center;gap:5px">
-        <span style="font-size:8px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;min-width:28px">Ref</span>
-        <button class="sort-btn ${sumFunnelFilter==='all'?'active':''}" onclick="setSumFunnelFilter('all')" style="font-size:9px;padding:2px 7px">All</button>
+        <span class="cap-ctl-sub cap-ctl-gap">Ref</span>
+        <button class="sort-btn ${sumFunnelFilter==='all'?'active':''}" onclick="setSumFunnelFilter('all')" style="padding:2px 7px">All</button>
         ${['N','M','Y','H'].map(f=>`<span class="funnel-badge funnel-${f}" onclick="setSumFunnelFilter(sumFunnelFilter==='${f}'?'all':'${f}')" style="cursor:pointer;opacity:${sumFunnelFilter===f||sumFunnelFilter==='all'?1:.35};transition:opacity .15s" title="Filter referral ${f}">${f}</span>`).join('')}
+        <span class="cap-ctl-sub cap-ctl-gap">Status</span>
+        <button class="sort-btn ${sumStatusFilter==='all'?'active':''}"     onclick="setSumStatusFilter('all')"     style="padding:2px 7px" title="All captains">All</button>
+        <button class="sort-btn ${sumStatusFilter==='current'?'active':''}" onclick="setSumStatusFilter('current')" style="padding:2px 7px" title="The whole fleet except captains who left (no activity for ${DEPARTED_GAP_DAYS}+ days)">Current</button>
+        <button class="sort-btn ${sumStatusFilter==='left'?'active':''}"    onclick="setSumStatusFilter('left')"    style="padding:2px 7px;${sumStatusFilter==='left'?'background:rgba(255,68,102,.18);border-color:rgba(255,68,102,.5);color:var(--red)':''}" title="Only captains who left the fleet">Left Fleet</button>
       </div>
-    </div>
-    <div class="ctrl-group" style="gap:4px;padding:0 8px;border-left:1px solid rgba(0,212,255,.1)">
-      <span style="font-size:8px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Status</span>
-      <button class="sort-btn ${sumStatusFilter==='all'?'active':''}"     onclick="setSumStatusFilter('all')"     style="font-size:9px;padding:3px 7px" title="All captains">All</button>
-      <button class="sort-btn ${sumStatusFilter==='current'?'active':''}" onclick="setSumStatusFilter('current')" style="font-size:9px;padding:3px 7px" title="Only captains still on the current roster">Current</button>
-      <button class="sort-btn ${sumStatusFilter==='left'?'active':''}"    onclick="setSumStatusFilter('left')"    style="font-size:9px;padding:3px 7px;${sumStatusFilter==='left'?'background:rgba(255,68,102,.18);border-color:rgba(255,68,102,.5);color:var(--red)':''}" title="Only captains who left the fleet">Left Fleet</button>
-    </div>
-    <div class="ctrl-group" style="gap:4px;padding:0 8px;border-left:1px solid rgba(0,212,255,.1)">
-      <span style="font-size:8px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Sort</span>
-      <button class="sort-btn ${isSortModel?'active':''}"  onclick="setSumCourierSort('model')"  style="font-size:9px;padding:3px 7px" title="Sort by model (S/F/R)">Model</button>
-      <button class="sort-btn ${isSortFunnel?'active':''}" onclick="setSumCourierSort('funnel')" style="font-size:9px;padding:3px 7px" title="Sort by referral (N/M/Y/H)">Ref</button>
-      <button class="sort-btn ${isSortCombo?'active':''}"  onclick="setSumCourierSort('combo')"  style="font-size:9px;padding:3px 7px" title="Sort by model then referral">M+R</button>
+      <div class="cap-ctl">
+        <span class="cap-ctl-label">Sort</span>
+        <select class="kpi-select cap-sort-select" onchange="setSumSortCol(this.value)" title="Order the captains by…">
+          ${sumSortOptions.map(([v,l])=>`<option value="${v}" ${sumCourierSortCol===v?'selected':''}>${l}</option>`).join('')}
+        </select>
+        <button class="sort-btn cap-sort-dir" onclick="toggleSumSortDir()" title="${sumCourierSortAsc?'Ascending (low→high) — click for high→low':'Descending (high→low) — click for low→high'}">${sumCourierSortAsc?'▲ Asc':'▼ Desc'}</button>
+      </div>
     </div>
   ` : '';
 
@@ -6433,13 +6493,11 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const s = loadSettings();
   const target = s.monthlyTarget;
 
-  // Current roster = drivers present in the MOST RECENT period across ALL history
-  // (not just the selected days). A captain in this table but absent from the
-  // current roster has LEFT the fleet — flagged with a "LEFT FLEET" badge.
-  const _fullHist = getHistory();
-  let _latest = null, _lk = -Infinity;
-  _fullHist.forEach(h => { const k = periodSortKey(h.period); if (k > _lk) { _lk = k; _latest = h; } });
-  const rosterKeys = new Set((_latest?.drivers || []).filter(d => d.name).map(d => driverKey(d.name)));
+  // LEFT fleet = a sustained absence across ALL history (see getDepartedKeys), not
+  // just the selected days — and tolerant of an empty just-synced day / a day off.
+  // These captains get a "LEFT FLEET" badge; the Status → Current filter hides them,
+  // so Current shows the whole fleet minus the ones who left.
+  const departedKeys = getDepartedKeys();
 
   // Working-month basis for pace tracking, derived from the actual month in view.
   // Model: a captain takes ~1 day off per week, so a working month is ≈ 6/7 of the
@@ -6506,8 +6564,10 @@ function buildCourierSummaryTable(entries, searchFilter) {
       const nb = (lookupForeignName(b.name)||b.name).toLowerCase();
       return sumCourierSortAsc ? na.localeCompare(nb) : nb.localeCompare(na);
     }
-    // 'target' sorts by daily pace (net ÷ days worked) — i.e. position vs the 230/day goal.
-    const paceOf = x => x.days > 0 ? x.net / x.days : 0;
+    // 'target' sorts by TOTAL ACHIEVED net (progress toward the monthly target),
+    // NOT daily pace — a captain who drove one strong day shouldn't outrank one
+    // who actually banked far more over the month. The →/mo pace projection is
+    // still shown in the cell for context; it just no longer drives the ranking.
     // String-based sort keys (model/funnel/combo) need localeCompare; numeric keys use subtraction
     if (key === 'model' || key === 'funnel' || key === 'combo') {
       const sa = key==='model' ? getModel(a.name) : key==='funnel' ? getFunnel(a.name) : getModel(a.name)+getFunnel(a.name);
@@ -6517,11 +6577,11 @@ function buildCourierSummaryTable(entries, searchFilter) {
     const va = key==='days'?a.days : key==='gross'?a.gross : key==='net'?a.net
              : key==='earnhr'?a.earnHr : key==='hrs'?a.hrs : key==='accept'?a.accept
              : key==='util'?a.util : key==='rides'?a.rides : key==='dist'?a.dist
-             : key==='target'?paceOf(a) : a.net;
+             : key==='target'?a.net : a.net;
     const vb = key==='days'?b.days : key==='gross'?b.gross : key==='net'?b.net
              : key==='earnhr'?b.earnHr : key==='hrs'?b.hrs : key==='accept'?b.accept
              : key==='util'?b.util : key==='rides'?b.rides : key==='dist'?b.dist
-             : key==='target'?paceOf(b) : b.net;
+             : key==='target'?b.net : b.net;
     return sumCourierSortAsc ? va - vb : vb - va;
   });
 
@@ -6551,10 +6611,12 @@ function buildCourierSummaryTable(entries, searchFilter) {
   if (sumModelFilter !== 'all') { const t = resolveModelDisplay(sumModelFilter); filtered = filtered.filter(c => getModel(c.name) === t); }
   if (sumFunnelFilter !== 'all') { filtered = filtered.filter(c => getFunnel(c.name) === sumFunnelFilter); }
   if (!filtered.length && (sumModelFilter !== 'all' || sumFunnelFilter !== 'all')) filtered = couriers;
-  // Apply status filter (current roster vs departed). Only when a roster is known.
-  if (sumStatusFilter !== 'all' && rosterKeys.size > 0) {
+  // Apply status filter. Current = the whole fleet minus the departed; Left = only
+  // the departed. (No "roster known" guard needed: with no departures the departed
+  // set is empty, so Current keeps everyone and Left shows nobody — both correct.)
+  if (sumStatusFilter !== 'all') {
     filtered = filtered.filter(c => {
-      const left = !rosterKeys.has(driverKey(c.name));
+      const left = departedKeys.has(driverKey(c.name));
       return sumStatusFilter === 'left' ? left : !left;
     });
   }
@@ -6566,7 +6628,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
     const foreign = lookupForeignName(c.name);
     const displayName = foreign || c.name;
     const isBlocked = !!getCourierProfile(c.name)?.blocked;
-    const hasLeft = rosterKeys.size > 0 && !rosterKeys.has(driverKey(c.name));
+    const hasLeft = departedKeys.has(driverKey(c.name));
     const badge = modelBadge(c.name) + funnelBadge(c.name)
       + (isBlocked ? `<span style="display:inline-flex;align-items:center;font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;margin-left:4px;background:rgba(255,68,102,.15);border:1px solid rgba(255,68,102,.4);color:var(--red);letter-spacing:.06em">🚫 BLOCKED</span>` : '')
       + (hasLeft ? `<span class="left-badge">LEFT FLEET</span>` : '');
@@ -6675,7 +6737,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
       ${cth('Util','util','td-r')}
       ${cth('Rides','rides','td-r')}
       ${cth('Distance','dist','td-r')}
-      <th class="${sumCourierSortCol==='target'?'th-sort-active':''}" style="text-align:center;cursor:pointer;user-select:none;white-space:nowrap" onclick="setSumCourierSort('target')" title="Sort by daily pace vs the ${target?fmt(Math.round(target/26)):''}/day goal">Monthly Target<span style="opacity:${sumCourierSortCol==='target'?1:.25};font-size:9px;margin-left:3px;color:${sumCourierSortCol==='target'?'var(--bolt-green)':'inherit'}">${sumCourierSortCol!=='target'?'⇅':sumCourierSortAsc?'▲':'▼'}</span></th>
+      <th class="${sumCourierSortCol==='target'?'th-sort-active':''}" style="text-align:center;cursor:pointer;user-select:none;white-space:nowrap" onclick="setSumCourierSort('target')" title="Sort by total achieved net vs the ${target?fmt(target):'monthly'} target (not daily pace)">Monthly Target<span style="opacity:${sumCourierSortCol==='target'?1:.25};font-size:9px;margin-left:3px;color:${sumCourierSortCol==='target'?'var(--bolt-green)':'inherit'}">${sumCourierSortCol!=='target'?'⇅':sumCourierSortAsc?'▲':'▼'}</span></th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
