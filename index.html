@@ -2477,31 +2477,38 @@ function aggregateDriverRows(rows) {
   return a;
 }
 
-// A captain has LEFT the fleet only after a SUSTAINED absence: DEPARTED_GAP_DAYS
-// with no activity, measured from the newest day of data we hold. A normal day —
-// or even a week — off keeps them CURRENT. So "Current" = the whole fleet minus
-// the captains who have left, exactly as the manager thinks of it.
+// A captain has LEFT the fleet when they're absent from the LATEST roster update.
+// Bolt's "Earnings per driver" export (and the seeded daily sync) lists EVERY
+// captain currently on the fleet — including idle ones, as zero rows — so the most
+// recent update IS the live roster. Anyone who appears in earlier history but is
+// missing from that update has been taken off the fleet = LEFT. An idle captain who
+// simply didn't drive still appears in the update, so they stay CURRENT — this is
+// NOT a churn / "hasn't worked lately" test.
 //
-// (The old rule — "in the single most recent period" — was fragile two ways: a
-// fresh/empty just-synced day, cron writing today before anyone has driven, made
-// the roster empty so nobody was current; and a captain's day off wrongly read as
-// "left". A trailing-gap test fixes both.) Keys mirror buildAggregatedDrivers'
-// map key (trimmed-lowercase name, driverId fallback) so they compare 1:1.
-const DEPARTED_GAP_DAYS = 14;
+// The only guard: skip an empty just-synced day (cron can write today with 0
+// drivers before anyone has driven) when picking "the latest update", so it can't
+// blank the roster and wrongly mark the whole fleet as left. Keys mirror
+// buildAggregatedDrivers' map key (trimmed-lowercase name, driverId fallback) so
+// they compare 1:1.
 function getDepartedKeys() {
-  const dated = getHistory()
-    .map(h => ({ k: periodSortKey(h.period), drivers: Array.isArray(h.drivers) ? h.drivers : [] }))
-    .filter(e => isFinite(e.k) && e.k > 0);
-  if (!dated.length) return new Set();
-  const refKey = Math.max(...dated.map(e => e.k)); // newest day of data (incl. an empty just-synced day)
-  const lastSeen = new Map();                       // driver key → most recent day they appear
-  dated.forEach(e => e.drivers.forEach(d => {
-    const key = (d.name || '').trim().toLowerCase() || (d.driverId || '').trim();
-    if (!key) return;
-    if (!lastSeen.has(key) || e.k > lastSeen.get(key)) lastSeen.set(key, e.k);
-  }));
+  const hist = getHistory();
+  const keyOf = d => (d.name || '').trim().toLowerCase() || (d.driverId || '').trim();
+  // Latest roster update = the most recent period that actually carries drivers.
+  let latest = null, latestK = -Infinity;
+  hist.forEach(h => {
+    const k = periodSortKey(h.period);
+    if (isFinite(k) && k > latestK && Array.isArray(h.drivers) && h.drivers.some(d => keyOf(d))) {
+      latestK = k; latest = h;
+    }
+  });
+  if (!latest) return new Set();
+  const roster = new Set(latest.drivers.map(keyOf).filter(Boolean));
+  // Anyone seen anywhere in history but NOT in that latest update has left.
   const departed = new Set();
-  lastSeen.forEach((k, key) => { if ((refKey - k) / 86400000 > DEPARTED_GAP_DAYS) departed.add(key); });
+  hist.forEach(h => (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => {
+    const key = keyOf(d);
+    if (key && !roster.has(key)) departed.add(key);
+  }));
   return departed;
 }
 
@@ -2549,8 +2556,8 @@ function buildAggregatedDrivers(history) {
       if (d.finishRateAll > 0) { agg._finishAllSum  += d.finishRateAll; agg._finishAllCount++; }
     });
   });
-  // LEFT fleet = a sustained absence (see getDepartedKeys); everyone else is current,
-  // distinct from merely inactive = still on the roster but didn't drive that day.
+  // LEFT fleet = absent from the latest roster update (see getDepartedKeys); everyone
+  // else is current, including idle captains who are still on the roster.
   const departedKeys = getDepartedKeys();
 
   return [...map.entries()].map(([key, agg]) => ({
@@ -6120,7 +6127,7 @@ function renderCaptains() {
         ${['N','M','Y','H'].map(f=>`<span class="funnel-badge funnel-${f}" onclick="setSumFunnelFilter(sumFunnelFilter==='${f}'?'all':'${f}')" style="cursor:pointer;opacity:${sumFunnelFilter===f||sumFunnelFilter==='all'?1:.35};transition:opacity .15s" title="Filter referral ${f}">${f}</span>`).join('')}
         <span class="cap-ctl-sub cap-ctl-gap">Status</span>
         <button class="sort-btn ${sumStatusFilter==='all'?'active':''}"     onclick="setSumStatusFilter('all')"     style="padding:2px 7px" title="All captains">All</button>
-        <button class="sort-btn ${sumStatusFilter==='current'?'active':''}" onclick="setSumStatusFilter('current')" style="padding:2px 7px" title="The whole fleet except captains who left (no activity for ${DEPARTED_GAP_DAYS}+ days)">Current</button>
+        <button class="sort-btn ${sumStatusFilter==='current'?'active':''}" onclick="setSumStatusFilter('current')" style="padding:2px 7px" title="The whole fleet except captains who left (absent from your latest update)">Current</button>
         <button class="sort-btn ${sumStatusFilter==='left'?'active':''}"    onclick="setSumStatusFilter('left')"    style="padding:2px 7px;${sumStatusFilter==='left'?'background:rgba(255,68,102,.18);border-color:rgba(255,68,102,.5);color:var(--red)':''}" title="Only captains who left the fleet">Left Fleet</button>
       </div>
       <div class="cap-ctl">
@@ -6493,10 +6500,10 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const s = loadSettings();
   const target = s.monthlyTarget;
 
-  // LEFT fleet = a sustained absence across ALL history (see getDepartedKeys), not
-  // just the selected days — and tolerant of an empty just-synced day / a day off.
-  // These captains get a "LEFT FLEET" badge; the Status → Current filter hides them,
-  // so Current shows the whole fleet minus the ones who left.
+  // LEFT fleet = absent from the latest roster update across ALL history (see
+  // getDepartedKeys), not just the selected days, and tolerant of an empty
+  // just-synced day. These captains get a "LEFT FLEET" badge; the Status → Current
+  // filter hides them, so Current shows the whole fleet minus the ones who left.
   const departedKeys = getDepartedKeys();
 
   // Working-month basis for pace tracking, derived from the actual month in view.
