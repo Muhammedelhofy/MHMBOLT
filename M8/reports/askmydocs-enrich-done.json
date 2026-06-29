@@ -1,0 +1,86 @@
+{
+  "build": "D",
+  "branch": "feat/askmydocs-enrich",
+  "session": "Parallel Session D — ENRICH ASK-MY-DOCS (career corpus)",
+  "completed_at": "2026-06-29",
+  "model": "claude-sonnet-4-6",
+  "effort": "HIGH",
+
+  "summary": "Ingested 2 new career sources (Bolt Fleet credential + Kafala/Delivery operations) into the M8 knowledge graph. Backfilled embeddings for ALL 44 career nodes (sources 34-39), resolving the deferred embedding state from Stream 2.",
+
+  "db_changes": {
+    "m8_knowledge_sources": {
+      "inserted": [38, 39],
+      "source_38": "Muhammad Hofy — Current Role & Fleet Dashboard Credential (Projects/Bolt Fleet.md, 182 words)",
+      "source_39": "Muhammad Hofy — Kafala & Delivery Fleet Operations (Projects/Bikes-Keeta Dashboard.md, 196 words)"
+    },
+    "m8_graph_nodes": {
+      "inserted_ids": [280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290],
+      "count": 11,
+      "source_38_nodes": [280, 281, 282, 283, 284],
+      "source_39_nodes": [285, 286, 287, 288, 289, 290]
+    },
+    "embeddings_backfilled": {
+      "endpoint": "POST https://m8-alpha.vercel.app/api/knowledge?fn=embed-backfill",
+      "source_ids": [34, 35, 36, 37, 38, 39],
+      "result": { "embedded": 44, "failed": 0, "total": 44 },
+      "model": "gemini-embedding-001",
+      "note": "Resolved deferred state from Stream 2 — all 33 prior career nodes also embedded in this call"
+    }
+  },
+
+  "total_career_corpus": {
+    "sources": 6,
+    "nodes": 44,
+    "embedded": 44,
+    "node_id_range": "247-290",
+    "source_id_range": "34-39"
+  },
+
+  "new_capabilities": [
+    "M8 can now answer: how many drivers do I manage? (~50, target 250)",
+    "M8 can now answer: tell me about the Bolt dashboard I built (team live tool, in-production credential)",
+    "M8 can now answer: how does the kafala operation work? (iqama + bikes + platform profit model)",
+    "M8 can now answer: what platforms do I supply to? (Keeta, HungerStation, Noon, Jahez)",
+    "M8 can now answer: what Saudi kafala expertise do I have? (Muqeem, Tafweed, Tamm)",
+    "M8 can now answer: how do we recruit drivers? (ambassador A/B/C model)",
+    "Semantic search via match_kg_nodes RPC now works for all 44 career nodes"
+  ],
+
+  "privacy_wall": {
+    "skipped": [
+      "Money & Runway.md (financial data)",
+      "Status.md (personal salary figure 6k)",
+      "Decision Log.md (meta process, not career)",
+      "Ecommerce*.md (business venture, not job-hunt)",
+      "HQ Snapshot.md (derivative document)",
+      "CV phone/email (PII excluded from raw_text)"
+    ]
+  },
+
+  "files_owned": [
+    "M8/INGEST_MANIFEST.md",
+    "M8/tests/askmydocs-enrich-verify.ps1",
+    "M8/reports/askmydocs-enrich-done.json"
+  ],
+
+  "files_not_touched": [
+    "lib/orchestrator.js",
+    "lib/domain-arbiter.js",
+    "lib/capability-registry.js",
+    "lib/wallet.js",
+    "lib/knowledge-intake.js"
+  ],
+
+  "smoke_tests": {
+    "kafala": "3 nodes returned (249, 285, 287)",
+    "ambassador": "1 node returned (282)",
+    "iqama": "3 nodes returned (285, 287, 288)",
+    "careem": "9+ nodes returned (existing career corpus)",
+    "embed_backfill": "44/44 embedded, 0 failed"
+  },
+
+  "next_session_live_test": "After merging feat/askmydocs-enrich, ask M8: 'what does M8 know about my kafala operation?' and 'how do I recruit drivers?' — should surface source 38/39 nodes via the docs lane (once B-158/B-159 routing is wired).",
+
+  "ok": true
+}
