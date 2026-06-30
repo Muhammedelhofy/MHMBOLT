@@ -142,6 +142,8 @@ body::after { display:none !important; }
 /* ── Summary cards ── */
 .summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:16px; }
 .summary-card { background:var(--bg-card); border:1px solid var(--border); border-radius:3px; padding:14px 16px; box-shadow:var(--shadow); position:relative; overflow:hidden; transition:border-color .2s,box-shadow .2s; }
+.blk-stat-card { cursor:pointer; transition:border-color .15s, transform .1s, box-shadow .15s; }
+.blk-stat-card:hover { border-color:rgba(0,212,255,.45) !important; transform:translateY(-1px); box-shadow:0 4px 14px rgba(0,0,0,.25); }
 .summary-card::before,.summary-card::after { content:''; position:absolute; width:8px; height:8px; border-color:rgba(0,212,255,.3); border-style:solid; }
 .summary-card::before { top:3px; left:3px; border-width:1px 0 0 1px; }
 .summary-card::after  { bottom:3px; right:3px; border-width:0 1px 1px 0; }
@@ -6186,10 +6188,16 @@ function renderCaptains() {
     ${(()=>{
       const openBlocks = getBlockLog().filter(e => !e.dateUnblocked);
       if (!openBlocks.length) return '';
-      const names = openBlocks.map(e => e.driverName).join(' · ');
+      // Dedupe by driverKey — a driver with multiple unresolved rows (sync identity
+      // drift) must count ONCE. This is the fix for the banner showing 49 (rows) when
+      // the Blocks tab correctly showed 20 (unique drivers). Keep first display name.
+      const uniq = new Map();
+      for (const e of openBlocks) { const k = driverKey(e.driverName); if (!uniq.has(k)) uniq.set(k, e.driverName); }
+      const blockedNames = [...uniq.values()];
+      const names = blockedNames.join(' · ');
       return `<div style="background:rgba(255,68,102,.08);border:1px solid rgba(255,68,102,.35);border-radius:3px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
         <div>
-          <div style="color:var(--red);font-weight:700;font-size:12px;letter-spacing:.05em;margin-bottom:4px">⛔ ${openBlocks.length} DRIVER${openBlocks.length>1?'S':''} CURRENTLY BLOCKED ON BOLT</div>
+          <div style="color:var(--red);font-weight:700;font-size:12px;letter-spacing:.05em;margin-bottom:4px">⛔ ${blockedNames.length} DRIVER${blockedNames.length>1?'S':''} CURRENTLY BLOCKED ON BOLT</div>
           <div style="font-size:11px;color:var(--text-muted)">${names}</div>
         </div>
         <button onclick="exportBlockLogCSV()" style="background:rgba(255,68,102,.15);color:var(--red);border:1px solid rgba(255,68,102,.35);border-radius:2px;padding:5px 12px;font-size:11px;cursor:pointer;font-weight:700;white-space:nowrap;letter-spacing:.04em">⬇ EXPORT BLOCK REPORT</button>
@@ -7173,6 +7181,45 @@ function getBlockLog() {
 function saveBlockLog(log) {
   try { localStorage.setItem('khair_block_log', JSON.stringify(log)); } catch(e) {}
 }
+// How many duplicate OPEN rows could be cleaned (open rows minus unique drivers).
+// Non-mutating — used to label the "Clean N duplicate rows" button.
+function countBlockLogOpenDupes() {
+  const open = getBlockLog().filter(e => !e.dateUnblocked);
+  return open.length - new Set(open.map(e => driverKey(e.driverName))).size;
+}
+// Collapse duplicate OPEN block rows for the same driver into one. A driver whose
+// key drifted across syncs can accumulate several unresolved rows — this is what
+// inflated the banner (49 rows for 20 people) and TOTAL EVENTS. We keep the earliest
+// dateBlocked, union distinct reason lines, and drop the extras. RESOLVED rows pass
+// through untouched. Pure: operates on a fresh getBlockLog() copy, returns {log, removed}.
+function dedupeBlockLog(srcLog) {
+  const log = srcLog || getBlockLog();
+  const openByKey = new Map(); // driverKey -> kept open row
+  const out = [];
+  let removed = 0;
+  for (const e of log) {
+    if (e.dateUnblocked) { out.push(e); continue; }       // resolved rows untouched
+    const k = driverKey(e.driverName);
+    const kept = openByKey.get(k);
+    if (!kept) { openByKey.set(k, e); out.push(e); continue; }
+    removed++;
+    if (periodSortKey(e.dateBlocked) < periodSortKey(kept.dateBlocked)) kept.dateBlocked = e.dateBlocked;
+    const reasons = new Set((kept.reason||'').split('\n').map(s=>s.trim()).filter(Boolean));
+    (e.reason||'').split('\n').map(s=>s.trim()).filter(Boolean).forEach(r => reasons.add(r));
+    kept.reason = [...reasons].join('\n');
+    if (!kept.driverId && e.driverId) kept.driverId = e.driverId;
+  }
+  return { log: out, removed };
+}
+// Apply the cleanup, persist, toast, and re-render. Wired to the Blocks-tab button.
+function cleanBlockLogDupes() {
+  const { log, removed } = dedupeBlockLog();
+  if (!removed) { if (typeof toast === 'function') toast('No duplicate block rows found'); return; }
+  if (!confirm(`Clean ${removed} duplicate block row${removed>1?'s':''}? Resolved rows are kept; earliest block date and all reasons are preserved.`)) return;
+  saveBlockLog(log);
+  if (typeof toast === 'function') toast(`Cleaned ${removed} duplicate block row${removed>1?'s':''}`);
+  renderBlocks();
+}
 // Called after every sync. Compares today's driver states with the previous
 // synced day and records when a driver transitions blocked ↔ active.
 function updateBlockLog(period, newDrivers) {
@@ -7191,7 +7238,13 @@ function updateBlockLog(period, newDrivers) {
     const wasBlocked = prev?.boltState && prev.boltState !== 'active';
     const isBlocked  = d.boltState !== 'active';
     if (!wasBlocked && isBlocked) {
-      if (!log.some(e => e.id === k + '_' + period)) {
+      // Guard against a SECOND open row for the same driver. wasBlocked only looks at
+      // the previous synced day, so a gap or a key drift (driverId↔name) used to let a
+      // new unresolved row slip in while one was already open — that's the dup source.
+      const hasOpen = log.some(e => !e.dateUnblocked &&
+        ((e.driverId && d.driverId && e.driverId === d.driverId) ||
+         driverKey(e.driverName) === driverKey(d.name)));
+      if (!hasOpen && !log.some(e => e.id === k + '_' + period)) {
         log.push({ id: k + '_' + period, driverId: d.driverId || '', driverName: d.name,
           dateBlocked: period, dateUnblocked: null, reason: d.boltSuspensionReason || 'No reason provided' });
       }
@@ -7350,6 +7403,9 @@ function exportBlockLogCSV() {
 let blocksFilter = 'active'; // 'active' | 'all'
 let blocksSearch = '';
 let blocksExpanded = new Set();
+let blocksDayFilter = 'all'; // 'all' | a dateBlocked string — filter to one block day
+let _blockTopReasons = [];   // populated each render; chips reference by index (no escaping)
+function blocksFilterReason(i) { const r = _blockTopReasons[i]; if (r !== undefined) { blocksSearch = r; renderBlocks(); } }
 
 function renderBlocks() {
   const el = document.getElementById('blocksContent');
@@ -7362,18 +7418,30 @@ function renderBlocks() {
 
   // Stats
   const currentlyBlocked = all.filter(e => !e.dateUnblocked);
-  const blockedDriverNames = [...new Set(currentlyBlocked.map(e => e.driverName))];
-  const allDriverNames     = [...new Set(all.map(e => e.driverName))];
-  // Most blocked driver
+  // Dedupe by driverKey so case/spacing variants of one person collapse (matches the
+  // Captain-tab banner). Keep a representative display name per key.
+  const uniqByKey = (rows) => { const m = new Map(); for (const e of rows) { const k = driverKey(e.driverName); if (!m.has(k)) m.set(k, e.driverName); } return [...m.values()]; };
+  const blockedDriverNames = uniqByKey(currentlyBlocked);
+  const allDriverNames     = uniqByKey(all);
+  // Most blocked driver (keyed by driverKey so name variants don't split the count)
   const freq = {};
-  for (const e of all) freq[e.driverName] = (freq[e.driverName] || 0) + 1;
-  const topDriver = Object.entries(freq).sort((a,b) => b[1]-a[1])[0];
+  for (const e of all) { const k = driverKey(e.driverName); if (!freq[k]) freq[k] = { name:e.driverName, count:0 }; freq[k].count++; }
+  const topDriver = Object.values(freq).sort((a,b) => b.count-a.count)[0]; // { name, count }
 
-  // Filter + search
+  // Distinct block days (newest first) for the day-filter dropdown
+  const blockDays = [...new Set(all.map(e => e.dateBlocked))].sort((a,b) => periodSortKey(b) - periodSortKey(a));
+  // Top block reasons (first line, deduped) for the clickable breakdown
+  const reasonFreq = {};
+  for (const e of all) { const r = ((e.reason||'').split('\n')[0] || '').trim() || 'No reason provided'; reasonFreq[r] = (reasonFreq[r]||0) + 1; }
+  const topReasons = Object.entries(reasonFreq).sort((a,b) => b[1]-a[1]).slice(0, 8);
+  _blockTopReasons = topReasons.map(([r]) => r);
+
+  // Filter + search. Day filter takes precedence: when a specific block-date is chosen,
+  // show every event blocked that day (resolved or not), ignoring the active/all toggle.
   const q = blocksSearch.trim().toLowerCase();
-  let filtered = blocksFilter === 'active'
-    ? all.filter(e => !e.dateUnblocked)
-    : all;
+  let filtered = blocksDayFilter !== 'all'
+    ? all.filter(e => e.dateBlocked === blocksDayFilter)
+    : (blocksFilter === 'active' ? all.filter(e => !e.dateUnblocked) : all);
   if (q) filtered = filtered.filter(e => e.driverName.toLowerCase().includes(q) || e.reason.toLowerCase().includes(q));
 
   // Group by driver for the table
@@ -7449,28 +7517,43 @@ function renderBlocks() {
     </div>`;
   }).join('');
 
+  const he = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const topName = topDriver ? topDriver.name.replace(/'/g,"\\'") : '';
   el.innerHTML = `
     <div style="padding:16px 0 8px">
-      <!-- Summary cards -->
+      <!-- Summary cards (clickable: each sets a filter) -->
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
-        <div style="background:rgba(255,68,102,.08);border:1px solid rgba(255,68,102,.25);border-radius:6px;padding:12px 18px;min-width:120px">
+        <div class="blk-stat-card" onclick="blocksFilter='active';blocksDayFilter='all';blocksSearch='';renderBlocks()" title="Show only currently-blocked drivers" style="background:rgba(255,68,102,.08);border:1px solid rgba(255,68,102,.25);border-radius:6px;padding:12px 18px;min-width:120px">
           <div style="font-size:28px;font-weight:700;color:var(--red)">${blockedDriverNames.length}</div>
           <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">CURRENTLY BLOCKED</div>
           ${blockedDriverNames.length ? `<div style="font-size:10px;color:var(--red);margin-top:4px;line-height:1.4">${blockedDriverNames.join(' · ')}</div>` : ''}
         </div>
-        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:100px">
+        <div class="blk-stat-card" onclick="blocksFilter='all';blocksDayFilter='all';blocksSearch='';renderBlocks()" title="Show full block history" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:100px">
           <div style="font-size:28px;font-weight:700;color:var(--text)">${all.length}</div>
           <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">TOTAL EVENTS</div>
         </div>
-        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:100px">
+        <div class="blk-stat-card" onclick="blocksFilter='all';blocksDayFilter='all';blocksSearch='';renderBlocks()" title="Every driver ever blocked" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:100px">
           <div style="font-size:28px;font-weight:700;color:var(--text)">${allDriverNames.length}</div>
           <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">DRIVERS AFFECTED</div>
         </div>
-        ${topDriver ? `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:120px">
-          <div style="font-size:14px;font-weight:700;color:var(--amber)">${topDriver[0]}</div>
-          <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">MOST BLOCKED · ${topDriver[1]} events</div>
+        ${topDriver ? `<div class="blk-stat-card" onclick="blocksFilter='all';blocksDayFilter='all';blocksSearch='${topName}';blocksExpanded.add('${topName}');renderBlocks()" title="Open this driver's block history" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:120px">
+          <div style="font-size:14px;font-weight:700;color:var(--amber)">${he(topDriver.name)}</div>
+          <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">MOST BLOCKED · ${topDriver.count} events</div>
         </div>` : ''}
       </div>
+
+      <!-- Top reasons (click a chip to filter the list) -->
+      ${topReasons.length ? `<div style="margin-bottom:14px">
+        <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:6px">⬇ TOP BLOCK REASONS — click to filter</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          ${topReasons.map(([r,c],i)=>{
+            const active = blocksSearch.trim().toLowerCase() === r.toLowerCase();
+            const label = he(r.length>42 ? r.slice(0,42)+'…' : r);
+            return `<button onclick="blocksFilterReason(${i})" title="${he(r)}" style="padding:4px 10px;font-size:11px;border-radius:12px;cursor:pointer;border:1px solid ${active?'rgba(0,212,255,.5)':'var(--border)'};background:${active?'rgba(0,212,255,.12)':'var(--bg-card)'};color:${active?'var(--cyan)':'var(--text-muted)'};max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label} <b style="color:var(--text)">${c}</b></button>`;
+          }).join('')}
+          ${blocksSearch ? `<button onclick="blocksSearch='';renderBlocks()" style="padding:4px 10px;font-size:11px;border-radius:12px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-muted)">✕ clear</button>` : ''}
+        </div>
+      </div>` : ''}
 
       <!-- Controls -->
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
@@ -7478,9 +7561,17 @@ function renderBlocks() {
           <button onclick="blocksFilter='active';renderBlocks()" style="padding:5px 14px;font-size:11px;font-weight:700;border-radius:2px;cursor:pointer;letter-spacing:.04em;border:1px solid ${blocksFilter==='active'?'rgba(255,68,102,.4)':'rgba(255,255,255,.1)'};background:${blocksFilter==='active'?'rgba(255,68,102,.15)':'transparent'};color:${blocksFilter==='active'?'var(--red)':'var(--text-muted)'}">CURRENTLY BLOCKED</button>
           <button onclick="blocksFilter='all';renderBlocks()" style="padding:5px 14px;font-size:11px;font-weight:700;border-radius:2px;cursor:pointer;letter-spacing:.04em;border:1px solid ${blocksFilter==='all'?'rgba(0,212,255,.4)':'rgba(255,255,255,.1)'};background:${blocksFilter==='all'?'rgba(0,212,255,.1)':'transparent'};color:${blocksFilter==='all'?'var(--cyan)':'var(--text-muted)'}">ALL HISTORY</button>
         </div>
-        <input type="text" placeholder="Search driver or reason…" value="${blocksSearch}"
+        <select onchange="blocksDayFilter=this.value;renderBlocks()" title="Filter to drivers blocked on one day"
+          style="padding:5px 10px;font-size:12px;border:1px solid ${blocksDayFilter!=='all'?'rgba(0,212,255,.4)':'var(--border)'};border-radius:4px;background:${blocksDayFilter!=='all'?'rgba(0,212,255,.08)':'var(--bg-card)'};color:${blocksDayFilter!=='all'?'var(--cyan)':'var(--text)'};cursor:pointer">
+          <option value="all"${blocksDayFilter==='all'?' selected':''}>📅 All days</option>
+          ${blockDays.map(d=>`<option value="${he(d)}"${blocksDayFilter===d?' selected':''}>${he(d)}</option>`).join('')}
+        </select>
+        <input type="text" placeholder="Search driver or reason…" value="${he(blocksSearch)}"
           oninput="blocksSearch=this.value;renderBlocks()"
           style="padding:5px 10px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);flex:1;min-width:180px;max-width:300px">
+        ${(()=>{ const n = countBlockLogOpenDupes(); return n>0
+          ? `<button onclick="cleanBlockLogDupes()" title="Collapse duplicate unresolved block rows for the same driver into one. Resolved rows are kept." style="padding:5px 14px;font-size:11px;font-weight:700;border-radius:2px;cursor:pointer;letter-spacing:.04em;border:1px solid rgba(255,170,0,.4);background:rgba(255,170,0,.12);color:var(--amber);margin-left:auto">⛏ CLEAN ${n} DUPLICATE${n>1?'S':''}</button>`
+          : ''; })()}
         <button onclick="exportBlockLogCSV()" style="padding:5px 14px;font-size:11px;font-weight:700;border-radius:2px;cursor:pointer;letter-spacing:.04em;border:1px solid rgba(255,255,255,.15);background:transparent;color:var(--text-muted);margin-left:auto">⬇ EXPORT CSV</button>
       </div>
 
@@ -10995,6 +11086,16 @@ const _charts = {};
 function destroyChart(id) { if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; } }
 let analyticsMonth = 'all';
 function setAnalyticsMonth(m) { analyticsMonth = m; renderAnalytics(); }
+// Roster table state (driver-performance Analytics tab)
+let analyticsRosterFilter = 'all';   // all|current|new|idle|blocked|left|band3|band2|band1|band0
+let analyticsRosterSort   = 'net';   // name|orders|net|proj|gap|accept|first
+let analyticsRosterAsc    = false;
+function setAnalyticsRosterFilter(f) { analyticsRosterFilter = f; renderAnalytics(); }
+function setAnalyticsRosterSort(col) {
+  if (analyticsRosterSort === col) analyticsRosterAsc = !analyticsRosterAsc;
+  else { analyticsRosterSort = col; analyticsRosterAsc = (col === 'name'); }
+  renderAnalytics();
+}
 
 function renderAnalytics() {
   const el = document.getElementById('analyticsContent');
@@ -11018,8 +11119,10 @@ function renderAnalytics() {
     return;
   }
 
+  // Sort by period. (Don't require h.totalNet — cloud-pulled history carries only
+  // period + drivers; we aggregate per-driver from h.drivers below, so filtering on
+  // the day-level totalNet aggregate would wrongly blank the tab on cloud-only data.)
   const allSorted = [...history]
-    .filter(h => h.totalNet !== undefined)
     .sort((a, b) => periodSortKey(a.period) - periodSortKey(b.period));
 
   function filterByMonth(data) {
@@ -11041,285 +11144,187 @@ function renderAnalytics() {
     return;
   }
 
-  const recent = viewData.slice(-30);
+  // Clean up any charts left over from the old (pre-redesign) chart layout.
+  ['revenue','orders','acceptance','topDrivers','cashSplit'].forEach(destroyChart);
 
-  // KPI totals from filtered data
-  const totalNet    = viewData.reduce((s, h) => s + (h.totalNet    || 0), 0);
-  const totalOrders = viewData.reduce((s, h) => s + (h.totalOrders || 0), 0);
-  const avgAccept   = viewData.reduce((s, h) => s + (h.avgAcceptance || 0), 0) / viewData.length;
-  const bestDay     = Math.max(...viewData.map(h => h.totalNet || 0));
+  // ── Per-driver aggregation across the selected period ──
+  const departedKeys = getDepartedKeys();
+  const blockedKeys  = new Set(getBlockLog().filter(e => !e.dateUnblocked).map(e => driverKey(e.driverName)));
+  const NEW_MS = 14 * 86400000, now = Date.now();
+  const accAlerts = getAlertCache();
 
-  // Week-over-week delta — only meaningful in 'all' mode
-  const last7 = allSorted.slice(-7);
-  const prev7 = allSorted.slice(-14, -7);
-  const deltaCalc = (last, prev, key) => {
-    const l = last.reduce((s, h) => s + (key === 'accept' ? (h.avgAcceptance||0) : (h[key]||0)), 0) / (key === 'accept' ? Math.max(last.length,1) : 1);
-    const p = prev.reduce((s, h) => s + (key === 'accept' ? (h.avgAcceptance||0) : (h[key]||0)), 0) / (key === 'accept' ? Math.max(prev.length,1) : 1);
-    return p > 0 ? (l - p) / p * 100 : 0;
-  };
-  const showDelta = analyticsMonth === 'all';
-  const netDelta = showDelta ? deltaCalc(last7, prev7, 'totalNet') : null;
-  const ordDelta = showDelta ? deltaCalc(last7, prev7, 'totalOrders') : null;
-  const accDelta = showDelta ? deltaCalc(last7, prev7, 'accept') : null;
-
-  const dHtml = (pct, fallback) => {
-    if (pct === null) return `<div class="akpi-delta flat">${fallback || ''}</div>`;
-    if (!isFinite(pct) || Math.abs(pct) < 0.1) return `<div class="akpi-delta flat">— vs prev 7d</div>`;
-    const cls = pct > 0 ? 'up' : 'down', sign = pct > 0 ? '↑' : '↓';
-    return `<div class="akpi-delta ${cls}">${sign} ${Math.abs(pct).toFixed(1)}% vs prev 7d</div>`;
-  };
-
-  // Top captains from filtered data
-  const driverTotals = {};
+  const agg = {};
   viewData.forEach(h => (h.drivers||[]).forEach(d => {
     if (!d.name) return;
-    const net = d.netEarnings || 0;
-    if (net <= 0) return;
-    driverTotals[d.name] = (driverTotals[d.name] || 0) + net;
+    const k = driverKey(d.name);
+    if (!agg[k]) agg[k] = { key:k, name:d.name, orders:0, net:0, days:0, acSum:0, acDays:0 };
+    const a = agg[k];
+    a.orders += sN(d.orders);
+    a.net    += sN(d.netEarnings);
+    if (d.isActive) { a.days++; const av = accVal(d); if (av > 0) { a.acSum += av; a.acDays++; } }
   }));
-  const topDrivers = Object.entries(driverTotals).sort((a,b) => b[1]-a[1]).slice(0, 8);
 
-  const shortLabel = p => { const m = p.match(/(\d{1,2})\s(\w{3})/); return m ? m[1]+' '+m[2] : p; };
-  const labels = recent.map(h => shortLabel(h.period));
-  const COLORS = ['#34D186','#6366f1','#8b5cf6','#f59e0b','#14b8a6','#ef4444','#3b82f6','#ec4899'];
+  const drivers = Object.values(agg).map(a => {
+    const perDay = a.days > 0 ? a.net / a.days : 0;
+    const tier   = paceTier(perDay);                 // identical engine to the By-Captain tab
+    const proj   = Math.round(tier.proj);
+    const gap    = bonusGapFor(proj);                // {sarToNext, unlocks, floor} | null (already top tier)
+    return { ...a, perDay, tier, band:tier.band, proj, gap,
+      accept: a.acDays > 0 ? a.acSum / a.acDays : 0,
+      firstSeen: driverFirstSeenMs(a.name),
+      isNew: false, // set below
+      left: departedKeys.has(a.key),
+      blocked: blockedKeys.has(a.key),
+      idle: a.orders === 0,
+      companyBonus: bonusFor(proj).company,           // projected company bonus at this tier
+      accDrop: accAlerts[a.key]?.acceptanceDrop || null };
+  });
+  drivers.forEach(d => { d.isNew = d.firstSeen !== null && (now - d.firstSeen) <= NEW_MS; });
+  const current = drivers.filter(d => !d.left);       // "current fleet" excludes departed
 
-  el.innerHTML = selectorHtml + `
-    <div class="analytics-kpi-row">
-      <div class="akpi" style="border-left-color:#34D186">
-        <div class="akpi-label">Net SAR — ${periodLabel}</div>
-        <div class="akpi-value">${fmt(totalNet)}</div>
-        ${dHtml(netDelta, 'net SAR')}
-      </div>
-      <div class="akpi" style="border-left-color:#6366f1">
-        <div class="akpi-label">Total Orders</div>
-        <div class="akpi-value">${totalOrders.toLocaleString()}</div>
-        ${dHtml(ordDelta, `${viewData.length} days`)}
-      </div>
-      <div class="akpi" style="border-left-color:#f59e0b">
-        <div class="akpi-label">Avg Acceptance</div>
-        <div class="akpi-value">${avgAccept.toFixed(1)}<small style="font-size:14px;font-weight:500;color:var(--text-muted)">%</small></div>
-        ${dHtml(accDelta, '')}
-      </div>
-      <div class="akpi" style="border-left-color:#8b5cf6">
-        <div class="akpi-label">Best Single Day</div>
-        <div class="akpi-value">${fmt(bestDay)}</div>
-        <div class="akpi-delta flat">net SAR</div>
-      </div>
-    </div>
+  // ── Fleet KPIs ──
+  const totalDrivers = current.length;
+  const activeCount  = current.filter(d => d.orders > 0).length;
+  const idleCount    = current.filter(d => d.idle).length;
+  const newCount     = current.filter(d => d.isNew).length;
+  const leftCount    = drivers.filter(d => d.left).length;
+  // Blocked is a CURRENT status (not period-scoped) — use the unique open-block count
+  // so this KPI always matches the Blocks tab, even for a driver who didn't work this month.
+  const blockedCount = blockedKeys.size;
 
-    <div class="analytics-grid-2" style="grid-template-columns:1fr">
-      <div class="chart-card">
-        <div class="chart-card-title">Net Revenue — ${periodLabel}${recent.length < viewData.length ? ' (last '+recent.length+' days)' : ''}</div>
-        <div class="chart-canvas-wrap" style="height:220px"><canvas id="chartRevenue"></canvas></div>
-      </div>
-    </div>
+  // ── Bonus-tier pipeline (projected at current pace) ──
+  const buckets = [
+    { f:'band3', label:'6k tier',  sub:'≥6,000 proj',       color:'var(--bolt-green)', list: current.filter(d => !d.idle && d.band===3) },
+    { f:'band2', label:'5k tier',  sub:'5,000–5,999',       color:'var(--cyan)',       list: current.filter(d => !d.idle && d.band===2) },
+    { f:'band1', label:'4k tier',  sub:'4,000–4,999',       color:'var(--amber)',      list: current.filter(d => !d.idle && d.band===1) },
+    { f:'band0', label:'Below 4k', sub:'working · no bonus', color:'var(--red)',        list: current.filter(d => !d.idle && d.band===0) },
+    { f:'idle',  label:'0 orders', sub:'idle this period',   color:'var(--text-muted)', list: current.filter(d => d.idle) },
+  ];
+  const maxBucket = Math.max(1, ...buckets.map(b => b.list.length));
+  const totalCompanyBonus = current.reduce((s,d) => s + (d.idle ? 0 : d.companyBonus), 0);
 
-    <div class="analytics-grid-2">
-      <div class="chart-card">
-        <div class="chart-card-title">Daily Orders — ${periodLabel}</div>
-        <div class="chart-canvas-wrap" style="height:200px"><canvas id="chartOrders"></canvas></div>
-      </div>
-      <div class="chart-card">
-        <div class="chart-card-title">Acceptance Rate % — ${periodLabel}</div>
-        <div class="chart-canvas-wrap" style="height:200px"><canvas id="chartAcceptance"></canvas></div>
-      </div>
-    </div>
+  // ── Push list: below-6k workers, closest to the next tier first (best ROI) ──
+  const pushList = current.filter(d => !d.idle && d.band < 3 && d.gap)
+    .sort((a,b) => a.gap.sarToNext - b.gap.sarToNext).slice(0, 10);
 
-    <div class="chart-card" style="margin-bottom:16px">
-      <div class="chart-card-title">Top Captains — ${periodLabel} (net SAR)</div>
-      ${topDrivers.length
-        ? `<div class="chart-canvas-wrap" style="height:${Math.max(topDrivers.length * 44 + 20, 120)}px"><canvas id="chartTopDrivers"></canvas></div>`
-        : `<div style="padding:24px 0;text-align:center;color:var(--text-muted);font-size:13px">No captain earnings data for this period.</div>`
-      }
-    </div>
-
-    ${(()=>{
-      // Cash vs In-App split per driver — only show drivers with any cash earnings
-      const cashMap = {};
-      viewData.forEach(h => (h.drivers||[]).forEach(d => {
-        if (!d.name || !(d.grossInApp > 0 || d.cashEarnings > 0)) return;
-        if (!cashMap[d.name]) cashMap[d.name] = { inApp:0, cash:0 };
-        cashMap[d.name].inApp += sN(d.grossInApp);
-        cashMap[d.name].cash  += sN(d.cashEarnings);
-      }));
-      const cashDrivers = Object.entries(cashMap)
-        .filter(([,v]) => v.inApp + v.cash > 0)
-        .sort((a,b) => (b[1].inApp+b[1].cash) - (a[1].inApp+a[1].cash))
-        .slice(0, 12);
-      if (!cashDrivers.length) return '';
-      return `<div class="chart-card" style="margin-bottom:16px">
-        <div class="chart-card-title">Cash vs In-App Split — ${periodLabel} (gross SAR)</div>
-        <div class="chart-canvas-wrap" style="height:${Math.max(cashDrivers.length*44+20,120)}px"><canvas id="chartCashSplit"></canvas></div>
-      </div>`;
-    })()}
-  `;
-
-  const base = {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: {
-      x: { grid: { color: '#f3f4f6' }, ticks: { color: '#9ca3af', font: { size: 11, family: 'Inter, system-ui' } } },
-      y: { grid: { color: '#f3f4f6' }, ticks: { color: '#9ca3af', font: { size: 11, family: 'Inter, system-ui' } }, beginAtZero: true }
+  // ── Roster filter + sort ──
+  const rosterMatch = d => {
+    switch (analyticsRosterFilter) {
+      case 'current': return !d.left;
+      case 'new':     return d.isNew;
+      case 'left':    return d.left;
+      case 'idle':    return !d.left && d.idle;
+      case 'blocked': return d.blocked;
+      case 'band3': case 'band2': case 'band1': case 'band0':
+        return !d.left && !d.idle && ('band'+d.band) === analyticsRosterFilter;
+      default:        return true; // 'all'
     }
   };
+  const sortVal = { name:d=>d.name.toLowerCase(), orders:d=>d.orders, net:d=>d.net, proj:d=>d.proj,
+    gap:d=>d.gap?d.gap.sarToNext:Infinity, accept:d=>d.accept, first:d=>d.firstSeen||0 };
+  const roster = drivers.filter(rosterMatch);
+  const sf = sortVal[analyticsRosterSort] || sortVal.net;
+  roster.sort((a,b) => { const va=sf(a), vb=sf(b); const c = (typeof va==='string') ? va.localeCompare(vb) : va-vb; return analyticsRosterAsc ? c : -c; });
 
-  destroyChart('revenue');
-  _charts.revenue = new Chart(document.getElementById('chartRevenue'), {
-    type: 'line',
-    data: { labels, datasets: [{ data: recent.map(h => Math.round(h.totalNet || 0)),
-      borderColor: '#34D186', backgroundColor: 'rgba(52,209,134,.12)',
-      fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: '#34D186', borderWidth: 2 }] },
-    options: { ...base, plugins: { ...base.plugins,
-      tooltip: { callbacks: { label: ctx => ' ' + fmt(ctx.raw) + ' SAR' } } } }
-  });
+  // ── HTML helpers ──
+  const he = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const kpi = (label, value, color, extra='', onclick='') => `<div class="akpi${onclick?' blk-stat-card':''}" ${onclick?`onclick="${onclick}"`:''} style="border-left-color:${color}">
+    <div class="akpi-label">${label}</div><div class="akpi-value">${value}</div>${extra}</div>`;
+  const tierTxt = b => ['tier-txt-0','tier-txt-1','tier-txt-2','tier-txt-3'][b] || '';
+  const tierName = d => d.idle ? '<span style="color:var(--text-muted)">—</span>'
+    : d.band===0 ? `<span class="tier-txt-0">below 4k</span>` : `<span class="${tierTxt(d.band)}">${d.tier.tierAmt/1000}k</span>`;
+  const fsDate = ms => ms ? new Date(ms).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}) : '—';
+  const chip = (txt,bg,col) => `<span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:2px;letter-spacing:.04em;background:${bg};color:${col}">${txt}</span>`;
+  const statusChip = d => {
+    const c = [];
+    if (d.blocked) c.push(chip('BLOCKED','rgba(255,68,102,.15)','var(--red)'));
+    if (d.left)    c.push(chip('LEFT','rgba(255,255,255,.06)','var(--text-muted)'));
+    if (d.isNew)   c.push(chip('NEW','rgba(0,212,255,.14)','var(--cyan)'));
+    if (d.idle && !d.left && !d.blocked) c.push(chip('IDLE','rgba(255,170,0,.12)','var(--amber)'));
+    if (!c.length) c.push(chip('CURRENT','rgba(0,255,179,.1)','var(--bolt-green)'));
+    return c.join(' ');
+  };
+  const ath = (label, col, right) => { const on = analyticsRosterSort===col, arr = !on?'⇅':analyticsRosterAsc?'▲':'▼';
+    return `<th onclick="setAnalyticsRosterSort('${col}')" style="cursor:pointer;user-select:none;padding:7px 10px;font-size:9px;letter-spacing:.05em;font-weight:600;color:${on?'var(--cyan)':'var(--text-muted)'};text-align:${right?'right':'left'};white-space:nowrap">${label} <span style="opacity:${on?1:.3}">${arr}</span></th>`; };
+  const filterChips = [['all','All'],['current','Current'],['new','New'],['idle','Idle'],['blocked','Blocked'],['left','Left']]
+    .map(([f,l]) => `<button onclick="setAnalyticsRosterFilter('${f}')" style="padding:4px 12px;font-size:11px;border-radius:2px;cursor:pointer;letter-spacing:.04em;font-weight:600;border:1px solid ${analyticsRosterFilter===f?'rgba(0,212,255,.4)':'var(--border)'};background:${analyticsRosterFilter===f?'rgba(0,212,255,.12)':'transparent'};color:${analyticsRosterFilter===f?'var(--cyan)':'var(--text-muted)'}">${l}</button>`).join('');
+  const rosterRows = roster.length ? roster.map(d => `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+      <td style="padding:7px 10px;font-size:12px;color:var(--text);font-weight:600">${he(lookupForeignName(d.name)||d.name)}</td>
+      <td style="padding:7px 10px">${statusChip(d)}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${d.orders?'var(--text)':'var(--red)'}">${d.orders}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--text)">${fmt(Math.round(d.net))}</td>
+      <td style="padding:7px 10px;text-align:right;font-size:12px;font-weight:700">${tierName(d)}</td>
+      <td style="padding:7px 10px;text-align:right;font-size:11px;color:var(--text-muted)">${d.idle?'—':d.gap?`${fmt(d.gap.sarToNext)} → ${d.gap.floor/1000}k`:'✓ top'}</td>
+      <td style="padding:7px 10px;text-align:right;font-size:12px;color:var(--text-muted)">${d.accept>0?d.accept.toFixed(0)+'%':'—'}${d.accDrop?` <span style="color:var(--red);font-size:10px">↘${d.accDrop}</span>`:''}</td>
+      <td style="padding:7px 10px;text-align:right;font-size:11px;color:var(--text-muted)">${fsDate(d.firstSeen)}</td>
+    </tr>`).join('') : `<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">No drivers match this filter.</td></tr>`;
 
-  destroyChart('orders');
-  _charts.orders = new Chart(document.getElementById('chartOrders'), {
-    type: 'bar',
-    data: { labels, datasets: [{ data: recent.map(h => h.totalOrders || 0),
-      backgroundColor: 'rgba(99,102,241,.75)', borderRadius: 4, borderSkipped: false }] },
-    options: base
-  });
+  el.innerHTML = selectorHtml + `
+    <!-- Fleet KPIs (some cards click through to the roster / Blocks tab) -->
+    <div class="analytics-kpi-row" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
+      ${kpi('Total Drivers — '+periodLabel, totalDrivers, '#34D186', `<div class="akpi-delta flat">current fleet</div>`)}
+      ${kpi('Active', activeCount, '#00D4FF', `<div class="akpi-delta flat">${totalDrivers?Math.round(activeCount/totalDrivers*100):0}% had orders</div>`)}
+      ${kpi('Idle · 0 orders', idleCount, '#f59e0b', `<div class="akpi-delta ${idleCount?'down':'flat'}">tap to chase</div>`, "setAnalyticsRosterFilter('idle');document.getElementById('analyticsRoster')?.scrollIntoView({behavior:'smooth'})")}
+      ${kpi('New ≤14d', newCount, '#8b5cf6', `<div class="akpi-delta flat">recently added</div>`, "setAnalyticsRosterFilter('new');document.getElementById('analyticsRoster')?.scrollIntoView({behavior:'smooth'})")}
+      ${kpi('Left Fleet', leftCount, '#94a3b8', `<div class="akpi-delta flat">departed</div>`, "setAnalyticsRosterFilter('left');document.getElementById('analyticsRoster')?.scrollIntoView({behavior:'smooth'})")}
+      ${kpi('Blocked', blockedCount, '#ef4444', `<div class="akpi-delta ${blockedCount?'down':'flat'}">on Bolt →</div>`, "showTab('blocks',document.querySelector('.tab[data-tab=blocks]'));renderBlocks()")}
+    </div>
 
-  destroyChart('acceptance');
-  _charts.acceptance = new Chart(document.getElementById('chartAcceptance'), {
-    type: 'line',
-    data: { labels, datasets: [{ data: recent.map(h => +(h.avgAcceptance||0).toFixed(1)),
-      borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.1)',
-      fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: '#f59e0b', borderWidth: 2 }] },
-    options: { ...base,
-      scales: { ...base.scales, y: { ...base.scales.y, max: 100,
-        ticks: { ...base.scales.y.ticks, callback: v => v + '%' } } },
-      plugins: { ...base.plugins, tooltip: { callbacks: { label: ctx => ' ' + ctx.raw + '%' } } }
-    }
-  });
+    <!-- Bonus-tier pipeline (projected) -->
+    <div class="chart-card" style="margin-bottom:16px">
+      <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+        <span>Bonus-Tier Pipeline — ${periodLabel} <span style="font-size:11px;color:var(--text-muted);font-weight:400">(projected at current pace · click a band)</span></span>
+        <span style="font-size:12px;color:var(--bolt-green);font-weight:700">≈ ${fmt(totalCompanyBonus)} SAR bonus projected</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+        ${buckets.map(b => { const pct = Math.round(b.list.length/maxBucket*100); const bonus = b.f==='idle' ? 0 : b.list.reduce((s,d)=>s+d.companyBonus,0);
+          return `<div onclick="setAnalyticsRosterFilter('${b.f}');document.getElementById('analyticsRoster')?.scrollIntoView({behavior:'smooth'})" title="Click to see these drivers in the roster" style="cursor:pointer;display:flex;align-items:center;gap:10px">
+            <div style="width:92px;flex-shrink:0;font-size:11px;color:var(--text);font-weight:600">${b.label}<div style="font-size:9px;color:var(--text-muted);font-weight:400">${b.sub}</div></div>
+            <div style="flex:1;background:rgba(255,255,255,.04);border-radius:3px;height:26px;position:relative;overflow:hidden">
+              <div style="height:100%;width:${pct}%;background:${b.color};opacity:.85;border-radius:3px;transition:width .3s"></div>
+              <div style="position:absolute;inset:0;display:flex;align-items:center;padding:0 10px;font-size:12px;font-weight:700;color:var(--text)">${b.list.length}</div>
+            </div>
+            <div style="width:96px;flex-shrink:0;text-align:right;font-size:10px;color:var(--text-muted)">${bonus?'+'+fmt(bonus)+' SAR':'—'}</div>
+          </div>`; }).join('')}
+      </div>
+    </div>
 
-  // Cash vs In-App split chart
-  const cashMap2 = {};
-  viewData.forEach(h => (h.drivers||[]).forEach(d => {
-    if (!d.name || !(d.grossInApp > 0 || d.cashEarnings > 0)) return;
-    if (!cashMap2[d.name]) cashMap2[d.name] = { inApp:0, cash:0 };
-    cashMap2[d.name].inApp += sN(d.grossInApp);
-    cashMap2[d.name].cash  += sN(d.cashEarnings);
-  }));
-  const cashDrivers2 = Object.entries(cashMap2)
-    .filter(([,v]) => v.inApp + v.cash > 0)
-    .sort((a,b) => (b[1].inApp+b[1].cash) - (a[1].inApp+a[1].cash))
-    .slice(0, 12);
-  if (cashDrivers2.length && document.getElementById('chartCashSplit')) {
-    destroyChart('cashSplit');
+    <!-- Push list -->
+    ${pushList.length ? `<div class="chart-card" style="margin-bottom:16px">
+      <div class="chart-card-title">⚡ Push these drivers — closest to the next tier (best ROI)</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+        ${pushList.map((d,i) => { const perDayNeed = Math.ceil(d.gap.sarToNext/26);
+          return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:rgba(255,255,255,.02);border-radius:4px;border:1px solid rgba(255,255,255,.05)">
+            <span style="font-family:var(--mono);font-size:12px;color:var(--text-muted);width:18px;flex-shrink:0">${i+1}</span>
+            <span style="flex:1;min-width:0;font-size:12px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${he(lookupForeignName(d.name)||d.name)}${d.accDrop?` <span style="color:var(--red);font-size:10px">↘${d.accDrop}pp</span>`:''}</span>
+            <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">→ ${fmt(d.proj)}/mo</span>
+            <span style="font-size:11px;color:var(--amber);font-weight:600;white-space:nowrap">+${perDayNeed}/day → +${fmt(d.gap.unlocks)} (${d.gap.floor/1000}k)</span>
+          </div>`; }).join('')}
+      </div>
+    </div>` : ''}
 
-    // Pre-compute raw amounts and percentages once
-    const _rawInApp = cashDrivers2.map(([,v]) => +v.inApp.toFixed(0));
-    const _rawCash  = cashDrivers2.map(([,v]) => +v.cash.toFixed(0));
-    const _totals   = cashDrivers2.map(([,v]) => v.inApp + v.cash);
-    const _pctInApp = cashDrivers2.map(([,v], i) => _totals[i] > 0 ? +(_rawInApp[i] / _totals[i] * 100).toFixed(1) : 0);
-    const _pctCash  = cashDrivers2.map(([,v], i) => _totals[i] > 0 ? +(_rawCash[i]  / _totals[i] * 100).toFixed(1) : 0);
+    <!-- Sortable / filterable roster -->
+    <div class="chart-card" id="analyticsRoster">
+      <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <span>Driver Roster — ${periodLabel}</span>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">${filterChips}</div>
+      </div>
+      <div style="overflow-x:auto;margin-top:8px">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:rgba(0,0,0,.15)">
+            ${ath('Driver','name')}
+            <th style="padding:7px 10px;font-size:9px;letter-spacing:.05em;font-weight:600;color:var(--text-muted);text-align:left">Status</th>
+            ${ath('Orders','orders',true)}${ath('Net SAR','net',true)}${ath('Proj tier','proj',true)}${ath('Gap to next','gap',true)}${ath('Accept','accept',true)}${ath('First seen','first',true)}
+          </tr></thead>
+          <tbody>${rosterRows}</tbody>
+        </table>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:8px">Showing ${roster.length} driver${roster.length!==1?'s':''} · Net = actual ${periodLabel} · Proj tier = where they land at current daily pace (×26 working days), same basis as the By-Captain tab.</div>
+    </div>
+  `;
 
-    // Helpers to switch between % mode (both) and raw mode (cash-only)
-    function _applyPctMode(chart) {
-      chart.data.datasets[0].data = _pctInApp;
-      chart.data.datasets[1].data = _pctCash;
-      chart.options.scales.x.max = 100;
-      chart.options.scales.x.ticks.callback = v => v + '%';
-      chart.options.plugins.tooltip.callbacks.label = ctx => {
-        const raw = ctx.datasetIndex === 0 ? _rawInApp[ctx.dataIndex] : _rawCash[ctx.dataIndex];
-        return ` ${ctx.dataset.label}: ${ctx.raw}%  (${fmt(raw)} SAR)`;
-      };
-      chart.update('none');
-    }
-    function _applyRawMode(chart) {
-      chart.data.datasets[0].data = _rawInApp;
-      chart.data.datasets[1].data = _rawCash;
-      chart.options.scales.x.max = undefined;
-      chart.options.scales.x.ticks.callback = v => v >= 1000 ? (v/1000).toFixed(0)+'k' : v;
-      chart.options.plugins.tooltip.callbacks.label = ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw)} SAR`;
-      chart.update('none');
-    }
-
-    _charts.cashSplit = new Chart(document.getElementById('chartCashSplit'), {
-      type: 'bar',
-      data: {
-        labels: cashDrivers2.map(([n]) => lookupForeignName(n) || n),
-        datasets: [
-          { label:'In-App', data: _pctInApp, backgroundColor:'rgba(0,212,255,.75)', borderRadius:3, borderSkipped:false },
-          { label:'Cash',   data: _pctCash,  backgroundColor:'rgba(255,170,0,.8)',  borderRadius:3, borderSkipped:false },
-        ]
-      },
-      options: {
-        responsive:true, maintainAspectRatio:false, indexAxis:'y',
-        plugins: {
-          legend: {
-            display:true, position:'top',
-            labels:{ color:'#9ca3af', font:{ size:11, family:'Inter,system-ui' }, boxWidth:12 },
-            onClick(e, legendItem, legend) {
-              // Default toggle
-              Chart.defaults.plugins.legend.onClick.call(this, e, legendItem, legend);
-              const chart = legend.chart;
-              const inAppVis = chart.isDatasetVisible(0);
-              const cashVis  = chart.isDatasetVisible(1);
-              // Both visible → % mode; cash only → raw SAR mode
-              if (inAppVis && cashVis) _applyPctMode(chart);
-              else                     _applyRawMode(chart);
-            }
-          },
-          tooltip: { callbacks: {
-            label: ctx => {
-              const raw = ctx.datasetIndex === 0 ? _rawInApp[ctx.dataIndex] : _rawCash[ctx.dataIndex];
-              return ` ${ctx.dataset.label}: ${ctx.raw}%  (${fmt(raw)} SAR)`;
-            }
-          }}
-        },
-        scales: {
-          x: { stacked:true, beginAtZero:true, max:100,
-            grid:{ color:'rgba(255,255,255,.06)' },
-            ticks:{ color:'#9ca3af', font:{size:11,family:'Inter,system-ui'}, callback: v => v+'%' } },
-          y: { stacked:true, grid:{ display:false },
-            ticks:{ color:'#9ca3af', font:{size:11,family:'Inter,system-ui'} } }
-        }
-      }
-    });
-  }
-
-  if (topDrivers.length) {
-    destroyChart('topDrivers');
-    _charts.topDrivers = new Chart(document.getElementById('chartTopDrivers'), {
-      type: 'bar',
-      data: {
-        labels: topDrivers.map(([n]) => lookupForeignName(n) || n),
-        datasets: [{
-          data: topDrivers.map(([,v]) => v),
-          backgroundColor: COLORS,
-          borderRadius: 5,
-          borderSkipped: false
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        indexAxis: 'y',
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: ctx => ' ' + fmt(ctx.raw) + ' SAR' } }
-        },
-        scales: {
-          x: {
-            beginAtZero: true,
-            grid: { color: '#f3f4f6' },
-            ticks: {
-              color: '#9ca3af',
-              font: { size: 11, family: 'Inter, system-ui' },
-              callback: v => v >= 1000 ? (v/1000).toFixed(0)+'k' : v
-            }
-          },
-          y: {
-            grid: { display: false },
-            ticks: { color: '#9ca3af', font: { size: 11, family: 'Inter, system-ui' } }
-          }
-        }
-      }
-    });
-  }
+  // (Build-119: legacy revenue / orders / acceptance / cash-split / top-captain
+  //  Chart.js charts removed — Analytics is now a roster-performance view.)
 }
 
 // ═══════════════════════════════════════════
