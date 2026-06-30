@@ -10149,7 +10149,10 @@ function buildFinanceModals() {
       </div>
       <div class="fin-form-row" style="border-top:1px dashed var(--border);padding-top:12px;margin-top:4px">
         <label>🎖 Ambassador (who referred this driver)</label>
-        <input type="text" id="cpAmbassador" placeholder="Ambassador name — leave blank if none">
+        <select id="cpAmbassador">
+          <option value="">— none —</option>
+          ${AMBASSADOR_LIST.map(a => `<option value="${a}">${a}</option>`).join('')}
+        </select>
       </div>
       <div class="fin-form-row"><label>Nationality</label>
         <select id="cpNationality">
@@ -10335,6 +10338,10 @@ const AMB_MODELS = {
 // referral bonus (see ambPayoutFor). Months before cutover keep computing under the old A/C
 // math so already-reported/paid history doesn't change. Model B is unaffected at all times.
 const NEW_BONUS_CUTOVER = '2026-07';
+// Single source of truth for the ambassador dropdown (Captain Profile modal). Add new
+// ambassadors here. "Nesreen Team" is a group entry (3-4 callers working with Omar Ellord).
+const AMBASSADOR_LIST = ['Omar Ellord', 'Khaled Met3eb', 'Mohammad Hefny', 'Abo Youssef',
+  'Abo Yakoub', 'Abo Mohamed', 'Amr Rabie', 'Boda', 'Nesreen Team'];
 
 // Earliest YYYY-MM-DD this driver shows any trips/earnings in uploaded history.
 function detectFirstTrip(name) {
@@ -10708,7 +10715,7 @@ function openCourierProfileModal(name) {
   document.getElementById('cpFunnel').value = profile.funnel || '';
   document.getElementById('cpBlocked').checked = !!profile.blocked;
   // Ambassador fields
-  document.getElementById('cpAmbassador').value = profile.ambassador || '';
+  setCpAmbassadorValue(profile.ambassador || '');
   document.getElementById('cpNationality').value = profile.nationality || '';
   document.getElementById('cpAmbModel').value = profile.ambassadorModel || '';
   const detected = detectFirstTrip(name);
@@ -10721,6 +10728,20 @@ function openCourierProfileModal(name) {
   document.getElementById('courierProfileModal').classList.add('open');
 }
 function closeCourierProfileModal() { document.getElementById('courierProfileModal').classList.remove('open'); }
+// Sets the ambassador dropdown's value. If the saved value predates AMBASSADOR_LIST (or is a
+// typo/variant not on the canonical list), it's never silently dropped — a flagged one-off
+// option is added so the real saved value stays visible and selected until someone fixes it.
+function setCpAmbassadorValue(value) {
+  const sel = document.getElementById('cpAmbassador');
+  [...sel.querySelectorAll('option[data-legacy]')].forEach(o => o.remove());
+  if (value && !AMBASSADOR_LIST.includes(value)) {
+    const opt = document.createElement('option');
+    opt.value = value; opt.dataset.legacy = '1';
+    opt.textContent = `⚠️ ${value} (not on the list — pick the right one)`;
+    sel.appendChild(opt);
+  }
+  sel.value = value;
+}
 function onCpAmbModelChange(m) {
   // 1st-trip is only relevant for Model B (rent activation); A/C use first-achievement.
   document.getElementById('cpAmbFirstTripRow').style.display = (m === 'B') ? 'block' : 'none';
