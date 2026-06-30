@@ -6524,6 +6524,10 @@ function buildCourierSummaryTable(entries, searchFilter) {
   // just-synced day. These captains get a "LEFT FLEET" badge; the Status → Current
   // filter hides them, so Current shows the whole fleet minus the ones who left.
   const departedKeys = getDepartedKeys();
+  // A BLOCKED captain is still ON the fleet (just blocked on Bolt) — they must NEVER be
+  // counted as "left", even if Bolt dropped them from the latest roster export. So we
+  // subtract currently-blocked captains (open block-log rows) from the departed set.
+  const blockedKeys  = new Set(getBlockLog().filter(e => !e.dateUnblocked).map(e => driverKey(e.driverName)));
 
   // Working-month basis for pace tracking, derived from the actual month in view.
   // Model: a captain takes ~1 day off per week, so a working month is ≈ 6/7 of the
@@ -6654,7 +6658,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
   // set is empty, so Current keeps everyone and Left shows nobody — both correct.)
   if (sumStatusFilter !== 'all') {
     filtered = filtered.filter(c => {
-      const left = departedKeys.has(driverKey(c.name));
+      const left = departedKeys.has(driverKey(c.name)) && !blockedKeys.has(driverKey(c.name));
       return sumStatusFilter === 'left' ? left : !left;
     });
   }
@@ -6665,8 +6669,8 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const rows = filtered.map((c, idx) => {
     const foreign = lookupForeignName(c.name);
     const displayName = foreign || c.name;
-    const isBlocked = !!getCourierProfile(c.name)?.blocked;
-    const hasLeft = departedKeys.has(driverKey(c.name));
+    const isBlocked = blockedKeys.has(driverKey(c.name)) || !!getCourierProfile(c.name)?.blocked;
+    const hasLeft = departedKeys.has(driverKey(c.name)) && !blockedKeys.has(driverKey(c.name));
     const badge = modelBadge(c.name) + funnelBadge(c.name)
       + (isBlocked ? `<span style="display:inline-flex;align-items:center;font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;margin-left:4px;background:rgba(255,68,102,.15);border:1px solid rgba(255,68,102,.4);color:var(--red);letter-spacing:.06em">🚫 BLOCKED</span>` : '')
       + (hasLeft ? `<span class="left-badge">LEFT FLEET</span>` : '');
