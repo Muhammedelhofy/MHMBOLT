@@ -2975,6 +2975,37 @@ function renderModalBody() {
   const perfScope  = singleDayActive ? modalPeriodFilter : (filterActive ? scopeLbl : `all ${agg.days} day${agg.days!==1?'s':''}`);
   const earnScope  = singleDayActive ? modalPeriodFilter : (filterActive ? scopeLbl : 'all-time');
 
+  // Monthly Target follows the same scope as Performance/Earnings/Day-by-Day below it —
+  // a month you've filtered to, or the day you've drilled into — instead of always showing
+  // the absolute current period regardless of what's selected (was confusing: e.g. filtering
+  // to a past month while the real current period had no data yet showed 0 SAR up top next
+  // to a real total lower down). Falls back to the real current period when nothing's filtered.
+  const targetScopeMonth = singleDayActive ? getMonthKey(modalPeriodFilter) : (filterActive ? modalMonthFilter : null);
+  let targetPInfo = pInfo, targetMonthly = monthly, targetScopeLbl = 'current month';
+  if (targetScopeMonth) {
+    const [fy, fm] = targetScopeMonth.split('-').map(Number);
+    const isCurrentPeriodMonth = pInfo && pInfo.end.year === fy && (pInfo.end.month + 1) === fm;
+    if (!isCurrentPeriodMonth) {
+      const dim = new Date(fy, fm, 0).getDate();
+      targetPInfo = { end: { day: dim, month: fm - 1, year: fy }, daysInMonth: dim }; // past month = fully elapsed
+    }
+    targetMonthly = getMonthlyNet(d.driverId, d.name, fm - 1, fy);
+    targetScopeLbl = getMonthLabel(targetScopeMonth);
+  }
+  const targetEffTarget = getProratedTarget(d.name, target, targetPInfo);
+  const targetPct = targetEffTarget > 0 ? Math.min(100, Math.round(targetMonthly/targetEffTarget*100)) : 100;
+  const targetFillCls = targetPct>=85?'fill-green':targetPct>=55?'fill-amber':'fill-red';
+  const targetProjected = targetPInfo && targetPInfo.end.day>0 && targetPInfo.end.day<targetPInfo.daysInMonth
+    ? Math.round(targetMonthly/targetPInfo.end.day*targetPInfo.daysInMonth) : targetMonthly;
+  const targetGap = Math.max(0, targetEffTarget - targetMonthly);
+  let targetPaceText='', targetPaceColor='var(--text-muted)';
+  if (targetPInfo && targetEffTarget > 0) {
+    const exp = targetEffTarget*(targetPInfo.end.day/targetPInfo.daysInMonth);
+    if (targetMonthly>=exp) { targetPaceText='On track ✓'; targetPaceColor='var(--green)'; }
+    else if (targetMonthly>=exp*.8) { targetPaceText='Slightly behind'; targetPaceColor='var(--amber)'; }
+    else { targetPaceText='Behind pace'; targetPaceColor='var(--red)'; }
+  }
+
   const monthSelect = `
     <select class="kpi-select modal-month-select${filterActive?' filter-on':''}" onchange="setModalMonth(this.value)" title="Filter day-by-day by month">
       <option value="all" ${!filterActive?'selected':''}>All months</option>
@@ -2991,17 +3022,17 @@ function renderModalBody() {
       ${d.boltSuspensionReason?`<div style="font-size:11px;color:var(--text-muted)">Reason: ${d.boltSuspensionReason}</div>`:''}
     </div>` : ''}
     <div class="target-section">
-      <div class="target-section-title">Monthly Target — ${fmt(effTarget)} SAR${effTarget!==target?`<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">(prorated from ${fmt(target)})</span>`:''}<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">· current month</span></div>
+      <div class="target-section-title">Monthly Target — ${fmt(targetEffTarget)} SAR${targetEffTarget!==target?`<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">(prorated from ${fmt(target)})</span>`:''}<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">· ${targetScopeLbl}</span></div>
       <div class="target-big">
-        <div><div class="target-earned">${fmt(monthly)}<small> SAR</small></div>
-          <div style="font-size:12px;color:${paceColor};margin-top:3px;font-weight:600">${paceText}</div></div>
-        <div class="target-of6k"><strong>${pct}%</strong>of target</div>
+        <div><div class="target-earned">${fmt(targetMonthly)}<small> SAR</small></div>
+          <div style="font-size:12px;color:${targetPaceColor};margin-top:3px;font-weight:600">${targetPaceText}</div></div>
+        <div class="target-of6k"><strong>${targetPct}%</strong>of target</div>
       </div>
-      <div class="modal-progress-bg"><div class="modal-progress-fill ${fillCls}" style="width:${pct}%"></div></div>
+      <div class="modal-progress-bg"><div class="modal-progress-fill ${targetFillCls}" style="width:${targetPct}%"></div></div>
       <div class="target-stats">
-        <div class="tstat"><div class="tstat-label">Earned</div><div class="tstat-value">${fmt(monthly)} SAR</div></div>
-        <div class="tstat"><div class="tstat-label">Remaining</div><div class="tstat-value">${fmt(gap)} SAR</div></div>
-        <div class="tstat"><div class="tstat-label">Projected</div><div class="tstat-value" style="color:${pct>=85?'var(--green)':pct>=55?'var(--amber)':'var(--red)'}">${fmt(projected)} SAR</div></div>
+        <div class="tstat"><div class="tstat-label">Earned</div><div class="tstat-value">${fmt(targetMonthly)} SAR</div></div>
+        <div class="tstat"><div class="tstat-label">Remaining</div><div class="tstat-value">${fmt(targetGap)} SAR</div></div>
+        <div class="tstat"><div class="tstat-label">Projected</div><div class="tstat-value" style="color:${targetPct>=85?'var(--green)':targetPct>=55?'var(--amber)':'var(--red)'}">${fmt(targetProjected)} SAR</div></div>
       </div>
     </div>
 
