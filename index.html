@@ -3419,7 +3419,7 @@ function m8PickCmd(type, val) {
     const col = colMap[val] || 'net';
     sumCourierSortCol = col; sumCourierSortAsc = false;
     renderCaptains();
-    const label = {net:'Earnings',orders:'Rides',hours:'Earn/hr',accept:'Acceptance',gross:'Gross'}[val]||val;
+    const label = {net:'Earnings',orders:'Trips',hours:'Earn/hr',accept:'Acceptance',gross:'Gross'}[val]||val;
     m8PickShow(`<b>✓ Sorted by ${label}</b> <span style="color:var(--text-muted)">— column header highlighted</span>`);
     return;
   }
@@ -6111,7 +6111,7 @@ function renderCaptains() {
     ['hrs',    'Hours'],
     ['accept', 'Acceptance %'],
     ['util',   'Utilisation %'],
-    ['rides',  'Rides'],
+    ['rides',  'Trips'],
     ['dist',   'Distance'],
     ['name',   'Captain (A–Z)'],
     ['model',  'Model'],
@@ -6151,7 +6151,7 @@ function renderCaptains() {
     { label:'Avg Acceptance',  value:pctOrDash(kpis.avgAccept),    sub:`active drivers only`,            cls:'' },
     { label:'Avg Utilisation', value:pctOrDash(kpis.avgUtil),      sub:`of online time`,                 cls:'' },
     { label:'Avg Finish Rate', value:pctOrDash(kpis.avgFinish),    sub:`accepted → finished`,            cls:'' },
-    { label:'Total Rides',     value:`${fmt(kpis.totalRides)}`,    sub:`${Math.round(kpis.totalDist).toLocaleString('en-US')} km`, cls:'' },
+    { label:'Total Trips',     value:`${fmt(kpis.totalRides)}`,    sub:`${Math.round(kpis.totalDist).toLocaleString('en-US')} km`, cls:'' },
     { label:'Hours Online',     value:`${kpis.totalHours.toFixed(1)} h`,
       sub: selected.length === 1 ? 'this day' : `${selected.length} days total`, cls:'' },
   ].map(c=>`<div class="summary-card ${c.cls}"><div class="s-label">${c.label}</div><div class="s-value">${c.value}</div><div class="s-sub">${c.sub}</div></div>`).join('') : '';
@@ -6345,7 +6345,7 @@ function buildFleetDayTable(entries) {
       ${fth('Finish rate','finish','td-r')}
       ${fth('Acceptance','accept','td-r')}
       ${fth('Utilisation','util','td-r')}
-      ${fth('Rides','rides','td-r')}
+      ${fth('Trips','rides','td-r')}
       ${fth('Distance','dist','td-r')}
     </tr></thead>
     <tbody>${rows}</tbody>
@@ -6788,7 +6788,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
       ${cth('Hours','hrs','td-r')}
       ${cth('Accept','accept','td-r')}
       ${cth('Util','util','td-r')}
-      ${cth('Rides','rides','td-r')}
+      ${cth('Trips','rides','td-r')}
       ${cth('Distance','dist','td-r')}
       <th class="${sumCourierSortCol==='target'?'th-sort-active':''}" style="text-align:center;cursor:pointer;user-select:none;white-space:nowrap" onclick="setSumCourierSort('target')" title="Sort by total achieved net vs the ${target?fmt(target):'monthly'} target (not daily pace)">Monthly Target<span style="opacity:${sumCourierSortCol==='target'?1:.25};font-size:9px;margin-left:3px;color:${sumCourierSortCol==='target'?'var(--bolt-green)':'inherit'}">${sumCourierSortCol!=='target'?'⇅':sumCourierSortAsc?'▲':'▼'}</span></th>
     </tr></thead>
@@ -7466,20 +7466,30 @@ function renderBlocks() {
   for (const e of all) { const k = driverKey(e.driverName); if (!freq[k]) freq[k] = { name:e.driverName, count:0 }; freq[k].count++; }
   const topDriver = Object.values(freq).sort((a,b) => b.count-a.count)[0]; // { name, count }
 
-  // Distinct block days (newest first) for the day-filter dropdown
+  // Distinct block days (newest first) + their months, for the day/month filter dropdown.
+  const blockMonthKey = s => { const m=(s||'').match(/(\w{3})\s(\d{4})/); return (m && MONTH_MAP[m[1]]!=null) ? m[2]+'-'+String(MONTH_MAP[m[1]]+1).padStart(2,'0') : ''; };
   const blockDays = [...new Set(all.map(e => e.dateBlocked))].sort((a,b) => periodSortKey(b) - periodSortKey(a));
+  const blockMonths = [...new Set(blockDays.map(blockMonthKey).filter(Boolean))].sort().reverse();
   // Top block reasons (first line, deduped) for the clickable breakdown
   const reasonFreq = {};
   for (const e of all) { const r = ((e.reason||'').split('\n')[0] || '').trim() || 'No reason provided'; reasonFreq[r] = (reasonFreq[r]||0) + 1; }
   const topReasons = Object.entries(reasonFreq).sort((a,b) => b[1]-a[1]).slice(0, 8);
   _blockTopReasons = topReasons.map(([r]) => r);
 
-  // Filter + search. Day filter takes precedence: when a specific block-date is chosen,
-  // show every event blocked that day (resolved or not), ignoring the active/all toggle.
+  // Filter + search. Day/month filter takes precedence over the active/all toggle:
+  //   a DAY value  → only blocks dated exactly that day
+  //   'm:YYYY-MM'  → every block dated in that whole month
+  //   'all'        → active/all toggle applies
   const q = blocksSearch.trim().toLowerCase();
-  let filtered = blocksDayFilter !== 'all'
-    ? all.filter(e => e.dateBlocked === blocksDayFilter)
-    : (blocksFilter === 'active' ? all.filter(e => !e.dateUnblocked) : all);
+  let filtered;
+  if (blocksDayFilter === 'all') {
+    filtered = blocksFilter === 'active' ? all.filter(e => !e.dateUnblocked) : all;
+  } else if (blocksDayFilter.startsWith('m:')) {
+    const mk = blocksDayFilter.slice(2);
+    filtered = all.filter(e => blockMonthKey(e.dateBlocked) === mk);
+  } else {
+    filtered = all.filter(e => e.dateBlocked === blocksDayFilter);
+  }
   if (q) filtered = filtered.filter(e => e.driverName.toLowerCase().includes(q) || e.reason.toLowerCase().includes(q));
 
   // Group by driver for the table
@@ -7599,10 +7609,11 @@ function renderBlocks() {
           <button onclick="blocksFilter='active';renderBlocks()" style="padding:5px 14px;font-size:11px;font-weight:700;border-radius:2px;cursor:pointer;letter-spacing:.04em;border:1px solid ${blocksFilter==='active'?'rgba(255,68,102,.4)':'rgba(255,255,255,.1)'};background:${blocksFilter==='active'?'rgba(255,68,102,.15)':'transparent'};color:${blocksFilter==='active'?'var(--red)':'var(--text-muted)'}">CURRENTLY BLOCKED</button>
           <button onclick="blocksFilter='all';renderBlocks()" style="padding:5px 14px;font-size:11px;font-weight:700;border-radius:2px;cursor:pointer;letter-spacing:.04em;border:1px solid ${blocksFilter==='all'?'rgba(0,212,255,.4)':'rgba(255,255,255,.1)'};background:${blocksFilter==='all'?'rgba(0,212,255,.1)':'transparent'};color:${blocksFilter==='all'?'var(--cyan)':'var(--text-muted)'}">ALL HISTORY</button>
         </div>
-        <select onchange="blocksDayFilter=this.value;renderBlocks()" title="Filter to drivers blocked on one day"
+        <select onchange="blocksDayFilter=this.value;renderBlocks()" title="Pick a whole month (all its blocks) or a single day (only that day's new blocks)"
           style="padding:5px 10px;font-size:12px;border:1px solid ${blocksDayFilter!=='all'?'rgba(0,212,255,.4)':'var(--border)'};border-radius:4px;background:${blocksDayFilter!=='all'?'rgba(0,212,255,.08)':'var(--bg-card)'};color:${blocksDayFilter!=='all'?'var(--cyan)':'var(--text)'};cursor:pointer">
           <option value="all"${blocksDayFilter==='all'?' selected':''}>📅 All days</option>
-          ${blockDays.map(d=>`<option value="${he(d)}"${blocksDayFilter===d?' selected':''}>${he(d)}</option>`).join('')}
+          ${blockMonths.map(mk=>`<option value="m:${mk}"${blocksDayFilter==='m:'+mk?' selected':''}>— ${he(monthLabel(mk))} (whole month) —</option>`
+            + blockDays.filter(d=>blockMonthKey(d)===mk).map(d=>`<option value="${he(d)}"${blocksDayFilter===d?' selected':''}>   ${he(d)}</option>`).join('')).join('')}
         </select>
         <input type="text" placeholder="Search driver or reason…" value="${he(blocksSearch)}"
           oninput="blocksSearch=this.value;renderBlocks()"
@@ -11183,15 +11194,18 @@ function renderAnalytics() {
   // banked 3,000 then stopped/was blocked on the 30th projects ~3,000, not 6,000.
   const projectable = analyticsMonth !== 'all';
   const today = new Date();
-  let daysInMonth = 30, elapsedDays = 30, remainingDays = 0, isCurrentMonth = false, py = 0, pm = 0;
+  let daysInMonth = 30, elapsedDays = 30, remainingDays = 0, remTotal = 0, isCurrentMonth = false, isPastMonth = false, py = 0, pm = 0;
   if (projectable) {
     [py, pm] = analyticsMonth.split('-').map(Number);   // pm = 1..12
-    daysInMonth = new Date(py, pm, 0).getDate();
+    daysInMonth = new Date(py, pm, 0).getDate();        // CALENDAR length: Jun 30, Jul 31, Feb 28/29
     isCurrentMonth = (today.getFullYear()===py && (today.getMonth()+1)===pm);
+    isPastMonth = (py < today.getFullYear()) || (py===today.getFullYear() && (today.getMonth()+1) > pm);
     elapsedDays   = isCurrentMonth ? Math.min(today.getDate(), daysInMonth) : daysInMonth; // past month = full
-    remainingDays = isCurrentMonth ? Math.max(0, daysInMonth - elapsedDays) : 0;
+    remainingDays = isCurrentMonth ? Math.max(0, daysInMonth - elapsedDays) : 0;   // full days AFTER today
+    remTotal      = isCurrentMonth ? (remainingDays + 1) : 0;  // incl. today — the month runs through tonight
   }
-  const remWork = Math.max(0, Math.round(remainingDays * 6/7)); // ~1 day off/week
+  // Push uses days remaining INCLUDING today (the month is live until midnight of the last day).
+  const remWork = Math.max(isCurrentMonth ? 1 : 0, Math.round(remTotal * 6/7)); // ~1 day off/week
 
   // ── Per-driver aggregation ──
   const departedKeys = getDepartedKeys();
@@ -11211,12 +11225,17 @@ function renderAnalytics() {
     if (d.isActive) { a.days++; const av = accVal(d); if (av>0){ a.acSum+=av; a.acDays++; } }
   }));
 
+  const dataStartMs = allSorted.length ? periodSortKey(allSorted[0].period) : 0; // earliest day we actually have
   const drivers = Object.values(agg).map(a => {
     const firstSeen = driverFirstSeenMs(a.name);
-    const isNew  = firstSeen !== null && (nowMs - firstSeen) <= NEW_MS;
-    const left   = departedKeys.has(a.key);
+    // "First seen" is bounded by our loaded history. If a driver is already present on the
+    // earliest day we have data, their real join date may be EARLIER — we can't confirm it,
+    // so we DON'T call them "new" and we render the date as uncertain (≤) rather than guess.
+    const firstSeenCertain = firstSeen !== null && firstSeen > dataStartMs;
+    const isNew  = firstSeenCertain && (nowMs - firstSeen) <= NEW_MS;
     const blocked= blockedKeys.has(a.key);
-    const idle   = a.orders === 0;
+    const left   = departedKeys.has(a.key) && !blocked; // a BLOCKED captain is not "left" — they
+    const idle   = a.orders === 0;                       // still count toward the bonus they earned
     // Run-rate denominator: elapsed CALENDAR days of the month, shortened to
     // days-since-join for someone who started mid-month (so newcomers aren't unfairly diluted).
     let dElapsed = elapsedDays;
@@ -11240,7 +11259,7 @@ function renderAnalytics() {
     const unlocks   = nextFloor ? bonusFor(nextFloor).company : 0;
     // Reachable if the extra needed is a modest lift on their current work-day pace.
     const pushFeasible = !!nextFloor && remWork>0 && pushExtra <= Math.max(Math.round(avgWork*0.5), 30);
-    return { ...a, firstSeen, isNew, left, blocked, idle, proj, band, avgWork,
+    return { ...a, firstSeen, firstSeenCertain, isNew, left, blocked, idle, proj, band, avgWork,
       accept: a.acDays>0 ? a.acSum/a.acDays : 0,
       companyBonus: (projectable && !idle) ? bonusFor(proj).company : 0,
       accDrop: accAlerts[a.key]?.acceptanceDrop || null,
@@ -11252,6 +11271,7 @@ function renderAnalytics() {
   const totalDrivers = current.length;
   const activeCount  = current.filter(d=>d.orders>0).length;
   const idleCount    = current.filter(d=>d.idle).length;
+  const slowCount    = projectable ? current.filter(d=>!d.idle && d.band===0).length : 0; // working but projecting < 4k
   const newCount     = current.filter(d=>d.isNew).length;
   const leftCount    = drivers.filter(d=>d.left).length;
   const blockedCount = blockedKeys.size;              // matches the Blocks tab (current status)
@@ -11262,7 +11282,7 @@ function renderAnalytics() {
     { f:'band2', label:'5k tier',  sub:'5,000–5,999',        color:'var(--cyan)',       list: current.filter(d=>!d.idle && d.band===2) },
     { f:'band1', label:'4k tier',  sub:'4,000–4,999',        color:'var(--amber)',      list: current.filter(d=>!d.idle && d.band===1) },
     { f:'band0', label:'Below 4k', sub:'working · no bonus',  color:'var(--red)',        list: current.filter(d=>!d.idle && d.band===0) },
-    { f:'idle',  label:'0 orders', sub:'idle this period',    color:'var(--text-muted)', list: current.filter(d=>d.idle) },
+    { f:'idle',  label:'0 trips',  sub:'idle this period',    color:'var(--text-muted)', list: current.filter(d=>d.idle) },
   ];
   const maxBucket = Math.max(1, ...buckets.map(b=>b.list.length));
   const totalCompanyBonus = current.reduce((s,d)=>s+(d.idle?0:d.companyBonus),0);
@@ -11294,16 +11314,17 @@ function renderAnalytics() {
   const basisNote = !projectable
     ? `All time · actual cumulative — pick a month above to project bonus tiers`
     : isCurrentMonth
-      ? `${periodLabel} · month-to-date through day ${elapsedDays} of ${daysInMonth} · ${remainingDays} day${remainingDays!==1?'s':''} left · projection = banked + daily pace × ${remainingDays} day${remainingDays!==1?'s':''} left`
+      ? `${periodLabel} · IN PROGRESS · day ${elapsedDays} of ${daysInMonth} (today still earning) · ${remTotal} day${remTotal!==1?'s':''} left incl. today · projection = banked + pace x days left`
       : `${periodLabel} · complete month — figures are final actuals`;
 
   // ── Drill-down list (only when a card/band is clicked) ──
   let drillHtml = '';
   if (analyticsDrill) {
-    const labelMap = { all:'All drivers', active:'Active (had orders)', idle:'Idle · 0 orders', new:'New ≤14 days', left:'Left fleet',
+    const labelMap = { all:'All drivers', active:'Active (had trips)', idle:'Idle · 0 trips', slow:'Slow · projecting below 4k', new:'New ≤14 days', left:'Left fleet',
       band3:'6k tier (projected)', band2:'5k tier (projected)', band1:'4k tier (projected)', band0:'Below 4k (projected)' };
     const match = d => { switch(analyticsDrill){
       case 'all': return !d.left; case 'active': return !d.left&&d.orders>0; case 'idle': return !d.left&&d.idle;
+      case 'slow': return !d.left&&!d.idle&&d.band===0;
       case 'new': return d.isNew; case 'left': return d.left;
       case 'band3': case 'band2': case 'band1': case 'band0': return !d.left&&!d.idle&&('band'+d.band)===analyticsDrill;
       default: return !d.left; } };
@@ -11323,7 +11344,7 @@ function renderAnalytics() {
       <td style="padding:6px 9px;text-align:right;font-size:12px">${projectable&&!d.idle?fmt(d.proj)+' '+projTier(d):'—'}</td>
       <td style="padding:6px 9px;text-align:right;font-size:11px;color:var(--text-muted)">${(projectable&&d.nextFloor&&d.pushExtra!==Infinity)?('+'+fmt(d.pushExtra)+'/d→'+d.nextFloor/1000+'k'):(projectable&&d.proj>=TIERS[2]?'✓ top':'—')}</td>
       <td style="padding:6px 9px;text-align:right;font-size:12px;color:var(--text-muted)">${d.accept>0?d.accept.toFixed(0)+'%':'—'}${d.accDrop?` <span style="color:var(--red);font-size:10px">↘${d.accDrop}</span>`:''}</td>
-      <td style="padding:6px 9px;text-align:right;font-size:11px;color:var(--text-muted)">${fsDate(d.firstSeen)}</td>
+      <td style="padding:6px 9px;text-align:right;font-size:11px;color:var(--text-muted)" ${(d.firstSeen&&!d.firstSeenCertain)?'title="Earliest date in the loaded data — actual join may be earlier"':''}>${!d.firstSeen?'—':(d.firstSeenCertain?fsDate(d.firstSeen):'≤ '+fsDate(d.firstSeen))}</td>
     </tr>`).join('') : `<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">No drivers.</td></tr>`;
     drillHtml = `<div class="chart-card" id="analyticsDrill" style="margin-top:16px">
       <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
@@ -11332,7 +11353,7 @@ function renderAnalytics() {
       </div>
       <div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse">
         <thead><tr style="background:rgba(0,0,0,.15)">
-          ${dth('Driver','name')}<th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Status</th>${dth('Orders','orders',1)}${dth('Net','net',1)}${dth('Avg/work-day','avg',1)}${dth('Proj','proj',1)}${dth('To next tier','need',1)}${dth('Accept','accept',1)}${dth('First seen','first',1)}
+          ${dth('Driver','name')}<th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Status</th>${dth('Trips','orders',1)}${dth('Net','net',1)}${dth('Avg/work-day','avg',1)}${dth('Proj','proj',1)}${dth('To next tier','need',1)}${dth('Accept','accept',1)}${dth('First seen','first',1)}
         </tr></thead><tbody>${rows}</tbody>
       </table></div>
     </div>`;
@@ -11343,8 +11364,9 @@ function renderAnalytics() {
 
     <div class="analytics-kpi-row" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
       ${kpi('Total Drivers', totalDrivers, '#34D186', 'current fleet', 'all')}
-      ${kpi('Active', activeCount, '#00D4FF', (totalDrivers?Math.round(activeCount/totalDrivers*100):0)+'% had orders', 'active')}
-      ${kpi('Idle · 0 orders', idleCount, '#f59e0b', 'tap to chase', 'idle')}
+      ${kpi('Active', activeCount, '#00D4FF', (totalDrivers?Math.round(activeCount/totalDrivers*100):0)+'% had trips', 'active')}
+      ${kpi('Idle · 0 trips', idleCount, '#f59e0b', 'tap to chase', 'idle')}
+      ${projectable ? kpi('Slow · proj &lt; 4k', slowCount, '#fb7185', 'working, no bonus yet', 'slow') : ''}
       ${kpi('New ≤14d', newCount, '#8b5cf6', 'recently added', 'new')}
       ${kpi('Left Fleet', leftCount, '#94a3b8', 'departed', 'left')}
       <div class="akpi blk-stat-card" onclick="showTab('blocks',document.querySelector('.tab[data-tab=blocks]'));renderBlocks()" style="border-left-color:#ef4444"><div class="akpi-label">Blocked</div><div class="akpi-value">${blockedCount}</div><div class="akpi-delta ${blockedCount?'down':'flat'}">on Bolt →</div></div>
@@ -11370,7 +11392,7 @@ function renderAnalytics() {
     </div>` : ''}
 
     ${projectable ? (pushList.length ? `<div class="chart-card" style="margin-bottom:16px">
-      <div class="chart-card-title">⚡ Realistic pushes — reachable before month-end (${remainingDays} day${remainingDays!==1?'s':''} left)</div>
+      <div class="chart-card-title">⚡ Realistic pushes — reachable before month-end (${remTotal} day${remTotal!==1?'s':''} left incl. today)</div>
       <div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse">
         <thead><tr style="background:rgba(0,0,0,.15)">
           <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Driver</th>
@@ -11390,7 +11412,7 @@ function renderAnalytics() {
         </tr>`).join('')}
         </tbody></table></div>
       <div style="font-size:10px;color:var(--text-muted);margin-top:6px">Shown only when the next tier is within a modest lift of the driver's own work-day pace — never an unrealistic ask.</div>
-    </div>` : (isCurrentMonth ? `<div class="chart-card" style="margin-bottom:16px;text-align:center;color:var(--text-muted);font-size:13px;padding:18px">${remainingDays>0?'No realistic tier pushes right now — everyone is on track or out of reach this month.':'Month complete — standings are final.'}</div>` : '')) : ''}
+    </div>` : `<div class="chart-card" style="margin-bottom:16px;text-align:center;color:var(--text-muted);font-size:13px;padding:18px">${isPastMonth?'Month complete — figures are final.':'No realistic tier pushes right now — everyone is on track or out of reach.'}</div>`) : ''}
 
     ${drillHtml || `<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:16px;border:1px dashed var(--border);border-radius:6px">👆 Click a KPI card or a tier band above to list those drivers.</div>`}
   `;
