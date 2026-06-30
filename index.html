@@ -144,6 +144,7 @@ body::after { display:none !important; }
 .summary-card { background:var(--bg-card); border:1px solid var(--border); border-radius:3px; padding:14px 16px; box-shadow:var(--shadow); position:relative; overflow:hidden; transition:border-color .2s,box-shadow .2s; }
 .blk-stat-card { cursor:pointer; transition:border-color .15s, transform .1s, box-shadow .15s; }
 .blk-stat-card:hover { border-color:rgba(0,212,255,.45) !important; transform:translateY(-1px); box-shadow:0 4px 14px rgba(0,0,0,.25); }
+.akpi-on { box-shadow:inset 0 0 0 1px rgba(0,212,255,.4), 0 0 12px rgba(0,212,255,.15); }
 .summary-card::before,.summary-card::after { content:''; position:absolute; width:8px; height:8px; border-color:rgba(0,212,255,.3); border-style:solid; }
 .summary-card::before { top:3px; left:3px; border-width:1px 0 0 1px; }
 .summary-card::after  { bottom:3px; right:3px; border-width:0 1px 1px 0; }
@@ -11084,16 +11085,17 @@ function exportEomReportCSV() {
 // ═══════════════════════════════════════════
 const _charts = {};
 function destroyChart(id) { if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; } }
-let analyticsMonth = 'all';
-function setAnalyticsMonth(m) { analyticsMonth = m; renderAnalytics(); }
-// Roster table state (driver-performance Analytics tab)
-let analyticsRosterFilter = 'all';   // all|current|new|idle|blocked|left|band3|band2|band1|band0
-let analyticsRosterSort   = 'net';   // name|orders|net|proj|gap|accept|first
-let analyticsRosterAsc    = false;
-function setAnalyticsRosterFilter(f) { analyticsRosterFilter = f; renderAnalytics(); }
-function setAnalyticsRosterSort(col) {
-  if (analyticsRosterSort === col) analyticsRosterAsc = !analyticsRosterAsc;
-  else { analyticsRosterSort = col; analyticsRosterAsc = (col === 'name'); }
+let analyticsMonth = '';             // '' → default to latest month on first render; 'all' = all-time
+// Drill-down: which driver group to LIST (null = compact view, no list shown).
+let analyticsDrill     = null;       // null|all|active|idle|new|left|band3|band2|band1|band0
+let analyticsDrillSort = 'net';      // name|orders|net|avg|proj|need|accept|first
+let analyticsDrillAsc  = false;
+function setAnalyticsMonth(m) { analyticsMonth = m; analyticsDrill = null; renderAnalytics(); }
+function setAnalyticsDrill(f) { analyticsDrill = (analyticsDrill === f ? null : f); renderAnalytics();
+  setTimeout(()=>document.getElementById('analyticsDrill')?.scrollIntoView({behavior:'smooth',block:'nearest'}),0); }
+function setAnalyticsDrillSort(col) {
+  if (analyticsDrillSort === col) analyticsDrillAsc = !analyticsDrillAsc;
+  else { analyticsDrillSort = col; analyticsDrillAsc = (col === 'name'); }
   renderAnalytics();
 }
 
@@ -11101,57 +11103,66 @@ function renderAnalytics() {
   const el = document.getElementById('analyticsContent');
   if (!el) return;
   const history = getHistory();
+  if (!history.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">No data yet</div><div class="empty-sub">Upload reports to see fleet performance</div></div>`;
+    return;
+  }
 
-  const months = getAvailableMonths();
-  // Ensure analyticsMonth is valid; default to 'all' if no months exist
-  if (analyticsMonth !== 'all' && !months.includes(analyticsMonth)) analyticsMonth = 'all';
+  const allSorted = [...history].sort((a,b)=>periodSortKey(a.period)-periodSortKey(b.period));
+  // Derive available months from the PERIOD strings. (Cloud-pulled history lacks
+  // periodInfo, which getAvailableMonths() relies on — parsing the period text here
+  // keeps the month buttons + projection working on cloud-only data too.)
+  const monthSet = new Set();
+  allSorted.forEach(h => { const pk = periodMonthKey(h.period); const m = pk && pk.match(/(\w{3})\s(\d{4})/);
+    if (m && MONTH_MAP[m[1]] != null) monthSet.add(m[2] + '-' + String(MONTH_MAP[m[1]]+1).padStart(2,'0')); });
+  const months = [...monthSet].sort().reverse();        // 'YYYY-MM', newest first
+  // Default to the latest month (the bonus pipeline is a monthly concept). 'all' stays clickable.
+  if (analyticsMonth === '' || (analyticsMonth !== 'all' && !months.includes(analyticsMonth)))
+    analyticsMonth = months[0] || 'all';
 
-  // Month selector bar
   const monthBtnHtml = ['all', ...months].map(m => {
     const lbl = m === 'all' ? 'All time' : monthLabel(m);
     return `<button class="sort-btn${analyticsMonth === m ? ' active' : ''}" onclick="setAnalyticsMonth('${m}')">${lbl}</button>`;
   }).join('');
-  const selectorHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px">${monthBtnHtml}</div>`;
-
-  // No data yet
-  if (!history.length) {
-    el.innerHTML = selectorHtml + `<div class="empty-state"><div class="empty-icon">📈</div><div class="empty-title">No data yet</div><div class="empty-sub">Upload reports to see analytics</div></div>`;
-    return;
-  }
-
-  // Sort by period. (Don't require h.totalNet — cloud-pulled history carries only
-  // period + drivers; we aggregate per-driver from h.drivers below, so filtering on
-  // the day-level totalNet aggregate would wrongly blank the tab on cloud-only data.)
-  const allSorted = [...history]
-    .sort((a, b) => periodSortKey(a.period) - periodSortKey(b.period));
+  const selectorHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${monthBtnHtml}</div>`;
 
   function filterByMonth(data) {
     if (analyticsMonth === 'all') return data;
-    const [y, m] = analyticsMonth.split('-').map(Number);
+    const [y,m] = analyticsMonth.split('-').map(Number);
     const targetMonth = m - 1;
-    return data.filter(h => {
-      const pk = periodMonthKey(h.period); // e.g. "May 2026"
-      const pm = pk && pk.match(/(\w{3})\s(\d{4})/);
-      return pm && MONTH_MAP[pm[1]] === targetMonth && parseInt(pm[2]) === y;
-    });
+    return data.filter(h => { const pk = periodMonthKey(h.period); const pm = pk && pk.match(/(\w{3})\s(\d{4})/);
+      return pm && MONTH_MAP[pm[1]] === targetMonth && parseInt(pm[2]) === y; });
   }
-
   const viewData = filterByMonth(allSorted);
   const periodLabel = analyticsMonth === 'all' ? 'All time' : monthLabel(analyticsMonth);
+  if (!viewData.length) { el.innerHTML = selectorHtml + `<div style="text-align:center;padding:60px 0;color:var(--text-muted);font-size:14px">No data for ${periodLabel}.</div>`; return; }
 
-  if (!viewData.length) {
-    el.innerHTML = selectorHtml + `<div style="text-align:center;padding:60px 0;color:var(--text-muted);font-size:14px">No data for ${periodLabel}.</div>`;
-    return;
-  }
-
-  // Clean up any charts left over from the old (pre-redesign) chart layout.
   ['revenue','orders','acceptance','topDrivers','cashSplit'].forEach(destroyChart);
 
-  // ── Per-driver aggregation across the selected period ──
+  // ── Month context for the RUN-RATE ──────────────────────────────────────────
+  // The projection answers "where will this driver LAND this month at the current
+  // pace". The run-rate divides month-to-date net by the CALENDAR DAYS ELAPSED in
+  // the month (1st → today), NOT by the days they happened to work — so a driver who
+  // banked 3,000 then stopped/was blocked on the 30th projects ~3,000, not 6,000.
+  const projectable = analyticsMonth !== 'all';
+  const today = new Date();
+  let daysInMonth = 30, elapsedDays = 30, remainingDays = 0, isCurrentMonth = false, py = 0, pm = 0;
+  if (projectable) {
+    [py, pm] = analyticsMonth.split('-').map(Number);   // pm = 1..12
+    daysInMonth = new Date(py, pm, 0).getDate();
+    isCurrentMonth = (today.getFullYear()===py && (today.getMonth()+1)===pm);
+    elapsedDays   = isCurrentMonth ? Math.min(today.getDate(), daysInMonth) : daysInMonth; // past month = full
+    remainingDays = isCurrentMonth ? Math.max(0, daysInMonth - elapsedDays) : 0;
+  }
+  const remWork = Math.max(0, Math.round(remainingDays * 6/7)); // ~1 day off/week
+
+  // ── Per-driver aggregation ──
   const departedKeys = getDepartedKeys();
   const blockedKeys  = new Set(getBlockLog().filter(e => !e.dateUnblocked).map(e => driverKey(e.driverName)));
-  const NEW_MS = 14 * 86400000, now = Date.now();
   const accAlerts = getAlertCache();
+  const NEW_MS = 14 * 86400000, nowMs = Date.now();
+  const TIERS = bonusTiers();                          // [4000, 5000, 6000]
+  const bandOf = p => p>=TIERS[2]?3 : p>=TIERS[1]?2 : p>=TIERS[0]?1 : 0;
 
   const agg = {};
   viewData.forEach(h => (h.drivers||[]).forEach(d => {
@@ -11159,172 +11170,195 @@ function renderAnalytics() {
     const k = driverKey(d.name);
     if (!agg[k]) agg[k] = { key:k, name:d.name, orders:0, net:0, days:0, acSum:0, acDays:0 };
     const a = agg[k];
-    a.orders += sN(d.orders);
-    a.net    += sN(d.netEarnings);
-    if (d.isActive) { a.days++; const av = accVal(d); if (av > 0) { a.acSum += av; a.acDays++; } }
+    a.orders += sN(d.orders); a.net += sN(d.netEarnings);
+    if (d.isActive) { a.days++; const av = accVal(d); if (av>0){ a.acSum+=av; a.acDays++; } }
   }));
 
   const drivers = Object.values(agg).map(a => {
-    const perDay = a.days > 0 ? a.net / a.days : 0;
-    const tier   = paceTier(perDay);                 // identical engine to the By-Captain tab
-    const proj   = Math.round(tier.proj);
-    const gap    = bonusGapFor(proj);                // {sarToNext, unlocks, floor} | null (already top tier)
-    return { ...a, perDay, tier, band:tier.band, proj, gap,
-      accept: a.acDays > 0 ? a.acSum / a.acDays : 0,
-      firstSeen: driverFirstSeenMs(a.name),
-      isNew: false, // set below
-      left: departedKeys.has(a.key),
-      blocked: blockedKeys.has(a.key),
-      idle: a.orders === 0,
-      companyBonus: bonusFor(proj).company,           // projected company bonus at this tier
-      accDrop: accAlerts[a.key]?.acceptanceDrop || null };
-  });
-  drivers.forEach(d => { d.isNew = d.firstSeen !== null && (now - d.firstSeen) <= NEW_MS; });
-  const current = drivers.filter(d => !d.left);       // "current fleet" excludes departed
-
-  // ── Fleet KPIs ──
-  const totalDrivers = current.length;
-  const activeCount  = current.filter(d => d.orders > 0).length;
-  const idleCount    = current.filter(d => d.idle).length;
-  const newCount     = current.filter(d => d.isNew).length;
-  const leftCount    = drivers.filter(d => d.left).length;
-  // Blocked is a CURRENT status (not period-scoped) — use the unique open-block count
-  // so this KPI always matches the Blocks tab, even for a driver who didn't work this month.
-  const blockedCount = blockedKeys.size;
-
-  // ── Bonus-tier pipeline (projected at current pace) ──
-  const buckets = [
-    { f:'band3', label:'6k tier',  sub:'≥6,000 proj',       color:'var(--bolt-green)', list: current.filter(d => !d.idle && d.band===3) },
-    { f:'band2', label:'5k tier',  sub:'5,000–5,999',       color:'var(--cyan)',       list: current.filter(d => !d.idle && d.band===2) },
-    { f:'band1', label:'4k tier',  sub:'4,000–4,999',       color:'var(--amber)',      list: current.filter(d => !d.idle && d.band===1) },
-    { f:'band0', label:'Below 4k', sub:'working · no bonus', color:'var(--red)',        list: current.filter(d => !d.idle && d.band===0) },
-    { f:'idle',  label:'0 orders', sub:'idle this period',   color:'var(--text-muted)', list: current.filter(d => d.idle) },
-  ];
-  const maxBucket = Math.max(1, ...buckets.map(b => b.list.length));
-  const totalCompanyBonus = current.reduce((s,d) => s + (d.idle ? 0 : d.companyBonus), 0);
-
-  // ── Push list: below-6k workers, closest to the next tier first (best ROI) ──
-  const pushList = current.filter(d => !d.idle && d.band < 3 && d.gap)
-    .sort((a,b) => a.gap.sarToNext - b.gap.sarToNext).slice(0, 10);
-
-  // ── Roster filter + sort ──
-  const rosterMatch = d => {
-    switch (analyticsRosterFilter) {
-      case 'current': return !d.left;
-      case 'new':     return d.isNew;
-      case 'left':    return d.left;
-      case 'idle':    return !d.left && d.idle;
-      case 'blocked': return d.blocked;
-      case 'band3': case 'band2': case 'band1': case 'band0':
-        return !d.left && !d.idle && ('band'+d.band) === analyticsRosterFilter;
-      default:        return true; // 'all'
+    const firstSeen = driverFirstSeenMs(a.name);
+    const isNew  = firstSeen !== null && (nowMs - firstSeen) <= NEW_MS;
+    const left   = departedKeys.has(a.key);
+    const blocked= blockedKeys.has(a.key);
+    const idle   = a.orders === 0;
+    // Run-rate denominator: elapsed CALENDAR days of the month, shortened to
+    // days-since-join for someone who started mid-month (so newcomers aren't unfairly diluted).
+    let dElapsed = elapsedDays;
+    if (projectable && isCurrentMonth && firstSeen) {
+      const fs = new Date(firstSeen);
+      if (fs.getFullYear()===py && (fs.getMonth()+1)===pm && fs.getDate()>1)
+        dElapsed = Math.max(1, Math.min(elapsedDays, today.getDate()-fs.getDate()+1));
     }
-  };
-  const sortVal = { name:d=>d.name.toLowerCase(), orders:d=>d.orders, net:d=>d.net, proj:d=>d.proj,
-    gap:d=>d.gap?d.gap.sarToNext:Infinity, accept:d=>d.accept, first:d=>d.firstSeen||0 };
-  const roster = drivers.filter(rosterMatch);
-  const sf = sortVal[analyticsRosterSort] || sortVal.net;
-  roster.sort((a,b) => { const va=sf(a), vb=sf(b); const c = (typeof va==='string') ? va.localeCompare(vb) : va-vb; return analyticsRosterAsc ? c : -c; });
+    // Projected month-end net = banked + (pace × days that REMAIN). Pace = net ÷ days
+    // elapsed-so-far (calendar, or since-join for newcomers). This extends the pace only
+    // over the days left — so on the last day remaining=0 → projection = actual, and a
+    // blocked/stopped driver can't show a tier they can no longer reach.
+    let proj = 0;
+    if (projectable && !idle) proj = blocked ? Math.round(a.net) : Math.round(a.net + (a.net / dElapsed) * remainingDays);
+    const band   = projectable ? bandOf(proj) : 0;
+    const avgWork = a.days>0 ? a.net/a.days : 0;       // SAR per WORKING day (for feasibility)
+    // The realistic push = nudge from the projection up to the next tier above it.
+    const nextFloor = (projectable && !blocked && !idle) ? TIERS.find(f => f > proj) : undefined;
+    const gapToTier = nextFloor ? nextFloor - proj : 0;
+    const pushExtra = (nextFloor && remWork>0) ? Math.max(1, Math.ceil(gapToTier / remWork)) : Infinity; // extra SAR/work-day
+    const unlocks   = nextFloor ? bonusFor(nextFloor).company : 0;
+    // Reachable if the extra needed is a modest lift on their current work-day pace.
+    const pushFeasible = !!nextFloor && remWork>0 && pushExtra <= Math.max(Math.round(avgWork*0.5), 30);
+    return { ...a, firstSeen, isNew, left, blocked, idle, proj, band, avgWork,
+      accept: a.acDays>0 ? a.acSum/a.acDays : 0,
+      companyBonus: (projectable && !idle) ? bonusFor(proj).company : 0,
+      accDrop: accAlerts[a.key]?.acceptanceDrop || null,
+      nextFloor, gapToTier, pushExtra, unlocks, pushFeasible };
+  });
+  const current = drivers.filter(d => !d.left);
+
+  // ── KPIs ──
+  const totalDrivers = current.length;
+  const activeCount  = current.filter(d=>d.orders>0).length;
+  const idleCount    = current.filter(d=>d.idle).length;
+  const newCount     = current.filter(d=>d.isNew).length;
+  const leftCount    = drivers.filter(d=>d.left).length;
+  const blockedCount = blockedKeys.size;              // matches the Blocks tab (current status)
+
+  // ── Pipeline (projectable months only) ──
+  const buckets = [
+    { f:'band3', label:'6k tier',  sub:'≥6,000 proj',        color:'var(--bolt-green)', list: current.filter(d=>!d.idle && d.band===3) },
+    { f:'band2', label:'5k tier',  sub:'5,000–5,999',        color:'var(--cyan)',       list: current.filter(d=>!d.idle && d.band===2) },
+    { f:'band1', label:'4k tier',  sub:'4,000–4,999',        color:'var(--amber)',      list: current.filter(d=>!d.idle && d.band===1) },
+    { f:'band0', label:'Below 4k', sub:'working · no bonus',  color:'var(--red)',        list: current.filter(d=>!d.idle && d.band===0) },
+    { f:'idle',  label:'0 orders', sub:'idle this period',    color:'var(--text-muted)', list: current.filter(d=>d.idle) },
+  ];
+  const maxBucket = Math.max(1, ...buckets.map(b=>b.list.length));
+  const totalCompanyBonus = current.reduce((s,d)=>s+(d.idle?0:d.companyBonus),0);
+
+  // ── Push list: realistic, remaining-days-aware, easiest lift first ──
+  const pushList = projectable
+    ? current.filter(d=>d.pushFeasible).sort((a,b)=>a.pushExtra-b.pushExtra).slice(0,8)
+    : [];
 
   // ── HTML helpers ──
   const he = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const kpi = (label, value, color, extra='', onclick='') => `<div class="akpi${onclick?' blk-stat-card':''}" ${onclick?`onclick="${onclick}"`:''} style="border-left-color:${color}">
-    <div class="akpi-label">${label}</div><div class="akpi-value">${value}</div>${extra}</div>`;
-  const tierTxt = b => ['tier-txt-0','tier-txt-1','tier-txt-2','tier-txt-3'][b] || '';
-  const tierName = d => d.idle ? '<span style="color:var(--text-muted)">—</span>'
-    : d.band===0 ? `<span class="tier-txt-0">below 4k</span>` : `<span class="${tierTxt(d.band)}">${d.tier.tierAmt/1000}k</span>`;
+  const dn = d => he(lookupForeignName(d.name)||d.name);
+  const kpi = (label,value,color,sub,drill) => `<div class="akpi blk-stat-card${analyticsDrill===drill?' akpi-on':''}" onclick="setAnalyticsDrill('${drill}')" style="border-left-color:${color}">
+    <div class="akpi-label">${label}</div><div class="akpi-value">${value}</div><div class="akpi-delta flat">${sub}</div></div>`;
+  const tierTxt = b => ['tier-txt-0','tier-txt-1','tier-txt-2','tier-txt-3'][b]||'';
+  const projTier = d => d.idle ? '<span style="color:var(--text-muted)">—</span>'
+    : d.band===0 ? '<span class="tier-txt-0">below 4k</span>' : `<span class="${tierTxt(d.band)}">${TIERS[d.band-1]/1000}k</span>`;
   const fsDate = ms => ms ? new Date(ms).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}) : '—';
-  const chip = (txt,bg,col) => `<span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:2px;letter-spacing:.04em;background:${bg};color:${col}">${txt}</span>`;
-  const statusChip = d => {
-    const c = [];
-    if (d.blocked) c.push(chip('BLOCKED','rgba(255,68,102,.15)','var(--red)'));
-    if (d.left)    c.push(chip('LEFT','rgba(255,255,255,.06)','var(--text-muted)'));
-    if (d.isNew)   c.push(chip('NEW','rgba(0,212,255,.14)','var(--cyan)'));
-    if (d.idle && !d.left && !d.blocked) c.push(chip('IDLE','rgba(255,170,0,.12)','var(--amber)'));
-    if (!c.length) c.push(chip('CURRENT','rgba(0,255,179,.1)','var(--bolt-green)'));
-    return c.join(' ');
-  };
-  const ath = (label, col, right) => { const on = analyticsRosterSort===col, arr = !on?'⇅':analyticsRosterAsc?'▲':'▼';
-    return `<th onclick="setAnalyticsRosterSort('${col}')" style="cursor:pointer;user-select:none;padding:7px 10px;font-size:9px;letter-spacing:.05em;font-weight:600;color:${on?'var(--cyan)':'var(--text-muted)'};text-align:${right?'right':'left'};white-space:nowrap">${label} <span style="opacity:${on?1:.3}">${arr}</span></th>`; };
-  const filterChips = [['all','All'],['current','Current'],['new','New'],['idle','Idle'],['blocked','Blocked'],['left','Left']]
-    .map(([f,l]) => `<button onclick="setAnalyticsRosterFilter('${f}')" style="padding:4px 12px;font-size:11px;border-radius:2px;cursor:pointer;letter-spacing:.04em;font-weight:600;border:1px solid ${analyticsRosterFilter===f?'rgba(0,212,255,.4)':'var(--border)'};background:${analyticsRosterFilter===f?'rgba(0,212,255,.12)':'transparent'};color:${analyticsRosterFilter===f?'var(--cyan)':'var(--text-muted)'}">${l}</button>`).join('');
-  const rosterRows = roster.length ? roster.map(d => `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
-      <td style="padding:7px 10px;font-size:12px;color:var(--text);font-weight:600">${he(lookupForeignName(d.name)||d.name)}</td>
-      <td style="padding:7px 10px">${statusChip(d)}</td>
-      <td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${d.orders?'var(--text)':'var(--red)'}">${d.orders}</td>
-      <td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--text)">${fmt(Math.round(d.net))}</td>
-      <td style="padding:7px 10px;text-align:right;font-size:12px;font-weight:700">${tierName(d)}</td>
-      <td style="padding:7px 10px;text-align:right;font-size:11px;color:var(--text-muted)">${d.idle?'—':d.gap?`${fmt(d.gap.sarToNext)} → ${d.gap.floor/1000}k`:'✓ top'}</td>
-      <td style="padding:7px 10px;text-align:right;font-size:12px;color:var(--text-muted)">${d.accept>0?d.accept.toFixed(0)+'%':'—'}${d.accDrop?` <span style="color:var(--red);font-size:10px">↘${d.accDrop}</span>`:''}</td>
-      <td style="padding:7px 10px;text-align:right;font-size:11px;color:var(--text-muted)">${fsDate(d.firstSeen)}</td>
-    </tr>`).join('') : `<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">No drivers match this filter.</td></tr>`;
+  const chip = (t,bg,c)=>`<span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:2px;letter-spacing:.04em;background:${bg};color:${c}">${t}</span>`;
+  const statusChip = d => { const c=[];
+    if(d.blocked)c.push(chip('BLOCKED','rgba(255,68,102,.15)','var(--red)'));
+    if(d.left)c.push(chip('LEFT','rgba(255,255,255,.06)','var(--text-muted)'));
+    if(d.isNew)c.push(chip('NEW','rgba(0,212,255,.14)','var(--cyan)'));
+    if(d.idle&&!d.left&&!d.blocked)c.push(chip('IDLE','rgba(255,170,0,.12)','var(--amber)'));
+    if(!c.length)c.push(chip('CURRENT','rgba(0,255,179,.1)','var(--bolt-green)'));
+    return c.join(' '); };
+
+  // Time-basis line — tells the manager exactly what window + run-rate they're reading.
+  const basisNote = !projectable
+    ? `All time · actual cumulative — pick a month above to project bonus tiers`
+    : isCurrentMonth
+      ? `${periodLabel} · month-to-date through day ${elapsedDays} of ${daysInMonth} · ${remainingDays} day${remainingDays!==1?'s':''} left · projection = banked + daily pace × ${remainingDays} day${remainingDays!==1?'s':''} left`
+      : `${periodLabel} · complete month — figures are final actuals`;
+
+  // ── Drill-down list (only when a card/band is clicked) ──
+  let drillHtml = '';
+  if (analyticsDrill) {
+    const labelMap = { all:'All drivers', active:'Active (had orders)', idle:'Idle · 0 orders', new:'New ≤14 days', left:'Left fleet',
+      band3:'6k tier (projected)', band2:'5k tier (projected)', band1:'4k tier (projected)', band0:'Below 4k (projected)' };
+    const match = d => { switch(analyticsDrill){
+      case 'all': return !d.left; case 'active': return !d.left&&d.orders>0; case 'idle': return !d.left&&d.idle;
+      case 'new': return d.isNew; case 'left': return d.left;
+      case 'band3': case 'band2': case 'band1': case 'band0': return !d.left&&!d.idle&&('band'+d.band)===analyticsDrill;
+      default: return !d.left; } };
+    const sv = { name:d=>d.name.toLowerCase(), orders:d=>d.orders, net:d=>d.net, avg:d=>d.avgWork, proj:d=>d.proj,
+      need:d=>d.pushExtra===Infinity?1e9:d.pushExtra, accept:d=>d.accept, first:d=>d.firstSeen||0 };
+    const list = drivers.filter(match);
+    const f = sv[analyticsDrillSort]||sv.net;
+    list.sort((a,b)=>{ const va=f(a),vb=f(b); const c=(typeof va==='string')?va.localeCompare(vb):va-vb; return analyticsDrillAsc?c:-c; });
+    const dth=(lbl,col,r)=>{ const on=analyticsDrillSort===col,ar=!on?'⇅':analyticsDrillAsc?'▲':'▼';
+      return `<th onclick="setAnalyticsDrillSort('${col}')" style="cursor:pointer;user-select:none;padding:6px 9px;font-size:9px;letter-spacing:.04em;font-weight:600;color:${on?'var(--cyan)':'var(--text-muted)'};text-align:${r?'right':'left'};white-space:nowrap">${lbl} <span style="opacity:${on?1:.3}">${ar}</span></th>`; };
+    const rows = list.length ? list.map(d=>`<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+      <td style="padding:6px 9px;font-size:12px;color:var(--text);font-weight:600">${dn(d)}</td>
+      <td style="padding:6px 9px">${statusChip(d)}</td>
+      <td style="padding:6px 9px;text-align:right;font-family:var(--mono);font-size:12px;color:${d.orders?'var(--text)':'var(--red)'}">${d.orders}</td>
+      <td style="padding:6px 9px;text-align:right;font-family:var(--mono);font-size:12px">${fmt(Math.round(d.net))}</td>
+      <td style="padding:6px 9px;text-align:right;font-size:11px;color:var(--text-muted)">${d.avgWork>0?fmt(Math.round(d.avgWork)):'—'}</td>
+      <td style="padding:6px 9px;text-align:right;font-size:12px">${projectable&&!d.idle?fmt(d.proj)+' '+projTier(d):'—'}</td>
+      <td style="padding:6px 9px;text-align:right;font-size:11px;color:var(--text-muted)">${(projectable&&d.nextFloor&&d.pushExtra!==Infinity)?('+'+fmt(d.pushExtra)+'/d→'+d.nextFloor/1000+'k'):(projectable&&d.proj>=TIERS[2]?'✓ top':'—')}</td>
+      <td style="padding:6px 9px;text-align:right;font-size:12px;color:var(--text-muted)">${d.accept>0?d.accept.toFixed(0)+'%':'—'}${d.accDrop?` <span style="color:var(--red);font-size:10px">↘${d.accDrop}</span>`:''}</td>
+      <td style="padding:6px 9px;text-align:right;font-size:11px;color:var(--text-muted)">${fsDate(d.firstSeen)}</td>
+    </tr>`).join('') : `<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">No drivers.</td></tr>`;
+    drillHtml = `<div class="chart-card" id="analyticsDrill" style="margin-top:16px">
+      <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span>${labelMap[analyticsDrill]||'Drivers'} · ${list.length}</span>
+        <button onclick="setAnalyticsDrill(null)" style="padding:3px 10px;font-size:11px;border-radius:2px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-muted)">✕ close</button>
+      </div>
+      <div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:rgba(0,0,0,.15)">
+          ${dth('Driver','name')}<th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Status</th>${dth('Orders','orders',1)}${dth('Net','net',1)}${dth('Avg/work-day','avg',1)}${dth('Proj','proj',1)}${dth('To next tier','need',1)}${dth('Accept','accept',1)}${dth('First seen','first',1)}
+        </tr></thead><tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+  }
 
   el.innerHTML = selectorHtml + `
-    <!-- Fleet KPIs (some cards click through to the roster / Blocks tab) -->
+    <div style="font-size:11px;color:var(--text-muted);margin:0 0 12px">📅 ${basisNote}</div>
+
     <div class="analytics-kpi-row" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
-      ${kpi('Total Drivers — '+periodLabel, totalDrivers, '#34D186', `<div class="akpi-delta flat">current fleet</div>`)}
-      ${kpi('Active', activeCount, '#00D4FF', `<div class="akpi-delta flat">${totalDrivers?Math.round(activeCount/totalDrivers*100):0}% had orders</div>`)}
-      ${kpi('Idle · 0 orders', idleCount, '#f59e0b', `<div class="akpi-delta ${idleCount?'down':'flat'}">tap to chase</div>`, "setAnalyticsRosterFilter('idle');document.getElementById('analyticsRoster')?.scrollIntoView({behavior:'smooth'})")}
-      ${kpi('New ≤14d', newCount, '#8b5cf6', `<div class="akpi-delta flat">recently added</div>`, "setAnalyticsRosterFilter('new');document.getElementById('analyticsRoster')?.scrollIntoView({behavior:'smooth'})")}
-      ${kpi('Left Fleet', leftCount, '#94a3b8', `<div class="akpi-delta flat">departed</div>`, "setAnalyticsRosterFilter('left');document.getElementById('analyticsRoster')?.scrollIntoView({behavior:'smooth'})")}
-      ${kpi('Blocked', blockedCount, '#ef4444', `<div class="akpi-delta ${blockedCount?'down':'flat'}">on Bolt →</div>`, "showTab('blocks',document.querySelector('.tab[data-tab=blocks]'));renderBlocks()")}
+      ${kpi('Total Drivers', totalDrivers, '#34D186', 'current fleet', 'all')}
+      ${kpi('Active', activeCount, '#00D4FF', (totalDrivers?Math.round(activeCount/totalDrivers*100):0)+'% had orders', 'active')}
+      ${kpi('Idle · 0 orders', idleCount, '#f59e0b', 'tap to chase', 'idle')}
+      ${kpi('New ≤14d', newCount, '#8b5cf6', 'recently added', 'new')}
+      ${kpi('Left Fleet', leftCount, '#94a3b8', 'departed', 'left')}
+      <div class="akpi blk-stat-card" onclick="showTab('blocks',document.querySelector('.tab[data-tab=blocks]'));renderBlocks()" style="border-left-color:#ef4444"><div class="akpi-label">Blocked</div><div class="akpi-value">${blockedCount}</div><div class="akpi-delta ${blockedCount?'down':'flat'}">on Bolt →</div></div>
     </div>
 
-    <!-- Bonus-tier pipeline (projected) -->
-    <div class="chart-card" style="margin-bottom:16px">
+    ${projectable ? `<div class="chart-card" style="margin-bottom:16px">
       <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
-        <span>Bonus-Tier Pipeline — ${periodLabel} <span style="font-size:11px;color:var(--text-muted);font-weight:400">(projected at current pace · click a band)</span></span>
-        <span style="font-size:12px;color:var(--bolt-green);font-weight:700">≈ ${fmt(totalCompanyBonus)} SAR bonus projected</span>
+        <span>Bonus-Tier Pipeline — ${periodLabel} <span style="font-size:11px;color:var(--text-muted);font-weight:400">· projected month-end · click a band</span></span>
+        <span style="font-size:12px;color:var(--bolt-green);font-weight:700">≈ ${fmt(totalCompanyBonus)} SAR company bonus projected</span>
       </div>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-        ${buckets.map(b => { const pct = Math.round(b.list.length/maxBucket*100); const bonus = b.f==='idle' ? 0 : b.list.reduce((s,d)=>s+d.companyBonus,0);
-          return `<div onclick="setAnalyticsRosterFilter('${b.f}');document.getElementById('analyticsRoster')?.scrollIntoView({behavior:'smooth'})" title="Click to see these drivers in the roster" style="cursor:pointer;display:flex;align-items:center;gap:10px">
-            <div style="width:92px;flex-shrink:0;font-size:11px;color:var(--text);font-weight:600">${b.label}<div style="font-size:9px;color:var(--text-muted);font-weight:400">${b.sub}</div></div>
-            <div style="flex:1;background:rgba(255,255,255,.04);border-radius:3px;height:26px;position:relative;overflow:hidden">
-              <div style="height:100%;width:${pct}%;background:${b.color};opacity:.85;border-radius:3px;transition:width .3s"></div>
-              <div style="position:absolute;inset:0;display:flex;align-items:center;padding:0 10px;font-size:12px;font-weight:700;color:var(--text)">${b.list.length}</div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);letter-spacing:.05em;margin:9px 2px 2px"><span>TIER</span><span>DRIVERS · PROJECTED NET</span><span>COMPANY BONUS</span></div>
+      <div style="display:flex;flex-direction:column;gap:7px">
+        ${buckets.map(b=>{ const pct=Math.round(b.list.length/maxBucket*100); const bonus=b.f==='idle'?0:b.list.reduce((s,d)=>s+d.companyBonus,0); const projNet=b.list.reduce((s,d)=>s+(d.idle?d.net:d.proj),0);
+          return `<div onclick="setAnalyticsDrill('${b.f}')" title="Click to list these drivers" style="cursor:pointer;display:flex;align-items:center;gap:10px">
+            <div style="width:88px;flex-shrink:0;font-size:11px;color:var(--text);font-weight:600">${b.label}<div style="font-size:9px;color:var(--text-muted);font-weight:400">${b.sub}</div></div>
+            <div style="flex:1;background:rgba(255,255,255,.04);border-radius:3px;height:28px;position:relative;overflow:hidden">
+              <div style="height:100%;width:${b.list.length?Math.max(pct,7):0}%;background:${b.color};opacity:.85;border-radius:3px;transition:width .3s"></div>
+              <div style="position:absolute;inset:0;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12px;color:var(--text)"><b>${b.list.length}</b>${b.list.length?`<span style="font-size:10px;color:var(--text-muted)">${fmt(projNet)} SAR</span>`:''}</div>
             </div>
-            <div style="width:96px;flex-shrink:0;text-align:right;font-size:10px;color:var(--text-muted)">${bonus?'+'+fmt(bonus)+' SAR':'—'}</div>
-          </div>`; }).join('')}
-      </div>
-    </div>
-
-    <!-- Push list -->
-    ${pushList.length ? `<div class="chart-card" style="margin-bottom:16px">
-      <div class="chart-card-title">⚡ Push these drivers — closest to the next tier (best ROI)</div>
-      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
-        ${pushList.map((d,i) => { const perDayNeed = Math.ceil(d.gap.sarToNext/26);
-          return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:rgba(255,255,255,.02);border-radius:4px;border:1px solid rgba(255,255,255,.05)">
-            <span style="font-family:var(--mono);font-size:12px;color:var(--text-muted);width:18px;flex-shrink:0">${i+1}</span>
-            <span style="flex:1;min-width:0;font-size:12px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${he(lookupForeignName(d.name)||d.name)}${d.accDrop?` <span style="color:var(--red);font-size:10px">↘${d.accDrop}pp</span>`:''}</span>
-            <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">→ ${fmt(d.proj)}/mo</span>
-            <span style="font-size:11px;color:var(--amber);font-weight:600;white-space:nowrap">+${perDayNeed}/day → +${fmt(d.gap.unlocks)} (${d.gap.floor/1000}k)</span>
+            <div style="width:104px;flex-shrink:0;text-align:right;font-size:11px;font-weight:700;color:${bonus?'var(--bolt-green)':'var(--text-muted)'}">${bonus?'+'+fmt(bonus):'—'}</div>
           </div>`; }).join('')}
       </div>
     </div>` : ''}
 
-    <!-- Sortable / filterable roster -->
-    <div class="chart-card" id="analyticsRoster">
-      <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-        <span>Driver Roster — ${periodLabel}</span>
-        <div style="display:flex;gap:5px;flex-wrap:wrap">${filterChips}</div>
-      </div>
-      <div style="overflow-x:auto;margin-top:8px">
-        <table style="width:100%;border-collapse:collapse">
-          <thead><tr style="background:rgba(0,0,0,.15)">
-            ${ath('Driver','name')}
-            <th style="padding:7px 10px;font-size:9px;letter-spacing:.05em;font-weight:600;color:var(--text-muted);text-align:left">Status</th>
-            ${ath('Orders','orders',true)}${ath('Net SAR','net',true)}${ath('Proj tier','proj',true)}${ath('Gap to next','gap',true)}${ath('Accept','accept',true)}${ath('First seen','first',true)}
-          </tr></thead>
-          <tbody>${rosterRows}</tbody>
-        </table>
-      </div>
-      <div style="font-size:10px;color:var(--text-muted);margin-top:8px">Showing ${roster.length} driver${roster.length!==1?'s':''} · Net = actual ${periodLabel} · Proj tier = where they land at current daily pace (×26 working days), same basis as the By-Captain tab.</div>
-    </div>
+    ${projectable ? (pushList.length ? `<div class="chart-card" style="margin-bottom:16px">
+      <div class="chart-card-title">⚡ Realistic pushes — reachable before month-end (${remainingDays} day${remainingDays!==1?'s':''} left)</div>
+      <div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:rgba(0,0,0,.15)">
+          <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Driver</th>
+          <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Projected</th>
+          <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Now /work-day</th>
+          <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Push +/work-day</th>
+          <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Reaches</th>
+          <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Unlocks</th>
+        </tr></thead><tbody>
+        ${pushList.map(d=>`<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+          <td style="padding:6px 9px;font-size:12px;font-weight:600;color:var(--text)">${dn(d)}${d.accDrop?` <span style="color:var(--red);font-size:10px">↘${d.accDrop}pp</span>`:''}</td>
+          <td style="padding:6px 9px;text-align:right;font-size:12px;color:var(--text-muted)">${fmt(d.proj)}</td>
+          <td style="padding:6px 9px;text-align:right;font-size:12px;color:var(--text-muted)">${fmt(Math.round(d.avgWork))}</td>
+          <td style="padding:6px 9px;text-align:right;font-size:12px;color:var(--amber);font-weight:700">+${fmt(d.pushExtra)}</td>
+          <td style="padding:6px 9px;text-align:right;font-size:12px;font-weight:700"><span class="${tierTxt(bandOf(d.nextFloor))}">${d.nextFloor/1000}k</span></td>
+          <td style="padding:6px 9px;text-align:right;font-size:12px;color:var(--bolt-green);font-weight:700">+${fmt(d.unlocks)}</td>
+        </tr>`).join('')}
+        </tbody></table></div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:6px">Shown only when the next tier is within a modest lift of the driver's own work-day pace — never an unrealistic ask.</div>
+    </div>` : (isCurrentMonth ? `<div class="chart-card" style="margin-bottom:16px;text-align:center;color:var(--text-muted);font-size:13px;padding:18px">${remainingDays>0?'No realistic tier pushes right now — everyone is on track or out of reach this month.':'Month complete — standings are final.'}</div>` : '')) : ''}
+
+    ${drillHtml || `<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:16px;border:1px dashed var(--border);border-radius:6px">👆 Click a KPI card or a tier band above to list those drivers.</div>`}
   `;
 
-  // (Build-119: legacy revenue / orders / acceptance / cash-split / top-captain
-  //  Chart.js charts removed — Analytics is now a roster-performance view.)
+  // (Build-119/120: legacy Chart.js charts removed — Analytics is a roster-performance view.)
 }
 
 // ═══════════════════════════════════════════
