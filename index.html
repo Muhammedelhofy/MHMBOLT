@@ -10490,6 +10490,41 @@ function getAllDriverNames() {
   return [...map.values()].sort((a,b)=>a.localeCompare(b));
 }
 
+// ── Sheet→dashboard driver matching (Phase 1b of the onboarding-sheet link) ──
+// Saudi phone numbers arrive in different formats (+9665xxxxxxxx / 9665xxxxxxxx /
+// 05xxxxxxxx / 5xxxxxxxx) — normalize to the last 9 digits so they all collapse to
+// the same key regardless of country code or leading zero.
+function normPhoneForMatch(raw) { return String(raw||'').replace(/\D/g,'').slice(-9); }
+
+// Matches one onboarding-sheet row ({name, phone}) against the dashboard's known
+// drivers ({name, phone, driverId}). Phone is the primary key (driverKey() reuses the
+// dashboard's existing name-normalization so this stays consistent with everywhere
+// else names are matched). Never silently guesses — a phone/name disagreement or a
+// name-only match is flagged at lower confidence instead of auto-resolved, since this
+// feeds real ambassador-bonus attribution. Confidence: 'high' (trust it) | 'medium'
+// (name-only, phone missing or changed — show but let a human confirm) | 'none'
+// (no usable match, or phone and name point to two different drivers).
+function matchSheetDriverToDashboard(sheetRow, knownDrivers) {
+  const sPhone = normPhoneForMatch(sheetRow.phone);
+  const sName  = driverKey(sheetRow.name);
+  const phoneHit = sPhone ? knownDrivers.find(d => normPhoneForMatch(d.phone) === sPhone) : null;
+  const nameHit  = sName  ? knownDrivers.find(d => driverKey(d.name) === sName) : null;
+
+  if (phoneHit && nameHit && phoneHit.driverId !== nameHit.driverId) {
+    return { driverId: null, confidence: 'none',
+      reason: `Phone matches "${phoneHit.name}" but name matches a different driver "${nameHit.name}" — needs manual review` };
+  }
+  if (phoneHit) {
+    return { driverId: phoneHit.driverId, confidence: 'high',
+      reason: nameHit ? 'Phone + name agree' : 'Phone match (name on file differs or missing)' };
+  }
+  if (nameHit) {
+    return { driverId: nameHit.driverId, confidence: 'medium',
+      reason: 'Name match only — phone missing or changed, verify before trusting' };
+  }
+  return { driverId: null, confidence: 'none', reason: 'No match on phone or name' };
+}
+
 function setAmbMonth(m) { ambMonth = m; renderAmbassadors(); }
 
 // Opens the courier profile modal for a driver, reusing all the existing save +
