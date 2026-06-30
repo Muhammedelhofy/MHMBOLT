@@ -6503,6 +6503,16 @@ function paceTier(perDay) {
   return { band, proj, tierAmt, t1, t2, t3,
            fill: 'fill-tier' + band, txt: 'tier-txt-' + band, cmp: 'cmp-tier' + band };
 }
+// Classify an ALREADY-computed projected month-end net into the same band + colour
+// classes as paceTier — used by the month-to-date run-rate (banked + pace × days left)
+// so the By-Captain colours match the Analytics tab for a single-month view.
+function tierForProj(proj) {
+  const [t1, t2, t3] = bonusTiers();
+  const band = proj >= t3 ? 3 : proj >= t2 ? 2 : proj >= t1 ? 1 : 0;
+  const tierAmt = band === 3 ? t3 : band === 2 ? t2 : band === 1 ? t1 : 0;
+  return { band, proj, tierAmt, t1, t2, t3,
+           fill: 'fill-tier' + band, txt: 'tier-txt-' + band, cmp: 'cmp-tier' + band };
+}
 
 function buildCourierSummaryTable(entries, searchFilter) {
   if (!entries.length) return `<div class="empty-state" style="padding:30px"><div class="empty-title">No days selected</div></div>`;
@@ -6526,6 +6536,18 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const daysInMonth = repInfo?.daysInMonth || 31;
   const monthLabel  = repInfo ? MONTH_NAMES?.[repInfo.end.month] || '' : '';
   const WORKING_DAYS = Math.max(1, Math.round(daysInMonth * 6 / 7)); // ~1 day off/week: 31→27, 30→26, 28→24
+
+  // Single-month detection. Only when EVERY selected day falls in the same calendar
+  // month can we use the month-to-date run-rate (banked + pace × days REMAINING) that
+  // the Analytics tab uses — that's the projection that correctly caps a blocked/stopped
+  // driver at their actual net. For multi-month / all-time selections we keep the old
+  // per-working-day × working-days estimate (a lifetime-pace view), which is right there.
+  const _emonths = new Set(entries.map(h => { const pi = parsePeriodInfo(h.period); return pi ? pi.end.year+'-'+pi.end.month : '?'; }));
+  const singleMonth = _emonths.size === 1 && !!repInfo;
+  const _today = new Date();
+  const _isCurMonth = singleMonth && _today.getFullYear()===repInfo.end.year && _today.getMonth()===repInfo.end.month;
+  const monthElapsed   = singleMonth ? (_isCurMonth ? Math.min(_today.getDate(), daysInMonth) : daysInMonth) : 0;
+  const monthRemaining = singleMonth ? (_isCurMonth ? Math.max(0, daysInMonth - monthElapsed) : 0) : 0;
 
   const map = {};
   const blank = name => ({ name, days:0, gross:0, net:0, campaign:0, rides:0, dist:0, hrs:0, frSum:0, acSum:0, utSum:0, rDays:0, cashEarnings:0, cashGap:0, minActualPayout:Infinity });
@@ -6661,9 +6683,22 @@ function buildCourierSummaryTable(entries, searchFilter) {
     // hold the current pace — so a steady 200/day reads cyan (→5,200), not alarming red,
     // while a 100/day driver reads red (→2,600, below all tiers).
     const pct       = target > 0 ? Math.min(100, Math.round(c.net / target * 100)) : 100;
-    const perDay    = c.days > 0 ? c.net / c.days : 0; // their actual SAR/day
-    const tier      = paceTier(perDay);
-    const projMonth = Math.round(tier.proj);          // projected month-end at this pace
+    const perDay    = c.days > 0 ? c.net / c.days : 0; // SAR per WORKING day
+    // Single-month view → month-to-date run-rate (banked + pace x days REMAINING; blocked
+    // -> banked), matching the Analytics tab. Multi-month/all-time → per-working-day estimate.
+    let tier, projMonth, paceElapsed = 0;
+    if (singleMonth) {
+      let dElapsed = monthElapsed;            // calendar days elapsed (or since-join for newcomers)
+      if (_isCurMonth) { const fs = driverFirstSeenMs(c.name);
+        if (fs) { const d = new Date(fs); if (d.getFullYear()===repInfo.end.year && d.getMonth()===repInfo.end.month && d.getDate()>1)
+          dElapsed = Math.max(1, Math.min(monthElapsed, _today.getDate()-d.getDate()+1)); } }
+      paceElapsed = dElapsed > 0 ? c.net / dElapsed : 0;
+      projMonth = isBlocked ? Math.round(c.net) : Math.round(c.net + paceElapsed * monthRemaining);
+      tier = tierForProj(projMonth);
+    } else {
+      tier = paceTier(perDay);
+      projMonth = Math.round(tier.proj);
+    }
     const fillCls   = tier.fill;
     const gapCls    = tier.txt;
     const glow      = tier.band === 3 ? ' pace-glow' : '';
@@ -6681,10 +6716,12 @@ function buildCourierSummaryTable(entries, searchFilter) {
       : '';
     const gapLabel  = target > 0 ? `→ ${fmt(projMonth)}/mo${stretch}${toNextHint}` : '';
     const gapTitle  = target > 0
-      ? `${c.name}: ${c.days}d worked at ${fmt(Math.round(perDay))}/day.\n`
-        + `If sustained over ${TIER_DAYS} working days → projected ${fmt(projMonth)} this month → ${tierName}.\n`
-        + `Bonus tiers: ${fmt(tier.t1)} / ${fmt(tier.t2)} / ${fmt(tier.t3)} SAR.`
-        + (tier.band < 3 ? `\nNeeds ${fmt(Math.round(tier.t3 / TIER_DAYS - perDay))}/day more to reach the top ${fmt(tier.t3)} tier.` : ``)
+      ? (singleMonth
+          ? (isBlocked
+              ? `${c.name}: BLOCKED - won't earn more this month. Banked ${fmt(Math.round(c.net))} -> ${tierName}.`
+              : `${c.name}: banked ${fmt(Math.round(c.net))} over ${monthElapsed}d elapsed (~${fmt(Math.round(paceElapsed))}/day). ${monthRemaining}d left -> projected ${fmt(projMonth)} -> ${tierName}.`)
+            + `\nBonus tiers: ${fmt(tier.t1)} / ${fmt(tier.t2)} / ${fmt(tier.t3)} SAR.`
+          : `${c.name}: ${c.days}d worked at ${fmt(Math.round(perDay))}/day.\nIf sustained over ${TIER_DAYS} working days -> projected ${fmt(projMonth)} -> ${tierName}.\nBonus tiers: ${fmt(tier.t1)} / ${fmt(tier.t2)} / ${fmt(tier.t3)} SAR.`)
       : '';
 
     // Cash % badge
