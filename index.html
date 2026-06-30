@@ -1741,6 +1741,12 @@ body::before {
     <button class="save-btn" onclick="saveSettings()">Save</button>
   </div>
   <div class="settings-section">
+    <div class="st-title">Bolt Bonus Split</div>
+    <div class="st-desc">Bolt pays the company 1,500/2,000/2,500 SAR per driver at the 4k/5k/6k net tiers. After deducting operation cost, the remainder splits 50% Company / 50% Partner B. Update operation cost when it changes month to month.</div>
+    <div class="st-row"><label>Operation cost (deducted before split)</label><input type="number" id="opCost" placeholder="850"> <span class="unit">SAR / driver</span></div>
+    <button class="save-btn" onclick="saveSettings()">Save</button>
+  </div>
+  <div class="settings-section">
     <div class="st-title">Performance Flags</div>
     <div class="st-desc">Red / amber thresholds for acceptance rate and driver rating.</div>
     <div class="st-row"><label>Acceptance — Amber below</label><input type="number" id="flagAccAmber" placeholder="80"> <span class="unit">%</span></div>
@@ -1911,6 +1917,7 @@ function loadSettings() {
     cutBronze:     s.cutBronze     ?? 1000,
     cutSilver:     s.cutSilver     ?? 1500,
     cutGold:       s.cutGold       ?? 2000,
+    opCost:        s.opCost        ?? 850,
     flagAccAmber:  s.flagAccAmber  ?? 80,
     flagAccRed:    s.flagAccRed    ?? 70,
     flagRatAmber:  s.flagRatAmber  ?? 4.7,
@@ -1924,6 +1931,7 @@ function saveSettings() {
     cutBronze:     get('cutBronze', 1000),
     cutSilver:     get('cutSilver', 1500),
     cutGold:       get('cutGold', 2000),
+    opCost:        get('opCost', 850),
     flagAccAmber:  get('flagAccAmber', 80),
     flagAccRed:    get('flagAccRed', 70),
     flagRatAmber:  get('flagRatAmber', 4.7),
@@ -6476,18 +6484,28 @@ function bonusTiers() {
 }
 // Bolt bonus step function — mirrors M8/lib/finance.js bonusFor()
 const BOLT_BONUS_TIERS = [
-  { floor: 6000, gross: 2500, company: 1250 },
-  { floor: 5000, gross: 2000, company: 1000 },
-  { floor: 4000, gross: 1500, company:  750 },
+  { floor: 6000, gross: 2500 },
+  { floor: 5000, gross: 2000 },
+  { floor: 4000, gross: 1500 },
 ];
+// Bolt pays `gross` to the company per driver at the tier floor. Operation cost (adjustable
+// in Settings, defaults 850) is deducted first, then the remainder splits 50/50 between the
+// company and Partner B. See bolt-dashboard-onboarding-link-plan memory for the source rule.
+function splitAfterOpCost(gross) {
+  const opCost = loadSettings().opCost ?? 850;
+  const afterCost = Math.max(0, gross - opCost);
+  return { company: afterCost / 2, partnerB: afterCost / 2 };
+}
 function bonusFor(net) {
-  for (const t of BOLT_BONUS_TIERS) { if ((net||0) >= t.floor) return { ...t, tierFloor: t.floor }; }
-  return { gross: 0, company: 0, tierFloor: null };
+  for (const t of BOLT_BONUS_TIERS) {
+    if ((net||0) >= t.floor) { const s = splitAfterOpCost(t.gross); return { ...t, ...s, tierFloor: t.floor }; }
+  }
+  return { gross: 0, company: 0, partnerB: 0, tierFloor: null };
 }
 function bonusGapFor(net) {
   for (let i = BOLT_BONUS_TIERS.length - 1; i >= 0; i--) {
     const t = BOLT_BONUS_TIERS[i];
-    if ((net||0) < t.floor) return { sarToNext: t.floor - (net||0), unlocks: t.company, floor: t.floor };
+    if ((net||0) < t.floor) return { sarToNext: t.floor - (net||0), unlocks: splitAfterOpCost(t.gross).company, floor: t.floor };
   }
   return null;
 }
@@ -8231,7 +8249,13 @@ function defaultProfile() {
     // first-trip date. ambAmtA = Model A monthly ambassador amount (default 200).
     // ambCut = Model B monthly rent paid to the ambassador (default 500; 800 for 2 accounts).
     // ambExtra = Model C one-time extra bonus on top of the 500 (default 0).
-    ambassador: null, ambassadorModel: null, ambFirstTrip: null, ambAmtA: null, ambCut: null, ambExtra: null };
+    // A & C are retired from NEW_BONUS_CUTOVER onward (see ambPayoutFor) in favour of the
+    // nationality-based referral bonus; kept here so pre-cutover months still compute correctly.
+    ambassador: null, ambassadorModel: null, ambFirstTrip: null, ambAmtA: null, ambCut: null, ambExtra: null,
+    // nationality: 'saudi' | 'foreigner' | null. Independent of the vehicle Model A-F lettering
+    // (which describes car/account arrangement, not the driver's nationality). Drives the
+    // nationality-based referral bonus and the Saudi driver's own monthly bonus.
+    nationality: null };
 }
 // Computes a salaried driver's pay from their net earnings: base at threshold, stepping
 // ±perK for each FULL 1,000 SAR above/below the threshold, clamped at 0 (no negative pay).
@@ -8568,11 +8592,17 @@ function computeDriverPnL(name, monthKey) {
                  : 0;
   const other    = sign(p.other?.dir, p.other?.amount || 0);
   // Bonuses are money the fleet PAYS OUT — fold into the P&L so rent-in vs out nets
-  // correctly. Two pieces: the ambassador's payout (ambPayoutFor) and, for Model A,
-  // the Saudi driver's own 500/month whenever he nets ≥ 5,000.
+  // correctly. Two pieces: the ambassador's payout (ambPayoutFor) and the referred Saudi
+  // driver's own monthly bonus (frozen pre-cutover at the old flat 500/Model-A-only rule;
+  // from NEW_BONUS_CUTOVER, tiered 400/800, any ambassador-referred Saudi not on Model B —
+  // Model B's "Saudi" is the account holder, not the one earning the net being measured).
   const ambP      = ambPayoutFor(name, p, income, monthKey);
   const ambOwed   = ambP.owed || 0;
-  const saudiA    = (p.ambassadorModel === 'A' && income >= 5000) ? 500 : 0;
+  const saudiA    = monthKey < NEW_BONUS_CUTOVER
+    ? ((p.ambassadorModel === 'A' && income >= 5000) ? 500 : 0)
+    : ((p.nationality === 'saudi' && p.ambassador && p.ambassadorModel !== 'B')
+        ? (income >= 6000 ? 800 : income >= 5000 ? 400 : 0)
+        : 0);
   const bonusCost = -(ambOwed + saudiA);
   const netPnL    = income + acctRent + carRent + salary + fleetCut + other + bonusCost;
   return { name, model:p.model, modelCustom:p.modelCustom, income, acctRent, carRent, salary, fleetCut, other,
@@ -10121,12 +10151,20 @@ function buildFinanceModals() {
         <label>🎖 Ambassador (who referred this driver)</label>
         <input type="text" id="cpAmbassador" placeholder="Ambassador name — leave blank if none">
       </div>
+      <div class="fin-form-row"><label>Nationality</label>
+        <select id="cpNationality">
+          <option value="">— not set —</option>
+          <option value="saudi">🇸🇦 Saudi</option>
+          <option value="foreigner">🌍 Foreigner</option>
+        </select>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Drives the referral bonus (500 foreigner / 150-200 Saudi, one-time) and the Saudi driver's own monthly bonus (400/800). Independent of the Model A-F car/account field above.</div>
+      </div>
       <div class="fin-form-row"><label>Ambassador Model</label>
         <select id="cpAmbModel" onchange="onCpAmbModelChange(this.value)">
-          <option value="">— none —</option>
-          <option value="A">A · Saudi driver transferred to fleet (monthly amount when net ≥ 5,000)</option>
+          <option value="">— none — (referral bonus by nationality, from Jul 2026)</option>
+          <option value="A">A · LEGACY Saudi driver transferred (frozen, pre-Jul 2026 months only)</option>
           <option value="B">B · Saudi user rented to foreigner (monthly rent 500 / 800)</option>
-          <option value="C">C · Existing foreigner on Saudi acct (one-time 500 + extra at first 6,000)</option>
+          <option value="C">C · LEGACY existing foreigner one-time bonus (frozen, pre-Jul 2026 months only)</option>
         </select>
       </div>
       <div class="fin-form-row" id="cpAmbFirstTripRow" style="display:none"><label>1st Trip Date <span id="cpAmbFirstTripAuto" style="font-size:11px;color:var(--text-muted)"></span></label>
@@ -10289,10 +10327,14 @@ function buildFinanceModals() {
 // ═══════════════════════════════════════════
 let ambMonth = '';
 const AMB_MODELS = {
-  A: { label:'Saudi driver → fleet (monthly amount to ambassador when driver nets ≥ 5,000; Saudi also gets 500/mo)', base:200, threshold:5000, color:'#22D3EE' },
+  A: { label:'LEGACY — Saudi driver → fleet (monthly amount to ambassador when driver nets ≥ 5,000; Saudi also gets 500/mo)', base:200, threshold:5000, color:'#22D3EE' },
   B: { label:'Saudi user rented to foreigner (monthly rent to ambassador: 500 / 800 for 2 accounts)', base:500, threshold:0, color:'#A78BFA' },
-  C: { label:'Existing foreigner on Saudi acct (one-time 500 + extra at first 6,000 net)', base:500, threshold:6000, color:'#34D399' }
+  C: { label:'LEGACY — Existing foreigner on Saudi acct (one-time 500 + extra at first 6,000 net)', base:500, threshold:6000, color:'#34D399' }
 };
+// Models A & C are retired from NEW_BONUS_CUTOVER onward in favour of the nationality-based
+// referral bonus (see ambPayoutFor). Months before cutover keep computing under the old A/C
+// math so already-reported/paid history doesn't change. Model B is unaffected at all times.
+const NEW_BONUS_CUTOVER = '2026-07';
 
 // Earliest YYYY-MM-DD this driver shows any trips/earnings in uploaded history.
 function detectFirstTrip(name) {
@@ -10333,14 +10375,8 @@ function firstAchieveMonth(name, threshold) {
 // Payout owed to the ambassador for one driver in one month (monthKey 'YYYY-MM').
 function ambPayoutFor(name, profile, monthlyNet, monthKey) {
   const model = profile && profile.ambassadorModel;
-  if (!model || !AMB_MODELS[model]) return { owed:0, qualifies:false, reason:'—' };
-  if (model === 'A') {
-    // Monthly amount to the ambassador, any month the Saudi driver nets ≥ 5,000.
-    // (The Saudi driver's own 500/month is added separately in computeDriverPnL.)
-    const amt = profile.ambAmtA != null ? profile.ambAmtA : 200;
-    const q = monthlyNet >= 5000;
-    return { owed: q ? amt : 0, qualifies:q, reason: q ? 'Monthly · net ≥ 5,000' : `Net ${fmt(monthlyNet)} < 5,000` };
-  }
+
+  // Model B (account rent-share) is a separate mechanism, unaffected by the cutover.
   if (model === 'B') {
     const cut = profile.ambCut != null ? profile.ambCut : 500;
     const ft = effFirstTrip(name, profile);
@@ -10357,16 +10393,53 @@ function ambPayoutFor(name, profile, monthlyNet, monthKey) {
     const owed = Math.round(cut * billDays / dim);
     return { owed, qualifies: owed > 0, reason: `Rent · ${billDays}/${dim} days (from day ${startDay})` };
   }
-  if (model === 'C') {
-    // One-time 500 + optional extra bonus to the ambassador, paid in the month the
-    // driver FIRST reaches 6,000 net (any month). Paid once total.
-    const extra = profile.ambExtra != null ? profile.ambExtra : 0;
-    const fm = firstAchieveMonth(name, 6000);
-    if (!fm)             return { owed:0, qualifies:false, reason:`Net ${fmt(monthlyNet)} < 6,000 (not yet)` };
-    if (fm === monthKey) return { owed:500+extra, qualifies:true, reason:`One-time ${500+extra}${extra?` (500+${extra})`:''} · first hit 6,000` };
+
+  // Pre-cutover months: freeze history under the old Model A / Model C math, exactly as it
+  // was actually computed/paid at the time — even if the profile still carries that model tag.
+  if (monthKey < NEW_BONUS_CUTOVER) {
+    if (model === 'A') {
+      const amt = profile.ambAmtA != null ? profile.ambAmtA : 200;
+      const q = monthlyNet >= 5000;
+      return { owed: q ? amt : 0, qualifies:q, reason: q ? 'Monthly · net ≥ 5,000 (legacy A)' : `Net ${fmt(monthlyNet)} < 5,000` };
+    }
+    if (model === 'C') {
+      const extra = profile.ambExtra != null ? profile.ambExtra : 0;
+      const fm = firstAchieveMonth(name, 6000);
+      if (!fm)             return { owed:0, qualifies:false, reason:`Net ${fmt(monthlyNet)} < 6,000 (not yet)` };
+      if (fm === monthKey) return { owed:500+extra, qualifies:true, reason:`One-time ${500+extra}${extra?` (500+${extra})`:''} · first hit 6,000 (legacy C)` };
+      if (fm <  monthKey)  return { owed:0, qualifies:false, reason:`Already paid · ${monthLabel(fm)}` };
+      return { owed:0, qualifies:false, reason:`Not yet · first hits ${monthLabel(fm)}` };
+    }
+    return { owed:0, qualifies:false, reason:'—' };
+  }
+
+  // From NEW_BONUS_CUTOVER: one-time referral bonus by nationality. Model A/C no longer apply
+  // (legacy labels only) — any driver with an ambassador + nationality tagged qualifies.
+  if (!profile.ambassador) return { owed:0, qualifies:false, reason:'No ambassador tagged' };
+  const nationality = profile.nationality;
+  if (!nationality) return { owed:0, qualifies:false, reason:'Nationality not set' };
+
+  if (nationality === 'foreigner') {
+    // 500 one-time, paid the first month the foreigner nets ≥ 5,000.
+    const fm = firstAchieveMonth(name, 5000);
+    if (!fm)             return { owed:0, qualifies:false, reason:`Net ${fmt(monthlyNet)} < 5,000 (not yet)` };
+    if (fm === monthKey) return { owed:500, qualifies:true, reason:'One-time 500 · first hit 5,000 (foreigner referral)' };
     if (fm <  monthKey)  return { owed:0, qualifies:false, reason:`Already paid · ${monthLabel(fm)}` };
     return { owed:0, qualifies:false, reason:`Not yet · first hits ${monthLabel(fm)}` };
   }
+
+  if (nationality === 'saudi') {
+    // 150 or 200 one-time, locked at the driver's first qualifying month (whichever tier —
+    // 5,000 or 6,000 — that same month already reached). No top-up if 6,000 comes later.
+    const fm5 = firstAchieveMonth(name, 5000);
+    if (!fm5) return { owed:0, qualifies:false, reason:`Net ${fmt(monthlyNet)} < 5,000 (not yet)` };
+    const fm6 = firstAchieveMonth(name, 6000);
+    const amt = (fm6 === fm5) ? 200 : 150; // fm6 can never be earlier than fm5
+    if (fm5 === monthKey) return { owed:amt, qualifies:true, reason:`One-time ${amt} · first hit ${amt===200?'6,000':'5,000'} (Saudi referral)` };
+    if (fm5 <  monthKey)  return { owed:0, qualifies:false, reason:`Already paid · ${monthLabel(fm5)}` };
+    return { owed:0, qualifies:false, reason:`Not yet · first hits ${monthLabel(fm5)}` };
+  }
+
   return { owed:0, qualifies:false, reason:'—' };
 }
 
@@ -10636,6 +10709,7 @@ function openCourierProfileModal(name) {
   document.getElementById('cpBlocked').checked = !!profile.blocked;
   // Ambassador fields
   document.getElementById('cpAmbassador').value = profile.ambassador || '';
+  document.getElementById('cpNationality').value = profile.nationality || '';
   document.getElementById('cpAmbModel').value = profile.ambassadorModel || '';
   const detected = detectFirstTrip(name);
   document.getElementById('cpAmbFirstTrip').value = profile.ambFirstTrip || detected || '';
@@ -10717,6 +10791,7 @@ function saveCourierProfileFromModal() {
     funnel: document.getElementById('cpFunnel').value || null,
     blocked: document.getElementById('cpBlocked').checked || false,
     ambassador: document.getElementById('cpAmbassador').value.trim() || null,
+    nationality: document.getElementById('cpNationality').value || null,
     ambassadorModel: document.getElementById('cpAmbModel').value || null,
     ambFirstTrip: document.getElementById('cpAmbFirstTrip').value || null,
     ambAmtA: document.getElementById('cpAmbAmtA').value !== '' ? (parseFloat(document.getElementById('cpAmbAmtA').value) || 0) : null,
@@ -11266,6 +11341,7 @@ function renderAnalytics() {
     return { ...a, firstSeen, firstSeenCertain, isNew, left, blocked, idle, proj, band, avgWork,
       accept: a.acDays>0 ? a.acSum/a.acDays : 0,
       companyBonus: (projectable && !idle) ? bonusFor(proj).company : 0,
+      partnerBBonus: (projectable && !idle) ? bonusFor(proj).partnerB : 0,
       accDrop: accAlerts[a.key]?.acceptanceDrop || null,
       nextFloor, gapToTier, pushExtra, unlocks, pushFeasible };
   });
@@ -11290,6 +11366,7 @@ function renderAnalytics() {
   ];
   const maxBucket = Math.max(1, ...buckets.map(b=>b.list.length));
   const totalCompanyBonus = current.reduce((s,d)=>s+(d.idle?0:d.companyBonus),0);
+  const totalPartnerBBonus = current.reduce((s,d)=>s+(d.idle?0:d.partnerBBonus),0);
 
   // ── Push list: realistic, remaining-days-aware, easiest lift first ──
   const pushList = projectable
@@ -11379,7 +11456,7 @@ function renderAnalytics() {
     ${projectable ? `<div class="chart-card" style="margin-bottom:16px">
       <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
         <span>Bonus-Tier Pipeline — ${periodLabel} <span style="font-size:11px;color:var(--text-muted);font-weight:400">· projected month-end · click a band</span></span>
-        <span style="font-size:12px;color:var(--bolt-green);font-weight:700">≈ ${fmt(totalCompanyBonus)} SAR company bonus projected</span>
+        <span style="font-size:12px;color:var(--bolt-green);font-weight:700">≈ ${fmt(totalCompanyBonus)} SAR company bonus projected <span style="color:var(--text-muted);font-weight:400">(+ ${fmt(totalPartnerBBonus)} Partner B, after op cost)</span></span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);letter-spacing:.05em;margin:9px 2px 2px"><span>TIER</span><span>DRIVERS · PROJECTED NET</span><span>COMPANY BONUS</span></div>
       <div style="display:flex;flex-direction:column;gap:7px">
