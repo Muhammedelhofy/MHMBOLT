@@ -3427,7 +3427,7 @@ function m8PickCmd(type, val) {
     const col = colMap[val] || 'net';
     sumCourierSortCol = col; sumCourierSortAsc = false;
     renderCaptains();
-    const label = {net:'Earnings',orders:'Trips',hours:'Earn/hr',accept:'Acceptance',gross:'Gross'}[val]||val;
+    const label = {net:'Earnings',orders:'Orders',hours:'Earn/hr',accept:'Acceptance',gross:'Gross'}[val]||val;
     m8PickShow(`<b>✓ Sorted by ${label}</b> <span style="color:var(--text-muted)">— column header highlighted</span>`);
     return;
   }
@@ -6119,7 +6119,7 @@ function renderCaptains() {
     ['hrs',    'Hours'],
     ['accept', 'Acceptance %'],
     ['util',   'Utilisation %'],
-    ['rides',  'Trips'],
+    ['rides',  'Orders'],
     ['dist',   'Distance'],
     ['name',   'Captain (A–Z)'],
     ['model',  'Model'],
@@ -6159,7 +6159,7 @@ function renderCaptains() {
     { label:'Avg Acceptance',  value:pctOrDash(kpis.avgAccept),    sub:`active drivers only`,            cls:'' },
     { label:'Avg Utilisation', value:pctOrDash(kpis.avgUtil),      sub:`of online time`,                 cls:'' },
     { label:'Avg Finish Rate', value:pctOrDash(kpis.avgFinish),    sub:`accepted → finished`,            cls:'' },
-    { label:'Total Trips',     value:`${fmt(kpis.totalRides)}`,    sub:`${Math.round(kpis.totalDist).toLocaleString('en-US')} km`, cls:'' },
+    { label:'Total Orders',    value:`${fmt(kpis.totalRides)}`,    sub:`${Math.round(kpis.totalDist).toLocaleString('en-US')} km`, cls:'' },
     { label:'Hours Online',     value:`${kpis.totalHours.toFixed(1)} h`,
       sub: selected.length === 1 ? 'this day' : `${selected.length} days total`, cls:'' },
   ].map(c=>`<div class="summary-card ${c.cls}"><div class="s-label">${c.label}</div><div class="s-value">${c.value}</div><div class="s-sub">${c.sub}</div></div>`).join('') : '';
@@ -6353,7 +6353,7 @@ function buildFleetDayTable(entries) {
       ${fth('Finish rate','finish','td-r')}
       ${fth('Acceptance','accept','td-r')}
       ${fth('Utilisation','util','td-r')}
-      ${fth('Trips','rides','td-r')}
+      ${fth('Orders','rides','td-r')}
       ${fth('Distance','dist','td-r')}
     </tr></thead>
     <tbody>${rows}</tbody>
@@ -6810,7 +6810,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
       ${cth('Hours','hrs','td-r')}
       ${cth('Accept','accept','td-r')}
       ${cth('Util','util','td-r')}
-      ${cth('Trips','rides','td-r')}
+      ${cth('Orders','rides','td-r')}
       ${cth('Distance','dist','td-r')}
       <th class="${sumCourierSortCol==='target'?'th-sort-active':''}" style="text-align:center;cursor:pointer;user-select:none;white-space:nowrap" onclick="setSumCourierSort('target')" title="Sort by total achieved net vs the ${target?fmt(target):'monthly'} target (not daily pace)">Monthly Target<span style="opacity:${sumCourierSortCol==='target'?1:.25};font-size:9px;margin-left:3px;color:${sumCourierSortCol==='target'?'var(--bolt-green)':'inherit'}">${sumCourierSortCol!=='target'?'⇅':sumCourierSortAsc?'▲':'▼'}</span></th>
     </tr></thead>
@@ -11455,7 +11455,7 @@ function renderAnalytics() {
       </div>
       <div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse">
         <thead><tr style="background:rgba(0,0,0,.15)">
-          ${dth('Driver','name')}<th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Status</th>${dth('Trips','orders',1)}${dth('Net','net',1)}${dth('Avg/work-day','avg',1)}${dth('Proj','proj',1)}${dth('To next tier','need',1)}${dth('Accept','accept',1)}${dth('First seen','first',1)}
+          ${dth('Driver','name')}<th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Status</th>${dth('Orders','orders',1)}${dth('Net','net',1)}${dth('Avg/work-day','avg',1)}${dth('Proj','proj',1)}${dth('To next tier','need',1)}${dth('Accept','accept',1)}${dth('First seen','first',1)}
         </tr></thead><tbody>${rows}</tbody>
       </table></div>
     </div>`;
