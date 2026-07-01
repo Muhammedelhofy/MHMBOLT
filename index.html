@@ -12634,10 +12634,102 @@ function renderAnalytics() {
       <div style="font-size:10px;color:var(--text-muted);margin-top:6px">Shown only when the next tier is within a modest lift of the driver's own work-day pace — never an unrealistic ask.</div>
     </div>` : `<div class="chart-card" style="margin-bottom:16px;text-align:center;color:var(--text-muted);font-size:13px;padding:18px">${isPastMonth?'Month complete — figures are final.':'No realistic tier pushes right now — everyone is on track or out of reach.'}</div>`) : ''}
 
+    <div id="rampCohortCard"></div>
+
     ${drillHtml || `<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:16px;border:1px dashed var(--border);border-radius:6px">👆 Click a KPI card or a tier band above to list those drivers.</div>`}
   `;
+  renderRampCohort();   // async — fills #rampCohortCard when stage-log data exists (Build-152)
 
   // (Build-119/120: legacy Chart.js charts removed — Analytics is a roster-performance view.)
+}
+
+// ── New-driver ramp cohort (Build-152) ────────────────────────────────────────
+// The bridge between onboarding and earnings: drivers who reached Active in the
+// onboarding sheet in the last 28 days, joined (via the synced sheet mirror + the
+// same phone/name matcher the ambassador link uses) to their actual Bolt earnings
+// since activation. The catch it exists for: "activated on paper but never started
+// driving". Renders nothing (quietly) until tracked activations exist in the log.
+const RAMP_COHORT_DAYS = 28;
+async function renderRampCohort() {
+  const host = document.getElementById('rampCohortCard');
+  if (!host) return;
+  if (!supabaseOn()) { host.innerHTML = ''; return; }
+  let log = [], sheet = [];
+  try { const r = await Promise.all([fetchStageLog(), fetchSheetAmbassadorSync()]); log = r[0]||[]; sheet = r[1]||[]; }
+  catch (_) { host.innerHTML = ''; return; }
+  const DAY = 86400000, now = Date.now();
+
+  // Tracked (non-baseline) transitions INTO Active in the window, first one per driver.
+  const acts = {};
+  log.forEach(r => {
+    if (r.to_stage !== 'Active' || r.from_stage === '(baseline)') return;
+    const t = Date.parse(r.changed_at);
+    if (isNaN(t) || now - t > RAMP_COHORT_DAYS*DAY) return;
+    const key = r.driver_id || r.name; if (!key) return;
+    if (!acts[key] || t < acts[key].t) acts[key] = { t, name: r.name || key, driver_id: r.driver_id || '' };
+  });
+  const cohort = Object.values(acts).sort((a,b) => b.t - a.t);
+  if (!cohort.length) { host.innerHTML = ''; return; }
+
+  // Dashboard-known drivers in ONE pass: key -> { name, latest non-empty phone }.
+  const known = {};
+  getHistory().forEach(h => (Array.isArray(h.drivers)?h.drivers:[]).forEach(d => {
+    if (!d.name) return;
+    const k = driverKey(d.name);
+    if (!known[k]) known[k] = { driverId: k, name: d.name, phone: '' };
+    if (d.phone) known[k].phone = d.phone;
+  }));
+  const knownArr = Object.values(known);
+  const sheetById = {}; sheet.forEach(s => { if (s.id) sheetById[s.id] = s; });
+
+  const he = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const chip = (t,bg,c) => `<span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:2px;letter-spacing:.04em;background:${bg};color:${c};white-space:nowrap">${t}</span>`;
+  let notStarted = 0;
+  const rows = cohort.map(c => {
+    const srow = sheetById[c.driver_id];
+    const m = matchSheetDriverToDashboard(
+      { name: (srow && srow.name) || c.name, phone: (srow && srow.phone) || '' }, knownArr);
+    const actDay = new Date(c.t); actDay.setHours(0,0,0,0);
+    let net = 0, workDays = 0;
+    if (m.driverId) getHistory().forEach(h => {
+      if (periodSortKey(h.period) < actDay.getTime()) return;
+      (Array.isArray(h.drivers)?h.drivers:[]).forEach(d => {
+        if (d.name && driverKey(d.name) === m.driverId) { net += sN(d.netEarnings); if (d.isActive) workDays++; }
+      });
+    });
+    const ageD = Math.floor((now - c.t)/DAY);
+    let status;
+    if (!m.driverId)      { status = chip('NOT ON BOLT DATA','rgba(255,68,102,.15)','var(--red)'); if (ageD > 3) notStarted++; }
+    else if (net > 0)     { status = chip('EARNING','rgba(0,255,179,.12)','var(--bolt-green)'); }
+    else if (ageD <= 3)   { status = chip('JUST ACTIVATED','rgba(0,212,255,.14)','var(--cyan)'); }
+    else                  { status = chip('NOT STARTED','rgba(255,170,0,.14)','var(--amber)'); notStarted++; }
+    const dispName = m.driverId && known[m.driverId] ? known[m.driverId].name : c.name;
+    return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+      <td style="padding:6px 9px;font-size:12px;font-weight:600;color:var(--text)">${he(lookupForeignName(dispName)||dispName)}</td>
+      <td style="padding:6px 9px;font-size:11px;color:var(--text-muted);white-space:nowrap">${new Date(c.t).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} · ${ageD}d ago</td>
+      <td style="padding:6px 9px;text-align:right;font-family:var(--mono);font-size:12px">${m.driverId ? workDays : '—'}</td>
+      <td style="padding:6px 9px;text-align:right;font-family:var(--mono);font-size:12px;color:${net>0?'var(--text)':'var(--text-muted)'}">${m.driverId ? fmt(Math.round(net)) : '—'}</td>
+      <td style="padding:6px 9px;text-align:right;font-size:11px;color:var(--text-muted)">${workDays>0 ? fmt(Math.round(net/workDays)) : '—'}</td>
+      <td style="padding:6px 9px;text-align:right">${status}</td>
+    </tr>`;
+  }).join('');
+
+  host.innerHTML = `<div class="chart-card" style="margin-bottom:16px">
+    <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+      <span>🌱 New-driver ramp — activated in the last ${RAMP_COHORT_DAYS} days (${cohort.length})</span>
+      ${notStarted ? `<span style="font-size:11px;color:var(--amber);font-weight:700">${notStarted} activated but not earning — follow up</span>` : ''}
+    </div>
+    <div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:rgba(0,0,0,.15)">
+        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Driver</th>
+        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Activated</th>
+        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Work days since</th>
+        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Net since (SAR)</th>
+        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">/work-day</th>
+        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Status</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:6px">Activation dates come from the onboarding sheet's stage log; earnings from Bolt data since that day. "Not on Bolt data" = activated in the sheet but never appears in a Bolt report — the ones to chase first.</div>
+  </div>`;
 }
 
 // ═══════════════════════════════════════════
