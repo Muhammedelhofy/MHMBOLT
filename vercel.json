@@ -3,12 +3,19 @@
   "functions": {
     "api/bolt/cron-sync.js": {
       "maxDuration": 60
+    },
+    "api/bolt/sync-stage-log.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
     {
       "path": "/api/bolt/cron-sync",
       "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/bolt/sync-stage-log",
+      "schedule": "30 21 * * *"
     }
   ]
 }
