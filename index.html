@@ -10967,6 +10967,9 @@ const PIPELINE_STAGES = ['Fleet Check','Fleet Check - Verify','Block Check','Tra
   'Blocked - Cannot Unblock','Closed - Blocked','Already exists in other fleet','Rejected'];
 // Terminal stages = driver has left the active funnel (won't be counted as "stuck").
 const PIPELINE_TERMINAL = new Set(['Active','Blocked - Cannot Unblock','Closed - Blocked','Already exists in other fleet','Rejected']);
+// Terminal LOSSES (Build-150) — every terminal outcome except the win. A transition
+// INTO one of these is "we lost this lead", attributed to the stage it happened FROM.
+const PIPELINE_LOSS = new Set([...PIPELINE_TERMINAL].filter(s => s !== 'Active'));
 // Whose queue each active stage sits in (edit here if ownership changes — mirrors the
 // Khaled/Omar split in the sheet's dailyDigest; Transfer/Submitted wait on Bolt's teams).
 const PIPELINE_STAGE_OWNER = {
@@ -11091,6 +11094,89 @@ function pipelineDashboardHtml(snapshot, log, source) {
   });
   const medianTTA = ttaVals.length ? pplMedian(ttaVals) : null;
 
+  // ── Funnel + losses (Build-150) ──────────────────────────────────────────────
+  // Baseline seed rows only restate where a driver already WAS when logging began —
+  // they're excluded here, so the funnel counts genuinely TRACKED movement. That also
+  // means early stages can show fewer drivers than later ones on a young log (drivers
+  // seeded mid-pipeline never "entered" the earlier stages on record).
+  const funnelLog = (log||[]).filter(r => r.from_stage !== '(baseline)');
+  const stageReached = {}, stageLost = {};             // stage -> Set(driver key)
+  const winSet = new Set(), lossSet = new Set(), seenSet = new Set();
+  funnelLog.forEach(r => {
+    const key = r.driver_id || r.name; if (!key) return;
+    seenSet.add(key);
+    if (r.to_stage === 'Active') winSet.add(key);
+    else if (PIPELINE_LOSS.has(r.to_stage)) {
+      lossSet.add(key);
+      const from = (r.from_stage && r.from_stage.charAt(0) !== '(') ? r.from_stage : '(at entry)';
+      (stageLost[from] = stageLost[from] || new Set()).add(key);
+    } else if (r.to_stage && r.to_stage.charAt(0) !== '(')
+      (stageReached[r.to_stage] = stageReached[r.to_stage] || new Set()).add(key);
+  });
+  const decidedCount = new Set([...winSet, ...lossSet]).size;
+  const convPct   = decidedCount ? Math.round(winSet.size / decidedCount * 100) : null;
+  const stillIn   = [...seenSet].filter(k => !winSet.has(k) && !lossSet.has(k)).length;
+  const funnelStages = PIPELINE_STAGES.filter(s => !PIPELINE_TERMINAL.has(s));
+  const maxReached = Math.max(1, ...funnelStages.map(s => (stageReached[s]||new Set()).size), winSet.size);
+  const funnelRows = funnelStages.map(st => {
+    const n = (stageReached[st]||new Set()).size, lost = (stageLost[st]||new Set()).size;
+    if (!n && !lost) return '';
+    const pct = Math.round(n/maxReached*100);
+    return `<div style="display:flex;align-items:center;gap:10px">
+      <div style="width:150px;flex-shrink:0;font-size:11px;color:var(--text)">${st}</div>
+      <div style="flex:1;background:rgba(255,255,255,.04);border-radius:3px;height:22px;position:relative;overflow:hidden">
+        <div style="height:100%;width:${n?Math.max(pct,5):0}%;background:#56BEF0;opacity:.8;border-radius:3px"></div>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;padding:0 9px;font-size:11px;color:var(--text)"><b>${n}</b>&nbsp;<span style="color:var(--text-muted)">entered</span></div>
+      </div>
+      <div style="width:92px;flex-shrink:0;text-align:right;font-size:11px;font-weight:700;color:${lost?'var(--red)':'var(--text-muted)'}">${lost ? '− '+lost+' lost' : '—'}</div>
+    </div>`;
+  }).join('');
+  const entryLost = (stageLost['(at entry)']||new Set()).size;
+  const funnelHtml = funnelRows + `
+    <div style="display:flex;align-items:center;gap:10px;margin-top:2px">
+      <div style="width:150px;flex-shrink:0;font-size:11px;color:var(--green);font-weight:700">✓ Active</div>
+      <div style="flex:1;background:rgba(255,255,255,.04);border-radius:3px;height:22px;position:relative;overflow:hidden">
+        <div style="height:100%;width:${winSet.size?Math.max(Math.round(winSet.size/maxReached*100),5):0}%;background:var(--green);opacity:.85;border-radius:3px"></div>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;padding:0 9px;font-size:11px;color:var(--text)"><b>${winSet.size}</b>&nbsp;<span style="color:var(--text-muted)">activated since tracking</span></div>
+      </div>
+      <div style="width:92px;flex-shrink:0"></div>
+    </div>
+    ${entryLost ? `<div style="font-size:10px;color:var(--text-muted);margin-top:6px">${entryLost} lead${entryLost>1?'s':''} closed at entry (blocked/exists before reaching a tracked stage).</div>` : ''}
+    <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--text-muted)">
+      <span>Conversion of decided leads: <b style="color:${convPct==null?'var(--text-muted)':convPct>=60?'var(--green)':convPct>=35?'var(--amber)':'var(--red)'}">${convPct==null?'—':convPct+'%'}</b> reach Active <span style="opacity:.7">(${winSet.size} won · ${lossSet.size} lost)</span></span>
+      <span><b style="color:var(--text)">${stillIn}</b> still undecided in the pipeline</span>
+    </div>`;
+
+  // ── Weekly flow (Build-151): leads in vs activations out, last 6 weeks ───────
+  const WEEK = 7*DAY;
+  const weekStart = t => { const d = new Date(t); const dow = (d.getDay()+6)%7; d.setHours(0,0,0,0); return d.getTime() - dow*DAY; };
+  const flowByWeek = {};
+  funnelLog.forEach(r => {
+    const t = Date.parse(r.changed_at); if (isNaN(t)) return;
+    if (r.from_stage === '(new)')      { const w = weekStart(t); (flowByWeek[w] = flowByWeek[w] || {inN:0,act:0}).inN++; }
+    else if (r.to_stage === 'Active')  { const w = weekStart(t); (flowByWeek[w] = flowByWeek[w] || {inN:0,act:0}).act++; }
+  });
+  const thisWeek = weekStart(now);
+  const weeks = [];
+  for (let i = 5; i >= 0; i--) { const w = thisWeek - i*WEEK; weeks.push({ w, ...(flowByWeek[w] || {inN:0,act:0}) }); }
+  const flowMax = Math.max(1, ...weeks.map(x => Math.max(x.inN, x.act)));
+  const wkLabel = w => w === thisWeek ? 'this wk' : new Date(w).toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
+  const flowHtml = `<div style="display:flex;gap:10px;align-items:flex-end;justify-content:space-between;margin-top:8px">
+    ${weeks.map(x => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+      <div style="display:flex;gap:4px;align-items:flex-end;height:64px">
+        <div title="${x.inN} new lead${x.inN!==1?'s':''}" style="width:16px;border-radius:2px 2px 0 0;background:#56BEF0;opacity:.85;height:${Math.max(x.inN/flowMax*60, x.inN?4:1)}px"></div>
+        <div title="${x.act} activated" style="width:16px;border-radius:2px 2px 0 0;background:var(--green);opacity:.85;height:${Math.max(x.act/flowMax*60, x.act?4:1)}px"></div>
+      </div>
+      <div style="font-size:10px;font-family:var(--mono);color:var(--text)">${x.inN}·${x.act}</div>
+      <div style="font-size:9px;color:var(--text-muted);white-space:nowrap">${wkLabel(x.w)}</div>
+    </div>`).join('')}
+  </div>
+  <div style="display:flex;gap:14px;margin-top:8px;font-size:10px;color:var(--text-muted)">
+    <span><span style="display:inline-block;width:9px;height:9px;background:#56BEF0;border-radius:2px;vertical-align:-1px"></span> new leads in</span>
+    <span><span style="display:inline-block;width:9px;height:9px;background:var(--green);border-radius:2px;vertical-align:-1px"></span> activated</span>
+    <span style="opacity:.8">tracked transitions only — weeks before logging began read 0</span>
+  </div>`;
+
   // KPIs.
   const activeCount  = active.length;
   const longestWait  = active.length ? active[0].dwell : null;
@@ -11168,6 +11254,16 @@ function pipelineDashboardHtml(snapshot, log, source) {
       ${kpi('Longest wait', pplDays(longestWait), 'in current stage', '#f59e0b')}
       ${kpi('Active now', activeNow, 'reached Active', 'var(--green)')}
       ${kpi('Typical → Active', medianTTA==null ? '—' : pplDays(medianTTA), medianTTA==null ? 'builds as new leads finish' : `median of ${ttaVals.length} tracked`, '#8b5cf6')}
+    </div>
+
+    <div class="chart-card" style="margin-bottom:16px">
+      <div class="chart-card-title">🪜 Funnel — where leads are lost <span style="font-size:11px;color:var(--text-muted);font-weight:400">· tracked movement since logging began</span></div>
+      <div style="display:flex;flex-direction:column;gap:7px;margin-top:8px">${funnelHtml}</div>
+    </div>
+
+    <div class="chart-card" style="margin-bottom:16px">
+      <div class="chart-card-title">📈 Weekly flow — leads in vs activated <span style="font-size:11px;color:var(--text-muted);font-weight:400">· last 6 weeks</span></div>
+      ${flowHtml}
     </div>
 
     <div class="chart-card" style="margin-bottom:16px">
