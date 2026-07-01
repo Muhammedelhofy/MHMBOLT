@@ -10875,6 +10875,25 @@ async function suggestAmbassadorFromSheet(driverName, driverPhone) {
   return (row && row.ambassador) ? row.ambassador : null;
 }
 
+// Cache-only sheet suggestion for the unassigned-earners worklist. Reads whatever
+// fetchSheetAmbassadorSync already cached (the Ambassadors tab primes it on open via
+// ambAutoFillFromSheet) so the worklist renders synchronously. Returns { ambassador,
+// confidence } for a high (phone) OR medium (name-only) match whose sheet ambassador is
+// on the canonical list, else null. High-confidence phone matches with an ambassador are
+// normally already auto-filled, so in practice this surfaces the name-match (medium)
+// cases the auto-fill deliberately leaves for a human to confirm.
+function sheetAmbSuggestionCached(name, phone) {
+  const synced = sheetAmbassadorSyncCache;
+  if (!Array.isArray(synced) || !synced.length) return null;
+  const match = matchSheetDriverToDashboard({ name, phone },
+    synced.map(s => ({ driverId: s.id, name: s.name, phone: s.phone })));
+  if (!match.driverId || match.confidence === 'none') return null;
+  const row = synced.find(s => s.id === match.driverId);
+  const amb = row && row.ambassador;
+  if (!amb || !AMBASSADOR_LIST.includes(amb)) return null;
+  return { ambassador: amb, confidence: match.confidence };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // PIPELINE ANALYTICS (Build-133, Phase 2 of the onboarding-sheet link)
 // Onboarding stage-delay analytics: WHERE do drivers get stuck between New Lead
@@ -11464,7 +11483,22 @@ function renderAmbassadorsView() {
       net, proj, payout: ambPayoutFor(name, p, net, monthKey), track: ambTrackStatus(net, proj, ambPaceGated(monthKey)) });
   });
 
-  if (!assigned.length) {
+  // Unassigned-earners worklist: drivers who earned this month but carry no ambassador on
+  // their profile. Sorted by net (attribute the biggest earners first — they drive the
+  // bonuses). Where the onboarding sheet name-matches one (medium confidence), pre-suggest
+  // it with a verify flag so coverage grows without needing a phone match. Reads the sheet
+  // cache synchronously (renderAmbassadors primes it on tab open).
+  const unassignedEarners = [];
+  allNames.forEach(name => {
+    const p = getCourierProfile(name);
+    if (p && p.ambassador) return;                 // already attributed
+    const net = getMonthlyNet(null, name, monthIdx, year);
+    if (net <= 0) return;                           // not earning this month
+    unassignedEarners.push({ name, net, suggestion: sheetAmbSuggestionCached(name, getKnownDriverPhone(name)) });
+  });
+  unassignedEarners.sort((a, b) => b.net - a.net);
+
+  if (!assigned.length && !unassignedEarners.length) {
     el.innerHTML = toolbar +
       `<div class="empty-state"><div class="empty-icon">🎖</div><div class="empty-title">No ambassadors assigned yet</div><div class="empty-sub">Click <b>⇅ Sync from sheet</b> to auto-fill ambassadors from the onboarding sheet, or pick a driver above → set their Ambassador + Nationality → Save.</div></div>`;
     return;
@@ -11485,7 +11519,39 @@ function renderAmbassadorsView() {
       <div class="kpi-card"><div class="kpi-card-label">Captains referred</div><div class="kpi-card-value">${assigned.length}</div></div>
       <div class="kpi-card"><div class="kpi-card-label">On pace ≥5k</div><div class="kpi-card-value" style="color:var(--green)">${totalOnPace}</div></div>
       <div class="kpi-card"><div class="kpi-card-label">Owed · ${monthLabel(monthKey)}</div><div class="kpi-card-value" style="color:var(--bolt-green)">${fmt(totalOwed)}<span class="kpi-card-unit"> SAR</span></div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Unassigned earners</div><div class="kpi-card-value" style="color:${unassignedEarners.length?'var(--amber)':'var(--text-muted)'}">${unassignedEarners.length}</div></div>
     </div>`;
+  if (unassignedEarners.length) {
+    const wrows = unassignedEarners.map(u => {
+      const safe = u.name.replace(/'/g, "\\'");
+      const foreign = lookupForeignName(u.name);
+      const sug = u.suggestion;
+      const opts = ['<option value="">— assign —</option>']
+        .concat(AMBASSADOR_LIST.map(a => `<option value="${a}"${sug && sug.ambassador === a ? ' selected' : ''}>${a}</option>`)).join('');
+      const sugCell = sug
+        ? `<span style="font-size:11px;color:var(--text-muted)">sheet: <b style="color:var(--text)">${sug.ambassador}</b> · ${sug.confidence === 'high' ? 'phone' : 'name'} match${sug.confidence === 'medium' ? ' · <span style="color:var(--amber)">verify</span>' : ''}</span>
+           <button class="save-btn" style="padding:2px 9px;font-size:11px" onclick="setDriverAmbassador('${safe}','${sug.ambassador.replace(/'/g, "\\'")}')">✓ Use</button>`
+        : `<span style="font-size:11px;color:var(--text-muted)">—</span>`;
+      return `<tr style="border-top:1px solid var(--border)">
+        <td style="padding:6px 10px"><span style="font-weight:600">${u.name}</span>${foreign ? `<span style="color:var(--text-muted);font-size:11px"> (${foreign})</span>` : ''}</td>
+        <td style="padding:6px 10px;text-align:right;font-family:var(--mono)">${fmt(u.net)}</td>
+        <td style="padding:6px 10px"><select onchange="setDriverAmbassador('${safe}',this.value)" style="padding:2px 6px;font-size:11px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--text);min-width:150px">${opts}</select></td>
+        <td style="padding:6px 10px">${sugCell}</td>
+      </tr>`;
+    }).join('');
+    html += `<div style="margin:0 4px 14px;background:var(--bg-card2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(255,170,0,.06);flex-wrap:wrap;gap:6px">
+        <div style="font-weight:800;font-size:14px">🎯 Unassigned earners — ${unassignedEarners.length}</div>
+        <div style="font-size:11px;color:var(--text-muted)">earning in ${monthLabel(monthKey)} with no ambassador · assign to start bonus tracking (biggest earners first)</div>
+      </div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em">
+          <th style="padding:6px 10px">Captain</th><th style="padding:6px 10px;text-align:right">Net (mo)</th><th style="padding:6px 10px">Assign ambassador</th><th style="padding:6px 10px">Sheet suggestion</th>
+        </tr></thead>
+        <tbody>${wrows}</tbody>
+      </table></div>
+    </div>`;
+  }
   if (needsConfirm.length) {
     const wl = needsConfirm.map(a => {
       const safe = a.name.replace(/'/g,"\\'");
@@ -11517,10 +11583,12 @@ function renderAmbassadorsView() {
       <div style="font-size:11px;color:var(--text-muted)">${count} captain${count===1?'':'s'} · <span style="color:var(--green)">${on} on pace</span></div>
       <div style="font-size:12px;font-weight:700;color:${owed>0?'var(--bolt-green)':'var(--text-muted)'};margin-top:3px">${owed>0?'owed '+fmt(owed)+' SAR':'—'}</div>
     </div>`;
-  html += `<div style="display:flex;flex-wrap:wrap;gap:10px;padding:0 4px 14px">`;
-  html += card('All ambassadors', assigned.length, totalOwed, totalOnPace, ambFilter==='', '');
-  groupList.forEach(g => { html += card('🎖 '+g.name, g.rows.length, owedOf(g), onPaceOf(g), ambFilter.toLowerCase()===g.name.toLowerCase(), g.name); });
-  html += `</div>`;
+  if (groupList.length) {
+    html += `<div style="display:flex;flex-wrap:wrap;gap:10px;padding:0 4px 14px">`;
+    html += card('All ambassadors', assigned.length, totalOwed, totalOnPace, ambFilter==='', '');
+    groupList.forEach(g => { html += card('🎖 '+g.name, g.rows.length, owedOf(g), onPaceOf(g), ambFilter.toLowerCase()===g.name.toLowerCase(), g.name); });
+    html += `</div>`;
+  }
 
   // Captains table(s) — filtered to the selected ambassador (or all).
   const shown = ambFilter ? groupList.filter(g=>g.name.toLowerCase()===ambFilter.toLowerCase()) : groupList;
