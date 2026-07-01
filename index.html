@@ -2423,6 +2423,15 @@ function entryInMonth(h, month, year) {
 // driver match is case/trim-insensitive (driverKey) or by driverId; entries are
 // de-duped by period; sums are NaN-safe (sN); no periodInfo dependency.
 function sumDriverNetForMonth(driverName, month, year, driverId) {
+  // Month-end reconcile: once a month is LOCKED against Bolt's monthly "Earnings per
+  // driver" report, Bolt's finalised net is authoritative for that month/driver — it
+  // captures late-posted campaign bonuses + adjustments the daily uploads can't have
+  // (they're snapshots taken before Bolt settles). Un-reconciled months / unmatched
+  // drivers fall back to the daily-sum. This is the single point every bonus reads.
+  const rec = getReconciledNet(year + '-' + String(month + 1).padStart(2, '0'), driverName);
+  return (rec != null) ? rec : rawDailyNetForMonth(driverName, month, year, driverId);
+}
+function rawDailyNetForMonth(driverName, month, year, driverId) {
   const nk = driverKey(driverName);
   const seen = new Set(); let total = 0;
   for (const h of getHistory()) {
@@ -2434,6 +2443,18 @@ function sumDriverNetForMonth(driverName, month, year, driverId) {
   }
   return total;
 }
+// ── Month-end Bolt reconcile store ─────────────────────────────────────────────
+// { 'YYYY-MM': { byKey: { driverKey: finalisedNet }, at, drivers } }. Synced to cloud.
+const RECONCILE_KEY = 'khair_reconcile';
+function loadReconcile() { try { return JSON.parse(localStorage.getItem(RECONCILE_KEY) || '{}'); } catch (e) { return {}; } }
+function saveReconcile(o) { localStorage.setItem(RECONCILE_KEY, JSON.stringify(o)); }
+function getReconciledNet(monthKey, driverName) {
+  const m = loadReconcile()[monthKey];
+  if (!m || !m.byKey) return null;
+  const v = m.byKey[driverKey(driverName)];
+  return (typeof v === 'number' && !isNaN(v)) ? v : null;
+}
+function isMonthReconciled(monthKey) { const m = loadReconcile()[monthKey]; return !!(m && m.byKey && Object.keys(m.byKey).length); }
 function getMonthlyNet(driverId, driverName, month, year) {
   return sumDriverNetForMonth(driverName, month, year, driverId);
 }
@@ -7815,6 +7836,7 @@ async function syncToCloud() {
     khair_courier_overrides:JSON.parse(localStorage.getItem(COURIER_OVERRIDES_KEY) || '{}'),
     khair_cycle_receipts:   JSON.parse(localStorage.getItem(CYCLE_RECEIPTS_KEY)    || '{}'),
     khair_transfer_log:     JSON.parse(localStorage.getItem(TRANSFER_LOG_KEY)      || '{}'),
+    khair_reconcile:        loadReconcile(),
     khair_cycle_anchor:     localStorage.getItem(CYCLE_ANCHOR_KEY) || '',
     khair_block_log:        getBlockLog(),
     version: 2
@@ -7901,6 +7923,9 @@ async function fetchFromCloud() {
   if ('khair_transfer_log' in r) {
     const local = loadTransferLog();
     saveTransferLog({ ...r.khair_transfer_log, ...local });
+  }
+  if ('khair_reconcile' in r) {
+    saveReconcile({ ...r.khair_reconcile, ...loadReconcile() });   // per-month; local wins on conflict
   }
   // Cycle anchor: cloud always wins — it is shared fleet config
   if (r.khair_cycle_anchor) {
@@ -9037,6 +9062,119 @@ function setFinanceSort(col) {
 // ═══════════════════════════════════════════
 // RENDER FINANCE TAB (top-level orchestrator)
 // ═══════════════════════════════════════════
+// ── Month-end Bolt reconcile UI ────────────────────────────────────────────────
+let reconcilePending = null;   // { monthKey, rows:[{name,key,bolt,dash,gap}], drivers }
+
+function openReconcileModal() {
+  let ov = document.getElementById('reconcileOverlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'reconcileOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:26px 12px';
+    ov.innerHTML = `<div style="background:var(--bg-card,#171B21);border:1px solid var(--border);border-radius:12px;max-width:780px;width:100%;padding:20px 22px;box-shadow:0 12px 44px rgba(0,0,0,.55)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-size:17px;font-weight:800">📋 Reconcile with Bolt <span style="font-size:12px;color:var(--text-muted);font-weight:400">· month-end</span></div>
+        <button onclick="closeReconcileModal()" style="background:none;border:none;color:var(--text-muted);font-size:24px;cursor:pointer;line-height:1">×</button>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">Upload Bolt's monthly <b>Earnings per driver</b> report (all drivers, 1st–end of month). Bolt's finalised net becomes the <b>official</b> monthly figure for bonuses — it captures late-posted campaign + adjustments your daily uploads can't. Daily data stays untouched for tracking. Reversible anytime.</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+        <label style="font-size:12px;color:var(--text-muted)">Month</label>
+        <select id="reconcileMonth" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg)"></select>
+        <input type="file" id="reconcileFile" accept=".csv" style="display:none" onchange="handleReconcileFile(this.files[0])">
+        <button class="save-btn" onclick="document.getElementById('reconcileFile').click()">⬆ Upload Bolt monthly CSV</button>
+      </div>
+      <div id="reconcileResult"></div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => { if (e.target === ov) closeReconcileModal(); });
+  }
+  const sel = ov.querySelector('#reconcileMonth');
+  const months = getAvailableMonths();
+  const list = months.length ? months : [defaultMonth()];
+  sel.innerHTML = list.map(m => `<option value="${m}">${monthLabel(m)}${isMonthReconciled(m) ? ' ✓' : ''}</option>`).join('');
+  reconcilePending = null;
+  ov.querySelector('#reconcileResult').innerHTML = renderReconcileStatus();
+  ov.style.display = 'flex';
+}
+function closeReconcileModal() { const ov = document.getElementById('reconcileOverlay'); if (ov) ov.style.display = 'none'; reconcilePending = null; }
+function renderReconcileStatus() {
+  const rec = loadReconcile();
+  const done = Object.keys(rec).filter(m => isMonthReconciled(m)).sort().reverse();
+  if (!done.length) return `<div style="font-size:12px;color:var(--text-muted)">No months reconciled yet — pick a month and upload Bolt's report.</div>`;
+  return `<div style="font-size:12px;color:var(--text-muted)">Reconciled: ${done.map(m => `<b style="color:var(--green)">${monthLabel(m)}</b> (${rec[m].drivers})<button onclick="clearReconcile('${m}')" title="Undo — revert to daily-sum" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;text-decoration:underline;margin-left:3px">undo</button>`).join(' · ')}</div>`;
+}
+function handleReconcileFile(file) {
+  if (!file) return;
+  const monthKey = document.getElementById('reconcileMonth').value;
+  const reader = new FileReader();
+  reader.onload = e => {
+    let drivers;
+    try { drivers = parseCSV(e.target.result); } catch (err) { toast('Could not parse the CSV'); return; }
+    if (!drivers || !drivers.length) { toast('No driver rows found — is this the Bolt "Earnings per driver" report?'); return; }
+    const [y, m] = monthKey.split('-').map(Number);
+    const rows = drivers.filter(d => d.name).map(d => {
+      const bolt = sN(d.netEarnings);
+      const dash = rawDailyNetForMonth(d.name, m - 1, y, d.driverId);
+      return { name: d.name.trim(), key: driverKey(d.name), bolt, dash, gap: Math.round((bolt - dash) * 100) / 100 };
+    });
+    reconcilePending = { monthKey, rows, drivers: rows.length };
+    renderReconcileDiff();
+  };
+  reader.readAsText(file, 'UTF-8');
+  document.getElementById('reconcileFile').value = '';
+}
+function renderReconcileDiff() {
+  const el = document.getElementById('reconcileResult');
+  if (!el || !reconcilePending) return;
+  const { monthKey, rows } = reconcilePending;
+  const material = rows.filter(r => Math.abs(r.gap) >= 1).sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+  const totalBolt = rows.reduce((s, r) => s + r.bolt, 0);
+  const totalDash = rows.reduce((s, r) => s + r.dash, 0);
+  const sign = g => (g > 0 ? '+' : g < 0 ? '−' : '') + fmt(Math.abs(g));
+  const table = material.length ? `<div style="overflow:auto;max-height:300px;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;position:sticky;top:0;background:var(--bg-card,#171B21)">
+      <th style="padding:5px 8px">Driver</th><th style="padding:5px 8px;text-align:right">Bolt (final)</th><th style="padding:5px 8px;text-align:right">Dashboard</th><th style="padding:5px 8px;text-align:right">Gap</th></tr></thead>
+    <tbody>${material.map(r => `<tr style="border-top:1px solid var(--border)">
+      <td style="padding:5px 8px">${r.name}</td>
+      <td style="padding:5px 8px;text-align:right;font-family:var(--mono)">${fmt(r.bolt)}</td>
+      <td style="padding:5px 8px;text-align:right;font-family:var(--mono);color:var(--text-muted)">${fmt(r.dash)}</td>
+      <td style="padding:5px 8px;text-align:right;font-weight:700;color:${r.gap > 0 ? 'var(--amber)' : 'var(--red)'}">${sign(r.gap)}</td></tr>`).join('')}</tbody></table></div>`
+    : `<div style="font-size:12px;color:var(--green);margin-top:8px">✓ Every driver matches Bolt within a rounding halala — nothing to correct.</div>`;
+  el.innerHTML = `
+    <div style="background:rgba(61,219,174,.08);border:1px solid var(--green);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;line-height:1.5">
+      <b>${monthLabel(monthKey)}</b> · ${rows.length} drivers · Bolt total <b>${fmt(totalBolt)}</b> vs dashboard <b>${fmt(totalDash)}</b><br><b>${material.length}</b> driver${material.length === 1 ? '' : 's'} differ by ≥1 SAR (below).
+    </div>
+    ${table}
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="save-btn" onclick="lockReconcile()">✓ Lock Bolt's numbers as official — ${monthLabel(monthKey)}</button>
+      <span style="font-size:11px;color:var(--text-muted)">Bonuses for this month then use Bolt's finalised net.</span>
+    </div>`;
+}
+function lockReconcile() {
+  if (!reconcilePending) return;
+  const { monthKey, rows } = reconcilePending;
+  const byKey = {};
+  rows.forEach(r => { if (r.key) byKey[r.key] = r.bolt; });
+  const rec = loadReconcile();
+  rec[monthKey] = { byKey, at: new Date().toISOString(), drivers: rows.length };
+  saveReconcile(rec);
+  syncToCloud();
+  toast(`✓ ${monthLabel(monthKey)} reconciled — ${rows.length} drivers locked to Bolt's finalised net`);
+  reconcilePending = null;
+  closeReconcileModal();
+  if (document.getElementById('finance')?.classList.contains('active')) renderFinanceTab();
+  if (document.getElementById('ambassadors')?.classList.contains('active')) renderAmbassadorsView();
+}
+function clearReconcile(monthKey) {
+  const rec = loadReconcile();
+  delete rec[monthKey];
+  saveReconcile(rec);
+  syncToCloud();
+  toast(`Reconcile removed for ${monthLabel(monthKey)} — back to daily-sum`);
+  const ov = document.getElementById('reconcileOverlay');
+  if (ov && ov.style.display !== 'none') openReconcileModal();
+  if (document.getElementById('finance')?.classList.contains('active')) renderFinanceTab();
+}
+
 function renderFinanceTab() {
   const el = document.getElementById('finance');
   if (!el) return;
@@ -9084,6 +9222,7 @@ function renderFinanceTab() {
         <button class="finance-btn finance-btn-secondary" onclick="exportFinanceCSV()">⬇ Export CSV</button>
         <button class="finance-btn finance-btn-primary" onclick="exportFinanceReport()">🖨 Print Report</button>
         <button class="finance-btn finance-btn-primary" style="background:rgba(0,255,179,.14);border-color:rgba(0,255,179,.55);color:var(--bolt-green);font-weight:700" onclick="openEomReportModal()">📊 End of Month Report</button>
+        <button class="finance-btn finance-btn-secondary" onclick="openReconcileModal()" title="Upload Bolt's monthly report to lock finalised numbers for bonuses">📋 Reconcile w/ Bolt${isMonthReconciled(financeMonth) ? ' <span style=\'color:var(--green)\'>✓</span>' : ''}</button>
       </div>
     </div>
     ${anchorBanner}
