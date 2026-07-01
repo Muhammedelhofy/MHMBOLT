@@ -11348,20 +11348,37 @@ async function ambPullFromSheet() {
     (r.matched && !r.natSet ? ' · add a "Nationality" column to the sheet for auto nationality' : ''));
   renderAmbassadorsView();
 }
+// Don't project a month-end pace until this many days of the current month have elapsed.
+// In the first days net÷elapsed wildly overstates (day 1 = net×31, day 2 = net×15.5),
+// so "on track" would flash a false "6k pace" for anyone who drove once. Below the gate
+// we show actual net only and label it "early".
+const AMB_PACE_GATE_DAYS = 5;
+// True when monthKey is the current month and fewer than AMB_PACE_GATE_DAYS have elapsed —
+// i.e. a pace projection would be unreliable and is being suppressed.
+function ambPaceGated(monthKey) {
+  const [y, m] = monthKey.split('-').map(Number);
+  const now = new Date();
+  return now.getFullYear() === y && now.getMonth() + 1 === m && now.getDate() < AMB_PACE_GATE_DAYS;
+}
 // Rough month-end net projection for "on track": banked + pace × days left (pace = net ÷
-// days elapsed). Past/future months → net as-is (nothing left to project).
+// days elapsed). Past/future months → net as-is (nothing left to project). Current month
+// but still inside the gate window → net as-is too (too early to project reliably).
 function ambProjectMonthEnd(net, monthKey) {
   const [y, m] = monthKey.split('-').map(Number);
   const dim = new Date(y, m, 0).getDate();
   const now = new Date();
   if (now.getFullYear() !== y || now.getMonth() + 1 !== m) return Math.round(net);
-  const elapsed = Math.max(1, now.getDate());
+  if (now.getDate() < AMB_PACE_GATE_DAYS) return Math.round(net);   // too early — don't project
+  const elapsed = now.getDate();
   return Math.round(net + (net / elapsed) * Math.max(0, dim - elapsed));
 }
-// Bonus-track status from actual net + projected month-end net.
-function ambTrackStatus(net, proj) {
+// Bonus-track status from actual net + projected month-end net. When pace is gated
+// (first days of the month) we never infer from the projection — only a real threshold
+// already hit shows green; everyone else reads "early · building".
+function ambTrackStatus(net, proj, paceGated) {
   if (net  >= 6000) return { label:'hit 6k ✓',      color:'var(--green)',      push:false };
   if (net  >= 5000) return { label:'hit 5k ✓',      color:'var(--green)',      push:false };
+  if (paceGated)    return { label:'early · building', color:'var(--text-muted)', push:false };
   if (proj >= 6000) return { label:'6k pace',        color:'var(--green)',      push:false };
   if (proj >= 5000) return { label:'5k pace',        color:'var(--green)',      push:false };
   if (proj >= 4000 || net >= 3500) return { label:'close · push', color:'var(--amber)', push:true };
@@ -11444,7 +11461,7 @@ function renderAmbassadorsView() {
     const net  = getMonthlyNet(null, name, monthIdx, year);
     const proj = ambProjectMonthEnd(net, monthKey);
     assigned.push({ name, profile:p, ambassador:p.ambassador.trim(), nationality:p.nationality||'',
-      net, proj, payout: ambPayoutFor(name, p, net, monthKey), track: ambTrackStatus(net, proj) });
+      net, proj, payout: ambPayoutFor(name, p, net, monthKey), track: ambTrackStatus(net, proj, ambPaceGated(monthKey)) });
   });
 
   if (!assigned.length) {
