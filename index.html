@@ -9247,7 +9247,7 @@ function renderFinanceTab() {
     <div class="finance-section" style="margin-top:18px">
       <div class="finance-section-header">
         <span class="finance-section-title">Fleet Bolt Tier Bonus</span>
-        <span style="font-size:11px;color:var(--text-muted)">Bolt pays the fleet for each captain who hits a monthly net tier (750 / 1,000 / 1,250 SAR)</span>
+        <span style="font-size:11px;color:var(--text-muted)">Fleet's share after op cost + Partner B split: ${[...BOLT_BONUS_TIERS].sort((a,b)=>a.floor-b.floor).map(t=>fmt(splitAfterOpCost(t.gross).company)).join(' / ')} SAR at the 4k / 5k / 6k net tiers</span>
       </div>
       <div id="finFleetBonusContent"></div>
     </div>` : ''}
@@ -10181,8 +10181,10 @@ function renderFleetBoltBonus() {
   if (!el) return;
   const monthKey = financeMonth;
   const [t1, t2, t3] = bonusTiers();
-  // Fleet's share of Bolt tier bonus per driver: 750 / 1000 / 1250 SAR (50% of 1500/2000/2500)
-  const fleetBonusFor = net => net >= t3 ? 1250 : net >= t2 ? 1000 : net >= t1 ? 750 : 0;
+  // Fleet's share of the Bolt tier bonus per driver — the canonical opCost-adjusted company
+  // split (bonusFor().company), so this section matches the Analytics tab + the P&L cards.
+  // The old hardcoded 750/1000/1250 was the pre-opCost 50% and OVERSTATED the fleet's take.
+  const fleetBonusFor = net => bonusFor(net).company;
   const tierLabel     = net => net >= t3 ? `${fmt(t3)} tier` : net >= t2 ? `${fmt(t2)} tier` : net >= t1 ? `${fmt(t1)} tier` : 'below tier';
   const tierClass     = net => net >= t3 ? 'tier-txt-3' : net >= t2 ? 'tier-txt-2' : net >= t1 ? 'tier-txt-1' : 'tier-txt-0';
 
