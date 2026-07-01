@@ -10372,6 +10372,8 @@ function buildFinanceModals() {
 // AMBASSADORS TAB
 // ═══════════════════════════════════════════
 let ambMonth = '';
+let ambFilter = '';                 // '' = all ambassadors; otherwise the selected ambassador
+let ambAutoFilledThisSession = false;
 const AMB_MODELS = {
   A: { label:'LEGACY — Saudi driver → fleet (monthly amount to ambassador when driver nets ≥ 5,000; Saudi also gets 500/mo)', base:200, threshold:5000, color:'#22D3EE' },
   B: { label:'Saudi user rented to foreigner (monthly rent to ambassador: 500 / 800 for 2 accounts)', base:500, threshold:0, color:'#A78BFA' },
@@ -10565,7 +10567,7 @@ let sheetAmbassadorSyncCache = null;
 async function fetchSheetAmbassadorSync(force) {
   if (sheetAmbassadorSyncCache && !force) return sheetAmbassadorSyncCache;
   if (!supabaseOn()) return [];
-  const rows = await jbFetch(`${getSbUrl()}/rest/v1/sheet_ambassador_sync?select=id,name,phone,ambassador`, { headers: sbHeaders() });
+  const rows = await jbFetch(`${getSbUrl()}/rest/v1/sheet_ambassador_sync?select=id,name,phone,ambassador,nationality`, { headers: sbHeaders() });
   sheetAmbassadorSyncCache = Array.isArray(rows) ? rows : [];
   return sheetAmbassadorSyncCache;
 }
@@ -11024,7 +11026,76 @@ function handleAmbassadorFile(file) {
   const fi = document.getElementById('ambFileInput'); if (fi) fi.value = '';
 }
 
+// ── Ambassador auto-fill from the onboarding sheet ─────────────────────────────
+// Matches each dashboard driver to their sheet row (phone-first, high-confidence only)
+// and fills ambassador + nationality where they're still EMPTY — never overwrites a
+// value set by hand. Nationality comes from the sheet's explicit "Nationality" column
+// (it can't be derived from the ID — foreigners drive on a Saudi's account).
+async function ambAutoFillFromSheet(force) {
+  const synced = await fetchSheetAmbassadorSync(force);
+  if (!Array.isArray(synced) || !synced.length) return { ambSet:0, natSet:0, matched:0 };
+  const sheetRows = synced.map(s => ({ driverId:s.id, name:s.name, phone:s.phone }));
+  let ambSet = 0, natSet = 0, matched = 0;
+  getAllDriverNames().forEach(name => {
+    const match = matchSheetDriverToDashboard({ name, phone: getKnownDriverPhone(name) }, sheetRows);
+    if (match.confidence !== 'high' || !match.driverId) return;
+    const row = synced.find(s => s.id === match.driverId);
+    if (!row) return;
+    matched++;
+    const p = getCourierProfile(name);
+    let changed = false;
+    if (!p.ambassador && row.ambassador && AMBASSADOR_LIST.includes(row.ambassador)) { p.ambassador = row.ambassador; ambSet++; changed = true; }
+    if (!p.nationality && (row.nationality === 'saudi' || row.nationality === 'foreigner')) { p.nationality = row.nationality; natSet++; changed = true; }
+    if (changed) upsertCourierProfile(name, p);
+  });
+  if (ambSet || natSet) syncToCloud();
+  return { ambSet, natSet, matched };
+}
+async function ambPullFromSheet() {
+  const r = await ambAutoFillFromSheet(true);
+  toast(`Sheet sync · ${r.matched} matched · ${r.ambSet} ambassador${r.ambSet===1?'':'s'} + ${r.natSet} nationalit${r.natSet===1?'y':'ies'} filled` +
+    (r.matched && !r.natSet ? ' · add a "Nationality" column to the sheet for auto nationality' : ''));
+  renderAmbassadorsView();
+}
+// Rough month-end net projection for "on track": banked + pace × days left (pace = net ÷
+// days elapsed). Past/future months → net as-is (nothing left to project).
+function ambProjectMonthEnd(net, monthKey) {
+  const [y, m] = monthKey.split('-').map(Number);
+  const dim = new Date(y, m, 0).getDate();
+  const now = new Date();
+  if (now.getFullYear() !== y || now.getMonth() + 1 !== m) return Math.round(net);
+  const elapsed = Math.max(1, now.getDate());
+  return Math.round(net + (net / elapsed) * Math.max(0, dim - elapsed));
+}
+// Bonus-track status from actual net + projected month-end net.
+function ambTrackStatus(net, proj) {
+  if (net  >= 6000) return { label:'hit 6k ✓',      color:'var(--green)',      push:false };
+  if (net  >= 5000) return { label:'hit 5k ✓',      color:'var(--green)',      push:false };
+  if (proj >= 6000) return { label:'6k pace',        color:'var(--green)',      push:false };
+  if (proj >= 5000) return { label:'5k pace',        color:'var(--green)',      push:false };
+  if (proj >= 4000 || net >= 3500) return { label:'close · push', color:'var(--amber)', push:true };
+  return { label:'building', color:'var(--text-muted)', push:false };
+}
+function ambSetFilter(name) { ambFilter = (ambFilter === name) ? '' : name; renderAmbassadorsView(); }
+function setDriverNationality(name, val) {
+  const p = getCourierProfile(name);
+  p.nationality = val || null;
+  upsertCourierProfile(name, p);
+  if (document.getElementById('ambassadors')?.classList.contains('active')) renderAmbassadorsView();
+  syncToCloud();
+}
+
+// Entry point (called by showTab / refreshAmbViews). Renders immediately, then does a
+// one-time auto-fill from the sheet and re-renders if anything changed.
 function renderAmbassadors() {
+  renderAmbassadorsView();
+  if (!ambAutoFilledThisSession) {
+    ambAutoFilledThisSession = true;
+    ambAutoFillFromSheet().then(r => { if (r && (r.ambSet || r.natSet)) renderAmbassadorsView(); }).catch(()=>{});
+  }
+}
+
+function renderAmbassadorsView() {
   const el = document.getElementById('ambassadorsContent');
   if (!el) return;
   const months = getAvailableMonths();
@@ -11044,73 +11115,98 @@ function renderAmbassadors() {
       <div style="font-size:18px;font-weight:800">🎖 Ambassadors</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <select id="ambMonthSel" onchange="setAmbMonth(this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg)">${monthOpts}</select>
-        <select id="ambAssignPicker" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);min-width:220px">${pickerOpts}</select>
+        <button class="save-btn" onclick="ambPullFromSheet()" title="Match dashboard drivers to the onboarding sheet and fill ambassador + nationality where empty">⇅ Sync from sheet</button>
+        <select id="ambAssignPicker" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);min-width:200px">${pickerOpts}</select>
         <button class="save-btn" onclick="ambAssignFromPicker()">Assign / Edit</button>
         <input type="file" id="ambFileInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleAmbassadorFile(this.files[0])">
-        <button class="save-btn" style="background:#fff;color:var(--text-muted);border:1px solid var(--border)" onclick="document.getElementById('ambFileInput').click()" title="Bulk-assign ambassadors from the Excel template">⬆ Upload Excel</button>
+        <button class="save-btn" style="background:var(--bg-card);color:var(--text-muted);border:1px solid var(--border)" onclick="document.getElementById('ambFileInput').click()" title="Bulk-assign ambassadors from the Excel template">⬆ Excel</button>
       </div>
     </div>`;
 
-  // Gather assigned drivers
+  // Every driver WITH an ambassador (model no longer required — the new system uses nationality).
   const assigned = [];
-  Object.keys(profiles).forEach(key => {
-    const p = profiles[key];
-    if (!p || !p.ambassador || !p.ambassadorModel) return;
-    let name = key;
-    for (const h of getHistory()) { const d=(Array.isArray(h.drivers)?h.drivers:[]).find(x=>driverKey(x.name)===key); if(d){name=d.name.trim();break;} }
-    const net = getMonthlyNet(null, name, monthIdx, year);
-    const payout = ambPayoutFor(name, p, net, monthKey);
-    assigned.push({ name, profile:p, net, payout, ft: effFirstTrip(name, p), ambassador:p.ambassador.trim(), model:p.ambassadorModel });
+  allNames.forEach(name => {
+    const p = getCourierProfile(name);
+    if (!p || !p.ambassador) return;
+    const net  = getMonthlyNet(null, name, monthIdx, year);
+    const proj = ambProjectMonthEnd(net, monthKey);
+    assigned.push({ name, profile:p, ambassador:p.ambassador.trim(), nationality:p.nationality||'',
+      net, proj, payout: ambPayoutFor(name, p, net, monthKey), track: ambTrackStatus(net, proj) });
   });
 
   if (!assigned.length) {
     el.innerHTML = toolbar +
-      `<div class="empty-state"><div class="empty-icon">🎖</div><div class="empty-title">No ambassador referrals yet</div><div class="empty-sub">Pick a driver above → set their Ambassador name + Model (A / B / C) → Save. They'll appear here grouped by ambassador with monthly income, 1st-trip date and the amount owed.</div></div>`;
+      `<div class="empty-state"><div class="empty-icon">🎖</div><div class="empty-title">No ambassadors assigned yet</div><div class="empty-sub">Click <b>⇅ Sync from sheet</b> to auto-fill ambassadors from the onboarding sheet, or pick a driver above → set their Ambassador + Nationality → Save.</div></div>`;
     return;
   }
 
   const groups = {};
   assigned.forEach(a => { const k = a.ambassador.toLowerCase(); (groups[k] = groups[k] || { name:a.ambassador, rows:[] }).rows.push(a); });
-  const groupList = Object.values(groups).sort((a,b)=>a.name.localeCompare(b.name));
-  const totalOwed = assigned.reduce((s,a)=>s+a.payout.owed,0);
-
-  const modelChip = m => `<span style="display:inline-block;min-width:18px;text-align:center;font-weight:900;font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;background:${AMB_MODELS[m].color}22;color:${AMB_MODELS[m].color};border:1px solid ${AMB_MODELS[m].color}66" title="Model ${m} — ${AMB_MODELS[m].label}">${m}</span>`;
+  const owedOf = g => g.rows.reduce((s,r)=>s+r.payout.owed,0);
+  const onPaceOf = g => g.rows.filter(r=>r.net>=5000||r.proj>=5000).length;
+  const groupList = Object.values(groups).sort((a,b)=> owedOf(b)-owedOf(a) || a.name.localeCompare(b.name));
+  const totalOwed   = assigned.reduce((s,a)=>s+a.payout.owed,0);
+  const totalOnPace = assigned.filter(a=>a.net>=5000||a.proj>=5000).length;
+  const missingNat  = assigned.filter(a=>!a.nationality).length;
 
   let html = toolbar + `
-    <div style="display:flex;flex-wrap:wrap;gap:12px;padding:4px 4px 16px">
+    <div style="display:flex;flex-wrap:wrap;gap:12px;padding:4px 4px 14px">
       <div class="kpi-card"><div class="kpi-card-label">Ambassadors</div><div class="kpi-card-value">${groupList.length}</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Drivers referred</div><div class="kpi-card-value">${assigned.length}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Captains referred</div><div class="kpi-card-value">${assigned.length}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">On pace ≥5k</div><div class="kpi-card-value" style="color:var(--green)">${totalOnPace}</div></div>
       <div class="kpi-card"><div class="kpi-card-label">Owed · ${monthLabel(monthKey)}</div><div class="kpi-card-value" style="color:var(--bolt-green)">${fmt(totalOwed)}<span class="kpi-card-unit"> SAR</span></div></div>
     </div>`;
+  if (missingNat) html += `<div style="margin:0 4px 12px;font-size:12px;color:var(--amber)">⚠ ${missingNat} captain${missingNat===1?'':'s'} missing nationality — set it below (bonus can't compute without it).</div>`;
 
-  groupList.forEach(g => {
-    const subOwed = g.rows.reduce((s,r)=>s+r.payout.owed,0);
-    const rows = g.rows.sort((a,b)=>b.payout.owed-a.payout.owed).map(r => {
-      const foreign = lookupForeignName(r.name);
-      const q = r.payout.qualifies;
+  // Ambassador filter cards.
+  const card = (label, count, owed, on, active, filterVal) => `
+    <div onclick="ambSetFilter('${String(filterVal).replace(/'/g,"\\'")}')" style="cursor:pointer;min-width:150px;flex:1 1 150px;background:var(--bg-card);border:1px solid ${active?'var(--bolt-green)':'var(--border)'};border-radius:8px;padding:10px 12px;${active?'box-shadow:inset 0 0 0 1px var(--bolt-green)':''}">
+      <div style="font-weight:700;font-size:13px;margin-bottom:4px">${label}</div>
+      <div style="font-size:11px;color:var(--text-muted)">${count} captain${count===1?'':'s'} · <span style="color:var(--green)">${on} on pace</span></div>
+      <div style="font-size:12px;font-weight:700;color:${owed>0?'var(--bolt-green)':'var(--text-muted)'};margin-top:3px">${owed>0?'owed '+fmt(owed)+' SAR':'—'}</div>
+    </div>`;
+  html += `<div style="display:flex;flex-wrap:wrap;gap:10px;padding:0 4px 14px">`;
+  html += card('All ambassadors', assigned.length, totalOwed, totalOnPace, ambFilter==='', '');
+  groupList.forEach(g => { html += card('🎖 '+g.name, g.rows.length, owedOf(g), onPaceOf(g), ambFilter.toLowerCase()===g.name.toLowerCase(), g.name); });
+  html += `</div>`;
+
+  // Captains table(s) — filtered to the selected ambassador (or all).
+  const shown = ambFilter ? groupList.filter(g=>g.name.toLowerCase()===ambFilter.toLowerCase()) : groupList;
+  const mark5k = Math.round(5000/6000*100);
+  shown.forEach(g => {
+    const rows = g.rows.sort((a,b)=> b.net-a.net).map(r => {
       const safeName = r.name.replace(/'/g,"\\'");
+      const foreign = lookupForeignName(r.name);
+      const natSel = `<select onchange="setDriverNationality('${safeName}',this.value)" style="padding:2px 6px;font-size:11px;border:1px solid ${r.nationality?'var(--border)':'var(--amber)'};border-radius:5px;background:var(--bg);color:${r.nationality?'var(--text)':'var(--amber)'}">
+        <option value="" ${!r.nationality?'selected':''}>— set —</option>
+        <option value="saudi" ${r.nationality==='saudi'?'selected':''}>Saudi</option>
+        <option value="foreigner" ${r.nationality==='foreigner'?'selected':''}>Foreigner</option></select>`;
+      const pct = Math.min(100, Math.round(r.net/6000*100));
+      const bar = `<div style="background:rgba(255,255,255,.05);border-radius:3px;height:14px;position:relative;width:120px">
+        <div style="height:100%;width:${pct}%;background:${r.track.color};opacity:.75;border-radius:3px"></div>
+        <div style="position:absolute;left:${mark5k}%;top:-2px;bottom:-2px;border-left:1px dashed var(--text-muted)" title="5,000"></div></div>`;
       return `<tr style="border-top:1px solid var(--border)">
-        <td style="padding:8px 10px"><span style="font-weight:600">${r.name}</span>${foreign?`<span style="color:var(--text-muted);font-size:11px"> (${foreign})</span>`:''}</td>
-        <td style="padding:8px 10px;text-align:center">${modelChip(r.model)}</td>
-        <td style="padding:8px 10px;text-align:center;font-family:var(--mono);font-size:12px;color:var(--text-muted)">${r.ft||'—'}</td>
-        <td style="padding:8px 10px;text-align:right;font-family:var(--mono)">${fmt(r.net)}</td>
-        <td style="padding:8px 10px;text-align:right;font-weight:700;color:${r.payout.owed>0?'var(--bolt-green)':'var(--text-muted)'}">${fmt(r.payout.owed)}</td>
-        <td style="padding:8px 10px;font-size:11px;color:${q?'var(--bolt-green)':'var(--amber)'}">${r.payout.reason}</td>
-        <td style="padding:8px 10px;text-align:center"><button class="save-btn" style="padding:3px 8px;font-size:11px" onclick="ambEditDriver('${safeName}')">Edit</button></td>
+        <td style="padding:7px 10px"><span style="font-weight:600">${r.name}</span>${foreign?`<span style="color:var(--text-muted);font-size:11px"> (${foreign})</span>`:''}${r.track.push?'<span style="color:var(--amber);font-size:11px;font-weight:700"> · PUSH</span>':''}</td>
+        <td style="padding:7px 10px">${natSel}</td>
+        <td style="padding:7px 10px;text-align:right;font-family:var(--mono)">${fmt(r.net)}</td>
+        <td style="padding:7px 10px">${bar}</td>
+        <td style="padding:7px 10px;font-size:11px;color:${r.track.color};font-weight:600">${r.track.label}</td>
+        <td style="padding:7px 10px;text-align:right;font-weight:700;color:${r.payout.owed>0?'var(--bolt-green)':'var(--text-muted)'}" title="${(r.payout.reason||'').replace(/"/g,'&quot;')}">${fmt(r.payout.owed)}</td>
+        <td style="padding:7px 10px;text-align:center"><button class="save-btn" style="padding:3px 8px;font-size:11px" onclick="ambEditDriver('${safeName}')">Edit</button></td>
       </tr>`;
     }).join('');
     html += `
       <div style="background:var(--bg-card2);border:1px solid var(--border);border-radius:10px;margin:0 4px 14px;overflow:hidden">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(0,255,179,.06)">
           <div style="font-weight:800;font-size:14px">🎖 ${g.name}</div>
-          <div style="font-size:12px;color:var(--text-muted)">${g.rows.length} driver${g.rows.length>1?'s':''} · owed <b style="color:var(--bolt-green)">${fmt(subOwed)} SAR</b></div>
+          <div style="font-size:12px;color:var(--text-muted)">${g.rows.length} captain${g.rows.length>1?'s':''} · owed <b style="color:var(--bolt-green)">${fmt(owedOf(g))} SAR</b></div>
         </div>
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em">
-            <th style="padding:6px 10px">Driver</th><th style="padding:6px 10px;text-align:center">Model</th><th style="padding:6px 10px;text-align:center">1st Trip</th><th style="padding:6px 10px;text-align:right">Net (mo)</th><th style="padding:6px 10px;text-align:right">Owed</th><th style="padding:6px 10px">Status</th><th></th>
+            <th style="padding:6px 10px">Captain</th><th style="padding:6px 10px">Nationality</th><th style="padding:6px 10px;text-align:right">Net (mo)</th><th style="padding:6px 10px">Progress to 6k</th><th style="padding:6px 10px">On track</th><th style="padding:6px 10px;text-align:right">Amb owed</th><th></th>
           </tr></thead>
           <tbody>${rows}</tbody>
-        </table>
+        </table></div>
       </div>`;
   });
 
