@@ -7171,7 +7171,7 @@ function clearAllData() {
 // don't see this exact string, your browser is serving a cached old HTML.
 // Force-refresh with Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac).
 // ═══════════════════════════════════════════
-const BUILD_VERSION = 'v5.0 — 2026-06-20 — Hardened for handoff: CRON_SECRET + health endpoint + auto-config + shared lib + daily backup';
+const BUILD_VERSION = 'v5.1 — 2026-07-02 — Builds 150-153: pipeline funnel + weekly flow + new-driver ramp cohort + chase-list export';
 console.log('%cBolt Dashboard ' + BUILD_VERSION, 'color:#34d186;font-weight:bold');
 
 // ═══════════════════════════════════════════
@@ -12390,7 +12390,9 @@ function renderAnalytics() {
     const lbl = m === 'all' ? 'All time' : monthLabel(m);
     return `<button class="sort-btn${analyticsMonth === m ? ' active' : ''}" onclick="setAnalyticsMonth('${m}')">${lbl}</button>`;
   }).join('');
-  const selectorHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${monthBtnHtml}</div>`;
+  const selectorHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center">${monthBtnHtml}
+    <span style="flex:1"></span>
+    <button class="save-btn" style="padding:5px 14px;font-size:11px" onclick="openChaseList()" title="WhatsApp-ready follow-up list for the team">📋 CHASE LIST</button></div>`;
 
   function filterByMonth(data) {
     if (analyticsMonth === 'all') return data;
@@ -12485,6 +12487,9 @@ function renderAnalytics() {
       nextFloor, gapToTier, pushExtra, unlocks, pushFeasible };
   });
   const current = drivers.filter(d => !d.left);
+  // Build-153: cache the computed roster so the chase-list export reuses EXACTLY the
+  // numbers on screen — no second source of truth to drift.
+  analyticsLastCompute = { current, projectable, isCurrentMonth, remTotal, remWork, periodLabel, monthKey: analyticsMonth, TIERS };
 
   // ── KPIs ──
   const totalDrivers = current.length;
@@ -12730,6 +12735,125 @@ async function renderRampCohort() {
       </tr></thead><tbody>${rows}</tbody></table></div>
     <div style="font-size:10px;color:var(--text-muted);margin-top:6px">Activation dates come from the onboarding sheet's stage log; earnings from Bolt data since that day. "Not on Bolt data" = activated in the sheet but never appears in a Bolt report — the ones to chase first.</div>
   </div>`;
+}
+
+// ── Chase list export (Build-153) ─────────────────────────────────────────────
+// One click → a WhatsApp-ready follow-up list for the team, built from EXACTLY the
+// roster renderAnalytics just computed (analyticsLastCompute) plus per-driver context
+// it doesn't need on screen: last-trip date, last month's net (was this an earner
+// worth chasing?), and a phone number when one is known from Bolt data or the
+// onboarding sheet. Three groups, each already prioritized: easy tier pushes first
+// (money on the table), then below-4k workers (closest to 4k first), then idle
+// (previous earners before never-earned).
+let analyticsLastCompute = null;
+
+async function openChaseList() {
+  const c = analyticsLastCompute;
+  if (!c || !c.projectable) { toast('Pick a specific month first (not "All time")'); return; }
+  const DAY = 86400000, now = Date.now();
+
+  // Context passes over the full history (all months — idle drivers' last trip and
+  // last-month net usually live OUTSIDE the selected month).
+  const lastTrip = {}, phones = {};
+  const [y, m] = c.monthKey.split('-').map(Number);
+  const prevM0 = m === 1 ? 11 : m - 2, prevY = m === 1 ? y - 1 : y;   // 0-based prev month
+  const prevNet = {};
+  getHistory().forEach(h => {
+    const t = periodSortKey(h.period);
+    const pk = periodMonthKey(h.period), pm = pk && pk.match(/(\w{3})\s(\d{4})/);
+    const isPrev = pm && MONTH_MAP[pm[1]] === prevM0 && parseInt(pm[2]) === prevY;
+    (Array.isArray(h.drivers)?h.drivers:[]).forEach(d => {
+      if (!d.name) return;
+      const k = driverKey(d.name);
+      if (sN(d.orders) > 0 && (!lastTrip[k] || t > lastTrip[k])) lastTrip[k] = t;
+      if (d.phone) phones[k] = d.phone;
+      if (isPrev) prevNet[k] = (prevNet[k] || 0) + sN(d.netEarnings);
+    });
+  });
+  // Sheet phones fill the gaps (matched by the same name normalization used everywhere).
+  try {
+    (await fetchSheetAmbassadorSync() || []).forEach(s => {
+      const k = driverKey(s.name);
+      if (k && s.phone && !phones[k]) phones[k] = s.phone;
+    });
+  } catch (_) {}
+
+  const name = d => lookupForeignName(d.name) || d.name;
+  const tel  = d => phones[d.key] ? ' · 📞 ' + phones[d.key] : '';
+  const ago  = k => lastTrip[k] ? Math.max(0, Math.floor((now - lastTrip[k]) / DAY)) : null;
+  const prevLabel = new Date(prevY, prevM0, 1).toLocaleDateString('en-GB', { month: 'short' });
+  const monLabel  = new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'short' });
+
+  const push = c.current.filter(d => d.pushFeasible).sort((a,b) => a.pushExtra - b.pushExtra);
+  const slow = c.current.filter(d => !d.idle && !d.blocked && d.band === 0).sort((a,b) => b.proj - a.proj);
+  const idle = c.current.filter(d => d.idle && !d.blocked);
+  const idleEarners = idle.filter(d => (prevNet[d.key] || 0) > 0 || lastTrip[d.key]).sort((a,b) => (prevNet[b.key]||0) - (prevNet[a.key]||0));
+  const idleNever   = idle.filter(d => !(prevNet[d.key] || 0) && !lastTrip[d.key]);
+  const blockedIdle = c.current.filter(d => d.blocked).length;
+  const onTable = push.reduce((s,d) => s + d.unlocks, 0);
+
+  const L = [];
+  L.push(`🚗 *FLEET CHASE LIST — ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}*`);
+  L.push(`${c.periodLabel}${c.isCurrentMonth ? ' · ' + c.remTotal + ' day' + (c.remTotal!==1?'s':'') + ' left incl. today' : ''}`);
+  if (push.length) {
+    L.push('', `⚡ *EASY WINS — small push, real bonus (${push.length})*`);
+    push.forEach((d,i) => L.push(`${i+1}. ${name(d)} — on ${fmt(d.proj)} pace, needs *+${fmt(d.pushExtra)}/work-day* → ${d.nextFloor/1000}k tier (bonus +${fmt(d.unlocks)})${tel(d)}`));
+  }
+  if (slow.length) {
+    L.push('', `🔻 *BELOW 4K — working, no bonus yet (${slow.length})*`);
+    slow.forEach((d,i) => {
+      const need = (c.remWork > 0 && d.nextFloor) ? ` · needs +${fmt(d.pushExtra === Infinity ? Math.ceil(d.gapToTier / Math.max(1,c.remWork)) : d.pushExtra)}/work-day for 4k` : '';
+      L.push(`${i+1}. ${name(d)} — banked ${fmt(Math.round(d.net))} · ${d.days} work day${d.days!==1?'s':''} · pace →${fmt(d.proj)}/mo${need}${tel(d)}`);
+    });
+  }
+  if (idleEarners.length || idleNever.length) {
+    L.push('', `💤 *IDLE — no trips in ${monLabel} (${idle.length})*`);
+    idleEarners.forEach((d,i) => {
+      const a = ago(d.key);
+      const ctx = [];
+      if (a != null) ctx.push(`last trip ${a === 0 ? 'today' : a + 'd ago'}`);
+      if (prevNet[d.key]) ctx.push(`did ${fmt(Math.round(prevNet[d.key]))} SAR in ${prevLabel}`);
+      L.push(`${i+1}. ${name(d)} — ${ctx.join(' · ') || 'no recent activity'}${tel(d)}`);
+    });
+    if (idleNever.length)
+      L.push(`_Never earned yet (${idleNever.length}):_ ${idleNever.map(d => name(d)).join(', ')}`);
+  }
+  L.push('', '—');
+  if (onTable) L.push(`💰 Company bonus within reach this month: *+${fmt(onTable)} SAR* (the ⚡ list)`);
+  if (blockedIdle) L.push(`⛔ ${blockedIdle} blocked driver${blockedIdle!==1?'s':''} excluded — unblocking is a different worklist (Blocks tab).`);
+
+  showChaseModal(L.join('\n'));
+}
+
+function showChaseModal(text) {
+  let el = document.getElementById('chaseModal');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'chaseModal';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:600;display:flex;align-items:center;justify-content:center;padding:20px';
+    el.innerHTML = `<div style="background:var(--bg-card);border:1px solid rgba(0,255,179,.3);border-radius:6px;max-width:640px;width:100%;max-height:86vh;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(0,255,179,.12)">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border)">
+        <b style="font-size:13px;color:var(--text)">📋 Chase list — ready for WhatsApp</b>
+        <button onclick="document.getElementById('chaseModal').style.display='none'" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:2px;padding:3px 10px;cursor:pointer;font-size:11px">✕ CLOSE</button>
+      </div>
+      <textarea id="chaseText" readonly style="flex:1;min-height:340px;background:#020A14;color:var(--text);border:none;outline:none;padding:14px 16px;font-family:var(--mono);font-size:12px;line-height:1.55;resize:none;white-space:pre-wrap"></textarea>
+      <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end">
+        <button class="save-btn" onclick="copyChaseList()" style="padding:8px 18px">📋 COPY ALL</button>
+      </div>
+    </div>`;
+    el.addEventListener('click', e => { if (e.target === el) el.style.display = 'none'; });
+    document.body.appendChild(el);
+  }
+  el.style.display = 'flex';
+  document.getElementById('chaseText').value = text;
+}
+
+function copyChaseList() {
+  const ta = document.getElementById('chaseText');
+  if (!ta) return;
+  const done = () => toast('Copied — paste into the team WhatsApp');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); document.execCommand('copy'); done(); });
+  else { ta.select(); document.execCommand('copy'); done(); }
 }
 
 // ═══════════════════════════════════════════
