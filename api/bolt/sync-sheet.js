@@ -1,10 +1,14 @@
 "use strict";
 /**
- * GET /api/bolt/sync-sheet  — Build-131
+ * GET /api/bolt/sync-sheet  — Build-131, +AMBASSADORS tab (Build-149)
  * Mirrors the onboarding Google Sheet's DRIVERS tab (Driver ID, Full Name, Phone,
  * Source / Ambassador) into Supabase `sheet_ambassador_sync`, so the dashboard can
  * match sheet rows to its own drivers client-side (matchSheetDriverToDashboard in
  * index.html) without ever calling Google from the browser.
+ *
+ * Also mirrors the sheet's AMBASSADORS tab (the single source of truth for canonical
+ * ambassador names) into the `ambassadors` table, so the dashboard dropdown auto-follows
+ * the sheet — adding an ambassador is done in one place (the sheet), not also index.html.
  *
  * Auth: RS256 JWT signed with a Google service-account private key, exchanged for an
  * OAuth2 access token — no external library, matches this repo's existing
@@ -20,6 +24,11 @@ const crypto = require("crypto");
 
 const SPREADSHEET_ID = "17-GCTaqEiCvCrcCrDvBm9DcCtljPcAJ3RpJTBkAJs0s";
 const SHEET_RANGE     = "DRIVERS!A1:Z2000";
+// Build-148 follow-up: the AMBASSADORS tab is the single source of truth for the canonical
+// ambassador names (A = Canonical Name, B = Aliases, C = Active). Mirroring it into a small
+// `ambassadors` table lets the dashboard's dropdown auto-follow the sheet — add an ambassador
+// in ONE place instead of also editing index.html's AMBASSADOR_LIST.
+const AMBASSADORS_RANGE = "AMBASSADORS!A1:C500";
 
 // ── Google service-account auth (JWT Bearer grant) ─────────────────────────────
 let cachedGoogleToken = null;
@@ -91,6 +100,30 @@ async function upsertSyncedDrivers(rows) {
   if (!resp.ok) throw new Error(`Supabase upsert: ${resp.status} ${await resp.text()}`);
 }
 
+async function upsertAmbassadors(rows) {
+  if (!rows.length) return;
+  const url = `${process.env.SUPABASE_URL}/rest/v1/ambassadors`;
+  const resp = await fetch(url, {
+    method:  "POST",
+    headers: { ...sbHeaders(), Prefer: "resolution=merge-duplicates,return=minimal" },
+    body:    JSON.stringify(rows),
+  });
+  if (!resp.ok) throw new Error(`Supabase ambassadors upsert: ${resp.status} ${await resp.text()}`);
+}
+
+// Keep `ambassadors` an exact mirror of the sheet: after upserting the current names,
+// delete any table rows whose name is no longer in the tab (a genuine removal). Guarded by
+// the caller to only run when at least one name was read, so a transient empty read can never
+// wipe the table. Setting Active=No in the sheet is the softer path (kept as a row, hidden by
+// the dashboard's active filter); deleting the row here is for names removed outright.
+async function deleteAmbassadorsNotIn(names) {
+  if (!names.length) return;
+  const inList = names.map(n => `"${String(n).replace(/"/g, '""')}"`).join(",");
+  const url = `${process.env.SUPABASE_URL}/rest/v1/ambassadors?name=not.in.(${encodeURIComponent(inList)})`;
+  const resp = await fetch(url, { method: "DELETE", headers: { ...sbHeaders(), Prefer: "return=minimal" } });
+  if (!resp.ok) throw new Error(`Supabase ambassadors delete: ${resp.status} ${await resp.text()}`);
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 module.exports = async function handler(req, res) {
   const auth = req.headers["authorization"] || "";
@@ -145,7 +178,59 @@ module.exports = async function handler(req, res) {
       await upsertSyncedDrivers(rows.slice(i, i + 500));
     }
 
-    return res.status(200).json({ ok: true, synced: rows.length, message: `Synced ${rows.length} rows from the onboarding sheet` });
+    // ── AMBASSADORS tab → `ambassadors` table ─────────────────────────────────
+    // Runs in its own try/catch so a problem here (e.g. the tab not created yet) never
+    // fails the drivers sync above, which is the more critical of the two.
+    let ambassadorsSynced = null, ambassadorsError = null;
+    try {
+      const ambValues = await readSheetRange(AMBASSADORS_RANGE);
+      if (ambValues.length < 2) {
+        // Header only (or empty): skip entirely — never upsert and never delete, so an empty
+        // read can't wipe an already-populated table.
+        ambassadorsSynced = 0;
+      } else {
+        const ah = ambValues[0].map(x => String(x || "").trim().toLowerCase());
+        const find = (needle, fallback) => { const i = ah.findIndex(x => x.indexOf(needle) !== -1); return i >= 0 ? i : fallback; };
+        const aName = find("name", 0), aAlias = find("alias", 1), aActive = find("active", 2);
+        // A blank Active cell means active (don't hide an ambassador over an unfilled cell);
+        // only an explicit no/false/0/inactive turns it off.
+        const isActive = v => { const s = String(v == null ? "" : v).trim().toLowerCase(); return !/^(no|false|0|inactive|n)$/.test(s); };
+        const now = new Date().toISOString();
+        const seen = new Set();
+        const ambRows = [];
+        ambValues.slice(1).forEach(r => {
+          const name = String(r[aName] || "").trim();
+          if (!name) return;
+          const key = name.toLowerCase();
+          if (seen.has(key)) return;            // first row wins on a duplicate name
+          seen.add(key);
+          ambRows.push({
+            name,
+            aliases:    String(r[aAlias] || "").trim(),
+            active:     isActive(r[aActive]),
+            updated_at: now,
+          });
+        });
+        if (ambRows.length) {
+          for (let i = 0; i < ambRows.length; i += 500) await upsertAmbassadors(ambRows.slice(i, i + 500));
+          await deleteAmbassadorsNotIn(ambRows.map(a => a.name));
+        }
+        ambassadorsSynced = ambRows.length;
+      }
+    } catch (e) {
+      console.error("[sync-sheet] ambassadors:", e.message);
+      ambassadorsError = e.message;
+    }
+
+    return res.status(200).json({
+      ok: true,
+      synced: rows.length,
+      ambassadorsSynced,
+      ambassadorsError,
+      message: `Synced ${rows.length} driver rows` +
+        (ambassadorsError ? ` · ambassadors sync failed: ${ambassadorsError}`
+                          : ` · ${ambassadorsSynced} ambassador${ambassadorsSynced === 1 ? "" : "s"}`),
+    });
   } catch (e) {
     console.error("[sync-sheet]", e.message);
     return res.status(500).json({ ok: false, error: e.message });

@@ -10659,11 +10659,20 @@ const AMB_MODELS = {
 // referral bonus (see ambPayoutFor). Months before cutover keep computing under the old A/C
 // math so already-reported/paid history doesn't change. Model B is unaffected at all times.
 const NEW_BONUS_CUTOVER = '2026-07';
-// Single source of truth for the ambassador dropdown (Captain Profile modal). Add new
-// ambassadors here. "Nesreen Team" is a group entry (3-4 callers working with Omar Ellord).
-const AMBASSADOR_LIST = ['Omar', 'Khaled Met3eb', 'Mohammad Hefny', 'Abo Youssef',
+// The onboarding sheet's AMBASSADORS tab is now the single source of truth for the
+// canonical ambassador names; api/bolt/sync-sheet.js mirrors it into the Supabase
+// `ambassadors` table and refreshAmbassadorList() (below) loads it into AMBASSADOR_LIST at
+// runtime, so adding an ambassador is done in ONE place (the sheet), not also here.
+// This hardcoded copy is the FALLBACK — used until the table is fetched, and kept if the
+// fetch fails or comes back empty, so the dropdown never breaks. "Nesreen Team" is a group
+// entry (3-4 callers working with Omar).
+const AMBASSADOR_LIST_FALLBACK = ['Omar', 'Khaled Met3eb', 'Mohammad Hefny', 'Abo Youssef',
   'Abo Yakoub', 'Abo Mohamed', 'Amr Rabie', 'Boda', 'Nesreen Team', 'Ahmed Mahrous',
   'Yehia El Yamany', 'Faraj'];
+// Mutable so refreshAmbassadorList() can replace it with the synced names. Every consumer
+// (the modal dropdown, the unassigned-earners worklist, the .includes() guards) reads this
+// binding at call time, so reassigning it updates them all.
+let AMBASSADOR_LIST = AMBASSADOR_LIST_FALLBACK.slice();
 
 // Earliest YYYY-MM-DD this driver shows any trips/earnings in uploaded history.
 function detectFirstTrip(name) {
@@ -10846,6 +10855,50 @@ async function fetchSheetAmbassadorSync(force) {
   const rows = await jbFetch(`${getSbUrl()}/rest/v1/sheet_ambassador_sync?select=id,name,phone,ambassador,nationality`, { headers: sbHeaders() });
   sheetAmbassadorSyncCache = Array.isArray(rows) ? rows : [];
   return sheetAmbassadorSyncCache;
+}
+
+// Reads the canonical ambassador names synced from the sheet's AMBASSADORS tab by
+// api/bolt/sync-sheet.js. Uses a plain fetch (NOT jbFetch) and swallows every error so a
+// missing `ambassadors` table (before the one-time SQL is run) never toasts or trips the
+// sync-status UI — a null return just keeps the hardcoded fallback list. Active-only.
+let ambassadorListCache = null;
+async function fetchAmbassadorList(force) {
+  if (ambassadorListCache && !force) return ambassadorListCache;
+  if (!supabaseOn() || IS_FILE_ORIGIN) return null;
+  try {
+    const res = await fetch(`${getSbUrl()}/rest/v1/ambassadors?select=name,active&order=name.asc`, { headers: sbHeaders() });
+    if (!res.ok) return null;                       // table missing / error → keep the fallback
+    const rows = await res.json();
+    if (!Array.isArray(rows)) return null;
+    const names = rows.filter(r => r.active !== false && r.name && String(r.name).trim())
+                      .map(r => String(r.name).trim());
+    ambassadorListCache = names;
+    return names;
+  } catch (_) { return null; }
+}
+
+// Loads the synced names into AMBASSADOR_LIST (and refreshes the dropdown options if the
+// modal is already built). Only replaces the list when the fetch returns a NON-EMPTY array —
+// an empty or failed fetch leaves the hardcoded fallback in place so the dropdown never breaks.
+async function refreshAmbassadorList(force) {
+  const names = await fetchAmbassadorList(force);
+  if (!Array.isArray(names) || !names.length) return false;
+  AMBASSADOR_LIST = names;
+  rebuildCpAmbassadorOptions();
+  return true;
+}
+
+// Rebuilds the Captain Profile ambassador <select> from the current AMBASSADOR_LIST,
+// preserving the current selection (setCpAmbassadorValue re-adds a flagged legacy option
+// if the saved value isn't on the list). No-op if the modal hasn't been built yet — it
+// renders straight from AMBASSADOR_LIST when buildFinanceModals() runs.
+function rebuildCpAmbassadorOptions() {
+  const sel = document.getElementById('cpAmbassador');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— none —</option>' +
+    AMBASSADOR_LIST.map(a => `<option value="${a}">${a}</option>`).join('');
+  setCpAmbassadorValue(cur);
 }
 
 // Best-effort phone lookup for a driver from the currently loaded period or, failing
@@ -11362,6 +11415,7 @@ async function ambAutoFillFromSheet(force) {
   return { ambSet, natSet, matched };
 }
 async function ambPullFromSheet() {
+  await refreshAmbassadorList(true);   // pick up any new/renamed ambassadors from the sheet first
   const r = await ambAutoFillFromSheet(true);
   toast(`Sheet sync · ${r.matched} matched · ${r.ambSet} ambassador${r.ambSet===1?'':'s'} + ${r.natSet} nationalit${r.natSet===1?'y':'ies'} filled` +
     (r.matched && !r.natSet ? ' · add a "Nationality" column to the sheet for auto nationality' : ''));
@@ -11440,7 +11494,12 @@ function renderAmbassadors() {
   renderAmbassadorsView();
   if (!ambAutoFilledThisSession) {
     ambAutoFilledThisSession = true;
-    ambAutoFillFromSheet().then(r => { if (r && (r.ambSet || r.natSet)) renderAmbassadorsView(); }).catch(()=>{});
+    // Refresh the canonical list from the sheet FIRST — ambAutoFillFromSheet only fills an
+    // ambassador that's on AMBASSADOR_LIST, so a brand-new sheet name must be loaded before it.
+    refreshAmbassadorList()
+      .then(() => ambAutoFillFromSheet())
+      .then(r => { if (r && (r.ambSet || r.natSet)) renderAmbassadorsView(); })
+      .catch(()=>{});
   }
 }
 
@@ -12606,6 +12665,7 @@ document.addEventListener('DOMContentLoaded', () => {
       autoLoadLatest();
       renderHistory();
       updateShareUI(binId);
+      refreshAmbassadorList();   // load the ambassador dropdown from the synced sheet
     });
     // Auto-refresh from cloud so team members see new uploads. 60 min keeps JSONBin's free
     // request count low (Supabase has no such limit). Only foreground tabs poll; a page
@@ -12622,6 +12682,7 @@ document.addEventListener('DOMContentLoaded', () => {
           autoLoadLatest();
           renderHistory();
           updateShareUI(getBinId());
+          refreshAmbassadorList();   // load the ambassador dropdown from the synced sheet
         });
       } else {
         autoLoadLatest();
