@@ -6643,6 +6643,15 @@ function bonusGapFor(net, monthKey) {
   }
   return null;
 }
+// Which Bolt bonus band a net lands in, using the FIXED Bolt floors (not the monthlyTarget
+// display tiers): 0 = below 4k, 1 = 4k, 2 = 5k, 3 = 6k. Used by the reconcile drift alert to
+// tell whether Bolt's finalised net moves a driver across a tier (the only gap that changes a bonus).
+function netTierBand(net) {
+  const floors = [...BOLT_BONUS_TIERS].map(t => t.floor).sort((a,b)=>a-b); // [4000,5000,6000]
+  let band = 0;
+  floors.forEach((f,i) => { if ((net||0) >= f) band = i+1; });
+  return band;
+}
 // Classify a daily SAR rate. Returns band 0-3 + matching colour classes + the tier it lands in.
 function paceTier(perDay) {
   const [t1, t2, t3] = bonusTiers();
@@ -8747,8 +8756,11 @@ function computeDriverPnL(name, monthKey) {
         : 0);
   const bonusCost = -(ambOwed + saudiA);
   const netPnL    = income + acctRent + carRent + salary + fleetCut + other + bonusCost;
+  // hasProfile = the driver has a SAVED cost profile (vs falling back to defaultProfile()).
+  // Without this, "Fleet keeps" is just raw net with no rent/salary/cut applied.
+  const hasProfile = Object.prototype.hasOwnProperty.call(loadCourierProfiles(), driverKey(name));
   return { name, model:p.model, modelCustom:p.modelCustom, income, acctRent, carRent, salary, fleetCut, other,
-           ambOwed, saudiA, bonusCost, ambPayout:ambP, ambassador:p.ambassador||null, ambModel:p.ambassadorModel||null, netPnL, profile:p };
+           ambOwed, saudiA, bonusCost, ambPayout:ambP, ambassador:p.ambassador||null, ambModel:p.ambassadorModel||null, netPnL, hasProfile, profile:p };
 }
 function getDriversInMonth(monthKey) {
   const [y, m] = monthKey.split('-').map(Number);
@@ -9166,6 +9178,7 @@ function openReconcileModal() {
   const months = getAvailableMonths();
   const list = months.length ? months : [defaultMonth()];
   sel.innerHTML = list.map(m => `<option value="${m}">${monthLabel(m)}${isMonthReconciled(m) ? ' ✓' : ''}</option>`).join('');
+  if (financeMonth && list.includes(financeMonth)) sel.value = financeMonth;   // land on the month the reminder named
   reconcilePending = null;
   ov.querySelector('#reconcileResult').innerHTML = renderReconcileStatus();
   ov.style.display = 'flex';
@@ -9205,6 +9218,19 @@ function renderReconcileDiff() {
   const totalBolt = rows.reduce((s, r) => s + r.bolt, 0);
   const totalDash = rows.reduce((s, r) => s + r.dash, 0);
   const sign = g => (g > 0 ? '+' : g < 0 ? '−' : '') + fmt(Math.abs(g));
+  const bandName = ['below 4k','4k','5k','6k'];
+  // Tier-crossing drift: the ONLY drivers whose BONUS changes when we lock Bolt's net are those
+  // whose net moves across a 4k/5k/6k band. Surface them so the money impact is obvious.
+  const crossers = rows.filter(r => netTierBand(r.dash) !== netTierBand(r.bolt))
+    .map(r => ({ ...r,
+      db: netTierBand(r.dash), bb: netTierBand(r.bolt),
+      bonusDelta: bonusFor(r.bolt, monthKey).company - bonusFor(r.dash, monthKey).company }))
+    .sort((a,b) => Math.abs(b.bonusDelta) - Math.abs(a.bonusDelta));
+  const crosserCallout = crossers.length ? `
+    <div style="background:rgba(255,170,0,.12);border:1px solid var(--amber,#f59e0b);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;line-height:1.55">
+      ⚠ <b>${crossers.length}</b> driver${crossers.length===1?'':'s'} ${crossers.length===1?'crosses':'cross'} a bonus tier after locking — their fleet bonus changes:
+      ${crossers.map(c => `<div style="margin-top:4px">• <b>${c.name}</b>: ${bandName[c.db]} → <b>${bandName[c.bb]}</b> (${fmt(c.dash)} → ${fmt(c.bolt)}), fleet bonus <b style="color:${c.bonusDelta>=0?'var(--green)':'var(--red)'}">${c.bonusDelta>=0?'+':'−'}${fmt(Math.abs(c.bonusDelta))} SAR</b></div>`).join('')}
+    </div>` : '';
   const table = material.length ? `<div style="overflow:auto;max-height:300px;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:12px">
     <thead><tr style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;position:sticky;top:0;background:var(--bg-card,#171B21)">
       <th style="padding:5px 8px">Driver</th><th style="padding:5px 8px;text-align:right">Bolt (final)</th><th style="padding:5px 8px;text-align:right">Dashboard</th><th style="padding:5px 8px;text-align:right">Gap</th></tr></thead>
@@ -9218,6 +9244,7 @@ function renderReconcileDiff() {
     <div style="background:rgba(61,219,174,.08);border:1px solid var(--green);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;line-height:1.5">
       <b>${monthLabel(monthKey)}</b> · ${rows.length} drivers · Bolt total <b>${fmt(totalBolt)}</b> vs dashboard <b>${fmt(totalDash)}</b><br><b>${material.length}</b> driver${material.length === 1 ? '' : 's'} differ by ≥1 SAR (below).
     </div>
+    ${crosserCallout}
     ${table}
     <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button class="save-btn" onclick="lockReconcile()">✓ Lock Bolt's numbers as official — ${monthLabel(monthKey)}</button>
@@ -9301,6 +9328,7 @@ function renderFinanceTab() {
       </div>
     </div>
     ${anchorBanner}
+    <div id="financeAlerts"></div>
     <div class="fin-period-bar">
       ${periodControls}
       <div class="view-toggle">
@@ -9334,7 +9362,39 @@ function renderFinanceTab() {
   else if (financeViewMode === 'model')      renderFinanceModelView();
   else if (financeViewMode === 'cycle')      renderFinanceCycleView();
   else if (financeViewMode === 'transfers')  renderFinanceTransferView();
+  renderFinanceAlerts();
   if (!isTransfers) { renderFinBonus(); renderFleetBoltBonus(); }
+}
+// Finance-tab nudges: (1) a past month with data not yet reconciled with Bolt, (2) earners in
+// the viewed month with no saved cost profile (their "Fleet keeps" is raw net, unadjusted).
+function renderFinanceAlerts() {
+  const box = document.getElementById('financeAlerts');
+  if (!box) return;
+  const cards = [];
+  const now = new Date();
+  const curKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const unrec = getAvailableMonths().filter(m => m < curKey && getDriversInMonth(m).length && !isMonthReconciled(m));
+  if (unrec.length) {
+    const m = unrec[0];                                   // getAvailableMonths is newest-first
+    const more = unrec.length > 1 ? ` (+${unrec.length-1} older)` : '';
+    cards.push(`<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:rgba(255,193,7,.12);border:1px solid var(--amber,#f59e0b);border-radius:8px;padding:10px 14px">
+      <span style="font-size:13px">📋 <b>${monthLabel(m)}</b> isn't reconciled with Bolt yet${more} — lock the finalised numbers so bonuses are exact.</span>
+      <button class="finance-btn finance-btn-primary" style="padding:4px 12px;font-size:12px" onclick="financeMonth='${m}';openReconcileModal()">Reconcile ${monthLabel(m)}</button>
+    </div>`);
+  }
+  const profiles = loadCourierProfiles();
+  const noProfile = getDriversInMonth(financeMonth)
+    .filter(n => computeDriverNetForPeriod(n, financeMonth) > 0 && !Object.prototype.hasOwnProperty.call(profiles, driverKey(n)))
+    .map(n => ({ n, net: computeDriverNetForPeriod(n, financeMonth) }))
+    .sort((a,b) => b.net - a.net);
+  if (noProfile.length) {
+    const names = noProfile.slice(0,6).map(x => `${x.n} (${fmt(x.net)})`).join(', ');
+    const extra = noProfile.length > 6 ? `, +${noProfile.length-6} more` : '';
+    cards.push(`<div style="background:rgba(56,190,240,.10);border:1px solid var(--blue,#38a5e0);border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.5">
+      🧾 <b>${noProfile.length}</b> earner${noProfile.length===1?'':'s'} in ${monthLabel(financeMonth)} ${noProfile.length===1?'has':'have'} <b>no cost profile</b> — their "Fleet keeps" is just raw net (no rent/salary/cut applied): <span style="color:var(--text-muted)">${names}${extra}</span>
+    </div>`);
+  }
+  box.innerHTML = cards.length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">${cards.join('')}</div>` : '';
 }
 
 function renderFinanceCourierView() {
