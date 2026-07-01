@@ -111,19 +111,24 @@ module.exports = async function handler(req, res) {
     }
     const header = values[0];
     const idx = h => header.indexOf(h);
-    const cId = idx("Driver ID"), cName = idx("Full Name"), cPhone = idx("Phone"), cAmb = idx("Source / Ambassador");
+    const cId = idx("Driver ID"), cName = idx("Full Name"), cPhone = idx("Phone"),
+          cAmb = idx("Source / Ambassador"), cIq = idx("Iqama / National ID");
     if (cId < 0 || cName < 0) {
       return res.status(500).json({ ok: false, error: `Expected columns "Driver ID" and "Full Name" not found in header row: ${header.join(", ")}` });
     }
+    // Nationality from the ID's first digit — Saudi national ID starts 1, expat Iqama starts 2.
+    // Only the label is stored, never the raw ID (this table is anon-readable → no PII).
+    const natFromId = v => { const d = String(v || "").replace(/\D/g, ""); return d[0] === "1" ? "saudi" : d[0] === "2" ? "foreigner" : ""; };
 
     const rows = values.slice(1)
       .filter(r => r[cId] && r[cName])
       .map(r => ({
-        id:         String(r[cId]).trim(),
-        name:       String(r[cName]).trim(),
-        phone:      cPhone  >= 0 ? String(r[cPhone]  || "").trim() : "",
-        ambassador: cAmb    >= 0 ? String(r[cAmb]    || "").trim() : "",
-        synced_at:  new Date().toISOString(),
+        id:          String(r[cId]).trim(),
+        name:        String(r[cName]).trim(),
+        phone:       cPhone >= 0 ? String(r[cPhone] || "").trim() : "",
+        ambassador:  cAmb   >= 0 ? String(r[cAmb]   || "").trim() : "",
+        nationality: cIq    >= 0 ? natFromId(r[cIq]) : "",
+        synced_at:   new Date().toISOString(),
       }));
 
     // Batch in chunks of 500 to keep each Supabase request small.
