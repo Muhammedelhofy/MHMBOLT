@@ -10412,13 +10412,27 @@ function effFirstTrip(name, profile) {
   return (profile && profile.ambFirstTrip) || detectFirstTrip(name) || null;
 }
 
-// Earliest month (YYYY-MM) across all uploaded data where the driver's monthly net
-// reaches `threshold`. Used for Model A's one-time bonus. Returns null if never hit.
+// Earliest month (YYYY-MM) across all data where the driver's monthly net reaches
+// `threshold`. Drives the one-time referral bonus (foreigner ≥5,000 / Saudi ≥5,000/6,000)
+// and legacy Model C. Builds its OWN month list from the driver's history via
+// entryMonthYear so it works on cloud-synced rows too — Build-133 fix: it used
+// getAvailableMonths(), which is gated on periodInfo that cloud-pulled/auto-synced
+// entries lack, so on cloud-only data it returned null and the ambassador bonus
+// silently computed to 0 ("Net 6,000 < 5,000 (not yet)"). entryMonthYear falls back to
+// the period string, matching how sumDriverNetForMonth already attributes a month.
 function firstAchieveMonth(name, threshold) {
+  const nk = driverKey(name);
+  const months = new Set();
+  for (const h of getHistory()) {
+    const drivers = Array.isArray(h.drivers) ? h.drivers : [];
+    if (!drivers.some(x => driverKey(x.name) === nk)) continue;   // driver appears this entry
+    const my = entryMonthYear(h);                                  // periodInfo-independent
+    if (my) months.add(my.year + '-' + String(my.month + 1).padStart(2, '0'));
+  }
   let earliest = null;
-  for (const mk of getAvailableMonths()) {            // getAvailableMonths is newest→oldest
+  for (const mk of [...months].sort().reverse()) {                 // newest→oldest; last write = oldest
     const [y, m] = mk.split('-').map(Number);
-    if (getMonthlyNet(null, name, m - 1, y) >= threshold) earliest = mk; // last write = oldest
+    if (getMonthlyNet(null, name, m - 1, y) >= threshold) earliest = mk;
   }
   return earliest;
 }
