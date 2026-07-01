@@ -11045,7 +11045,7 @@ async function ambAutoFillFromSheet(force) {
     const p = getCourierProfile(name);
     let changed = false;
     if (!p.ambassador && row.ambassador && AMBASSADOR_LIST.includes(row.ambassador)) { p.ambassador = row.ambassador; ambSet++; changed = true; }
-    if (!p.nationality && (row.nationality === 'saudi' || row.nationality === 'foreigner')) { p.nationality = row.nationality; natSet++; changed = true; }
+    if (!p.nationality && (row.nationality === 'saudi' || row.nationality === 'foreigner')) { p.nationality = row.nationality; p.nationalityConfirmed = true; natSet++; changed = true; }
     if (changed) upsertCourierProfile(name, p);
   });
   if (ambSet || natSet) syncToCloud();
@@ -11080,9 +11080,31 @@ function ambSetFilter(name) { ambFilter = (ambFilter === name) ? '' : name; rend
 function setDriverNationality(name, val) {
   const p = getCourierProfile(name);
   p.nationality = val || null;
+  p.nationalityConfirmed = !!val;          // picking a value IS the confirmation
   upsertCourierProfile(name, p);
   if (document.getElementById('ambassadors')?.classList.contains('active')) renderAmbassadorsView();
   syncToCloud();
+}
+// Confirm an already-set (e.g. assumed) nationality without changing it.
+function ambConfirmNationality(name) {
+  const p = getCourierProfile(name);
+  if (!p.nationality) return;
+  p.nationalityConfirmed = true;
+  upsertCourierProfile(name, p);
+  renderAmbassadorsView();
+  syncToCloud();
+}
+// Default every still-unset referred driver to Foreigner (the common case) but leave them
+// UNCONFIRMED — bonuses compute provisionally while the one-time confirmation happens.
+function ambAssumeForeigner() {
+  let n = 0;
+  getAllDriverNames().forEach(name => {
+    const p = getCourierProfile(name);
+    if (p.ambassador && !p.nationality) { p.nationality = 'foreigner'; p.nationalityConfirmed = false; upsertCourierProfile(name, p); n++; }
+  });
+  if (n) syncToCloud();
+  toast(n ? `Set ${n} unset driver${n===1?'':'s'} to Foreigner (assumed) — now confirm each in the checklist.` : 'No unset drivers to default.');
+  renderAmbassadorsView();
 }
 
 // Entry point (called by showTab / refreshAmbViews). Renders immediately, then does a
@@ -11145,9 +11167,9 @@ function renderAmbassadorsView() {
   const owedOf = g => g.rows.reduce((s,r)=>s+r.payout.owed,0);
   const onPaceOf = g => g.rows.filter(r=>r.net>=5000||r.proj>=5000).length;
   const groupList = Object.values(groups).sort((a,b)=> owedOf(b)-owedOf(a) || a.name.localeCompare(b.name));
-  const totalOwed   = assigned.reduce((s,a)=>s+a.payout.owed,0);
-  const totalOnPace = assigned.filter(a=>a.net>=5000||a.proj>=5000).length;
-  const missingNat  = assigned.filter(a=>!a.nationality).length;
+  const totalOwed    = assigned.reduce((s,a)=>s+a.payout.owed,0);
+  const totalOnPace  = assigned.filter(a=>a.net>=5000||a.proj>=5000).length;
+  const needsConfirm = assigned.filter(a => !a.nationality || !a.profile.nationalityConfirmed);
 
   let html = toolbar + `
     <div style="display:flex;flex-wrap:wrap;gap:12px;padding:4px 4px 14px">
@@ -11156,7 +11178,29 @@ function renderAmbassadorsView() {
       <div class="kpi-card"><div class="kpi-card-label">On pace ≥5k</div><div class="kpi-card-value" style="color:var(--green)">${totalOnPace}</div></div>
       <div class="kpi-card"><div class="kpi-card-label">Owed · ${monthLabel(monthKey)}</div><div class="kpi-card-value" style="color:var(--bolt-green)">${fmt(totalOwed)}<span class="kpi-card-unit"> SAR</span></div></div>
     </div>`;
-  if (missingNat) html += `<div style="margin:0 4px 12px;font-size:12px;color:var(--amber)">⚠ ${missingNat} captain${missingNat===1?'':'s'} missing nationality — set it below (bonus can't compute without it).</div>`;
+  if (needsConfirm.length) {
+    const wl = needsConfirm.map(a => {
+      const safe = a.name.replace(/'/g,"\\'");
+      const assumed = a.nationality && !a.profile.nationalityConfirmed;
+      const sel = `<select onchange="setDriverNationality('${safe}',this.value)" style="padding:2px 6px;font-size:11px;border:1px solid ${a.nationality?'var(--border)':'var(--amber)'};border-radius:5px;background:var(--bg);color:var(--text)">
+        <option value="" ${!a.nationality?'selected':''}>— set —</option>
+        <option value="saudi" ${a.nationality==='saudi'?'selected':''}>Saudi</option>
+        <option value="foreigner" ${a.nationality==='foreigner'?'selected':''}>Foreigner</option></select>`;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap">
+        <span style="min-width:170px;font-size:12px;font-weight:600">${a.name}${assumed?' <span style="color:var(--amber);font-size:10px;font-weight:400">assumed</span>':''}</span>
+        ${sel}
+        ${a.nationality?`<button class="save-btn" style="padding:2px 9px;font-size:11px" onclick="ambConfirmNationality('${safe}')">✓ Confirm</button>`:''}
+      </div>`;
+    }).join('');
+    html += `<div style="margin:0 4px 14px;background:rgba(255,170,0,.08);border:1px solid var(--amber);border-radius:8px;padding:10px 14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div style="font-weight:700;color:var(--amber)">⚠ Confirm nationality — ${needsConfirm.length} driver${needsConfirm.length===1?'':'s'}</div>
+        <button class="save-btn" style="padding:3px 10px;font-size:11px" onclick="ambAssumeForeigner()">Assume unset = Foreigner</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin:4px 0 8px">One-time check per driver — set Saudi/Foreigner, or ✓ Confirm an assumed one. Bonuses aren't final until confirmed.</div>
+      ${wl}
+    </div>`;
+  }
 
   // Ambassador filter cards.
   const card = (label, count, owed, on, active, filterVal) => `
@@ -11187,7 +11231,7 @@ function renderAmbassadorsView() {
         <div style="position:absolute;left:${mark5k}%;top:-2px;bottom:-2px;border-left:1px dashed var(--text-muted)" title="5,000"></div></div>`;
       return `<tr style="border-top:1px solid var(--border)">
         <td style="padding:7px 10px"><span style="font-weight:600">${r.name}</span>${foreign?`<span style="color:var(--text-muted);font-size:11px"> (${foreign})</span>`:''}${r.track.push?'<span style="color:var(--amber);font-size:11px;font-weight:700"> · PUSH</span>':''}</td>
-        <td style="padding:7px 10px">${natSel}</td>
+        <td style="padding:7px 10px">${natSel}${(r.nationality && !r.profile.nationalityConfirmed)?'<span style="color:var(--amber);font-size:10px"> assumed</span>':''}</td>
         <td style="padding:7px 10px;text-align:right;font-family:var(--mono)">${fmt(r.net)}</td>
         <td style="padding:7px 10px">${bar}</td>
         <td style="padding:7px 10px;font-size:11px;color:${r.track.color};font-weight:600">${r.track.label}</td>
