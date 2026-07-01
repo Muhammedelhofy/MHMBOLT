@@ -112,13 +112,22 @@ module.exports = async function handler(req, res) {
     const header = values[0];
     const idx = h => header.indexOf(h);
     const cId = idx("Driver ID"), cName = idx("Full Name"), cPhone = idx("Phone"),
-          cAmb = idx("Source / Ambassador"), cIq = idx("Iqama / National ID");
+          cAmb = idx("Source / Ambassador"), cNat = idx("Nationality");
     if (cId < 0 || cName < 0) {
       return res.status(500).json({ ok: false, error: `Expected columns "Driver ID" and "Full Name" not found in header row: ${header.join(", ")}` });
     }
-    // Nationality from the ID's first digit — Saudi national ID starts 1, expat Iqama starts 2.
-    // Only the label is stored, never the raw ID (this table is anon-readable → no PII).
-    const natFromId = v => { const d = String(v || "").replace(/\D/g, ""); return d[0] === "1" ? "saudi" : d[0] === "2" ? "foreigner" : ""; };
+    // Nationality is an EXPLICIT sheet column ("Nationality" = Saudi | Foreigner). It CANNOT be
+    // derived from the ID: foreigners drive on a Saudi's account, so the recorded ID is the
+    // Saudi account-holder's and every ID looks Saudi. Normalize EN/AR values to saudi|foreigner.
+    const normNat = v => {
+      const s = String(v || "").trim().toLowerCase();
+      if (!s) return "";
+      if (s.indexOf("saud") !== -1 || s.indexOf("سعود") !== -1) return "saudi";
+      if (s.indexOf("foreign") !== -1 || s.indexOf("expat") !== -1 || s.indexOf("resident") !== -1 ||
+          s.indexOf("non") !== -1 || s.indexOf("مقيم") !== -1 || s.indexOf("اجنب") !== -1 ||
+          s.indexOf("أجنب") !== -1 || s.indexOf("وافد") !== -1) return "foreigner";
+      return "";
+    };
 
     const rows = values.slice(1)
       .filter(r => r[cId] && r[cName])
@@ -127,7 +136,7 @@ module.exports = async function handler(req, res) {
         name:        String(r[cName]).trim(),
         phone:       cPhone >= 0 ? String(r[cPhone] || "").trim() : "",
         ambassador:  cAmb   >= 0 ? String(r[cAmb]   || "").trim() : "",
-        nationality: cIq    >= 0 ? natFromId(r[cIq]) : "",
+        nationality: cNat   >= 0 ? normNat(r[cNat]) : "",
         synced_at:   new Date().toISOString(),
       }));
 
