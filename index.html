@@ -10485,23 +10485,30 @@ function ambPayoutFor(name, profile, monthlyNet, monthKey) {
   if (!nationality) return { owed:0, qualifies:false, reason:'Nationality not set' };
 
   if (nationality === 'foreigner') {
-    // 500 one-time, paid the first month the foreigner nets ≥ 5,000.
+    // 500 one-time when the foreigner first nets ≥ 5,000. A driver who first hit 5,000
+    // BEFORE the cutover still earns it (his call, 2026-07-01) — paid in the cutover month
+    // (the first month the new referral scheme applies; pre-cutover months stay frozen).
     const fm = firstAchieveMonth(name, 5000);
-    if (!fm)             return { owed:0, qualifies:false, reason:`Net ${fmt(monthlyNet)} < 5,000 (not yet)` };
-    if (fm === monthKey) return { owed:500, qualifies:true, reason:'One-time 500 · first hit 5,000 (foreigner referral)' };
-    if (fm <  monthKey)  return { owed:0, qualifies:false, reason:`Already paid · ${monthLabel(fm)}` };
+    if (!fm) return { owed:0, qualifies:false, reason:`Net ${fmt(monthlyNet)} < 5,000 (not yet)` };
+    const payMonth = fm < NEW_BONUS_CUTOVER ? NEW_BONUS_CUTOVER : fm;
+    const pre = fm < NEW_BONUS_CUTOVER ? ` (qualified ${monthLabel(fm)}, pre-cutover)` : '';
+    if (payMonth === monthKey) return { owed:500, qualifies:true, reason:`One-time 500 · first hit 5,000${pre} (foreigner referral)` };
+    if (payMonth <  monthKey)  return { owed:0, qualifies:false, reason:`Already paid · ${monthLabel(payMonth)}` };
     return { owed:0, qualifies:false, reason:`Not yet · first hits ${monthLabel(fm)}` };
   }
 
   if (nationality === 'saudi') {
     // 150 or 200 one-time, locked at the driver's first qualifying month (whichever tier —
     // 5,000 or 6,000 — that same month already reached). No top-up if 6,000 comes later.
+    // A pre-cutover first-qualifier still earns it — paid in the cutover month.
     const fm5 = firstAchieveMonth(name, 5000);
     if (!fm5) return { owed:0, qualifies:false, reason:`Net ${fmt(monthlyNet)} < 5,000 (not yet)` };
     const fm6 = firstAchieveMonth(name, 6000);
     const amt = (fm6 === fm5) ? 200 : 150; // fm6 can never be earlier than fm5
-    if (fm5 === monthKey) return { owed:amt, qualifies:true, reason:`One-time ${amt} · first hit ${amt===200?'6,000':'5,000'} (Saudi referral)` };
-    if (fm5 <  monthKey)  return { owed:0, qualifies:false, reason:`Already paid · ${monthLabel(fm5)}` };
+    const payMonth = fm5 < NEW_BONUS_CUTOVER ? NEW_BONUS_CUTOVER : fm5;
+    const pre = fm5 < NEW_BONUS_CUTOVER ? ` (qualified ${monthLabel(fm5)}, pre-cutover)` : '';
+    if (payMonth === monthKey) return { owed:amt, qualifies:true, reason:`One-time ${amt} · first hit ${amt===200?'6,000':'5,000'}${pre} (Saudi referral)` };
+    if (payMonth <  monthKey)  return { owed:0, qualifies:false, reason:`Already paid · ${monthLabel(payMonth)}` };
     return { owed:0, qualifies:false, reason:`Not yet · first hits ${monthLabel(fm5)}` };
   }
 
