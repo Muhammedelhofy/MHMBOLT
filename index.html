@@ -1753,9 +1753,16 @@ body::before {
   </div>
   <div class="settings-section">
     <div class="st-title">Bolt Bonus Split</div>
-    <div class="st-desc">Bolt pays the company 1,500/2,000/2,500 SAR per driver at the 4k/5k/6k net tiers. After deducting operation cost, the remainder splits 50% Company / 50% Partner B. Update operation cost when it changes month to month.</div>
-    <div class="st-row"><label>Operation cost (deducted before split)</label><input type="number" id="opCost" placeholder="850"> <span class="unit">SAR / driver</span></div>
+    <div class="st-desc">Bolt pays the company 1,500/2,000/2,500 SAR per driver at the 4k/5k/6k net tiers. After deducting operation cost, the remainder splits 50% Company / 50% Partner B.</div>
+    <div class="st-row"><label>Base operation cost</label><input type="number" id="opCost" placeholder="850"> <span class="unit">SAR / driver</span></div>
     <button class="save-btn" onclick="saveSettings()">Save</button>
+    <div class="st-desc" style="margin-top:16px">Op cost changed a given month? Add a <b>dated change</b> — it applies from that month <b>forward only</b>, so already-closed months keep their own op cost (nothing gets silently rewritten). The base above covers every month before your first dated change.</div>
+    <div id="opCostScheduleBox" style="margin:8px 0"></div>
+    <div class="st-row" style="gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="month" id="opCostChangeMonth" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px">
+      <input type="number" id="opCostChangeVal" placeholder="e.g. 500" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px"> <span class="unit">SAR</span>
+      <button class="save-btn" style="margin:0" onclick="addOpCostChange()">+ Add change</button>
+    </div>
   </div>
   <div class="settings-section">
     <div class="st-title">Performance Flags</div>
@@ -1957,6 +1964,51 @@ function initSettingsUI() {
   Object.keys(s).forEach(k => { const el = document.getElementById(k); if (el) el.value = s[k]; });
   if (typeof renderKeyStatus === 'function') renderKeyStatus();
   if (typeof renderSbStatus === 'function') renderSbStatus();
+  renderOpCostSchedule();
+}
+// ── Effective-dated op-cost schedule editor (Settings → Bolt Bonus Split) ──
+function renderOpCostSchedule() {
+  const box = document.getElementById('opCostScheduleBox');
+  if (!box) return;
+  const sched = loadOpCostSchedule();
+  const keys = Object.keys(sched).filter(k => /^\d{4}-\d{2}$/.test(k)).sort();
+  if (!keys.length) { box.innerHTML = `<div style="font-size:12px;color:var(--text-muted)">No dated changes — every month uses the base op cost above.</div>`; return; }
+  box.innerHTML = keys.map(k => {
+    const v = Number(sched[k]);
+    return `<div style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 0">
+      <span style="font-family:var(--mono);min-width:90px">${monthLabel(k)}</span>
+      <span style="color:var(--text-muted)">→</span>
+      <b style="font-family:var(--mono)">${isNaN(v)?'?':fmt(v)} SAR</b>
+      <span style="font-size:11px;color:var(--text-muted)">from this month forward</span>
+      <button onclick="removeOpCostChange('${k}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;text-decoration:underline">remove</button>
+    </div>`;
+  }).join('');
+}
+function addOpCostChange() {
+  const m = document.getElementById('opCostChangeMonth')?.value;
+  const vEl = document.getElementById('opCostChangeVal');
+  const v = parseFloat(vEl?.value);
+  if (!m || !/^\d{4}-\d{2}$/.test(m)) { toast('Pick a month for the change'); return; }
+  if (isNaN(v) || v < 0) { toast('Enter a valid op cost (SAR)'); return; }
+  const sched = loadOpCostSchedule();
+  sched[m] = v;
+  saveOpCostSchedule(sched);
+  if (vEl) vEl.value = '';
+  renderOpCostSchedule();
+  syncToCloud();
+  toast(`Op cost ${fmt(v)} SAR from ${monthLabel(m)} forward ✓`);
+  if (document.getElementById('finance')?.classList.contains('active')) renderFinanceTab();
+  if (document.getElementById('analytics')?.classList.contains('active')) renderAnalytics();
+}
+function removeOpCostChange(monthKey) {
+  const sched = loadOpCostSchedule();
+  delete sched[monthKey];
+  saveOpCostSchedule(sched);
+  renderOpCostSchedule();
+  syncToCloud();
+  toast(`Removed op-cost change for ${monthLabel(monthKey)}`);
+  if (document.getElementById('finance')?.classList.contains('active')) renderFinanceTab();
+  if (document.getElementById('analytics')?.classList.contains('active')) renderAnalytics();
 }
 
 // ── Auto-configure Supabase from server on first load ──────────────────────
@@ -6551,24 +6603,43 @@ const BOLT_BONUS_TIERS = [
   { floor: 5000, gross: 2000 },
   { floor: 4000, gross: 1500 },
 ];
-// Bolt pays `gross` to the company per driver at the tier floor. Operation cost (adjustable
-// in Settings, defaults 850) is deducted first, then the remainder splits 50/50 between the
-// company and Partner B. See bolt-dashboard-onboarding-link-plan memory for the source rule.
-function splitAfterOpCost(gross) {
-  const opCost = loadSettings().opCost ?? 850;
+// Op cost is EFFECTIVE-DATED, like driver profiles: the Settings value is the base (applies
+// from the fleet's start), and each dated change in khair_opcost_schedule takes effect from
+// ITS month FORWARD. So a month resolves to the most recent scheduled change at or before it,
+// else the base Settings value. A caller with no monthKey (or a non-month string) gets the
+// base — preserving old behaviour. This means changing op cost for August NO LONGER silently
+// rewrites June/July: add a dated change instead of editing the base.
+const OPCOST_SCHEDULE_KEY = 'khair_opcost_schedule';
+function loadOpCostSchedule() { try { return JSON.parse(localStorage.getItem(OPCOST_SCHEDULE_KEY) || '{}'); } catch (e) { return {}; } }
+function saveOpCostSchedule(o) { localStorage.setItem(OPCOST_SCHEDULE_KEY, JSON.stringify(o)); }
+function opCostForMonth(monthKey) {
+  const base = loadSettings().opCost ?? 850;
+  if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return base;
+  const sched = loadOpCostSchedule();
+  const keys = Object.keys(sched).filter(k => /^\d{4}-\d{2}$/.test(k) && k <= monthKey).sort();
+  if (!keys.length) return base;
+  const v = Number(sched[keys[keys.length - 1]]);
+  return isNaN(v) ? base : v;
+}
+// Bolt pays `gross` to the company per driver at the tier floor. Operation cost (base in
+// Settings, plus dated changes — resolved per month via opCostForMonth) is deducted first,
+// then the remainder splits 50/50 between the company and Partner B. Pass the month so each
+// month uses ITS op cost; omit it (legacy) to use the base. See bolt-dashboard-onboarding-link-plan.
+function splitAfterOpCost(gross, monthKey) {
+  const opCost = opCostForMonth(monthKey);
   const afterCost = Math.max(0, gross - opCost);
   return { company: afterCost / 2, partnerB: afterCost / 2 };
 }
-function bonusFor(net) {
+function bonusFor(net, monthKey) {
   for (const t of BOLT_BONUS_TIERS) {
-    if ((net||0) >= t.floor) { const s = splitAfterOpCost(t.gross); return { ...t, ...s, tierFloor: t.floor }; }
+    if ((net||0) >= t.floor) { const s = splitAfterOpCost(t.gross, monthKey); return { ...t, ...s, tierFloor: t.floor }; }
   }
   return { gross: 0, company: 0, partnerB: 0, tierFloor: null };
 }
-function bonusGapFor(net) {
+function bonusGapFor(net, monthKey) {
   for (let i = BOLT_BONUS_TIERS.length - 1; i >= 0; i--) {
     const t = BOLT_BONUS_TIERS[i];
-    if ((net||0) < t.floor) return { sarToNext: t.floor - (net||0), unlocks: splitAfterOpCost(t.gross).company, floor: t.floor };
+    if ((net||0) < t.floor) return { sarToNext: t.floor - (net||0), unlocks: splitAfterOpCost(t.gross, monthKey).company, floor: t.floor };
   }
   return null;
 }
@@ -7837,6 +7908,7 @@ async function syncToCloud() {
     khair_cycle_receipts:   JSON.parse(localStorage.getItem(CYCLE_RECEIPTS_KEY)    || '{}'),
     khair_transfer_log:     JSON.parse(localStorage.getItem(TRANSFER_LOG_KEY)      || '{}'),
     khair_reconcile:        loadReconcile(),
+    khair_opcost_schedule:  loadOpCostSchedule(),
     khair_cycle_anchor:     localStorage.getItem(CYCLE_ANCHOR_KEY) || '',
     khair_block_log:        getBlockLog(),
     version: 2
@@ -7926,6 +7998,9 @@ async function fetchFromCloud() {
   }
   if ('khair_reconcile' in r) {
     saveReconcile({ ...r.khair_reconcile, ...loadReconcile() });   // per-month; local wins on conflict
+  }
+  if ('khair_opcost_schedule' in r) {
+    saveOpCostSchedule({ ...r.khair_opcost_schedule, ...loadOpCostSchedule() });   // per-month; local wins on conflict
   }
   // Cycle anchor: cloud always wins — it is shared fleet config
   if (r.khair_cycle_anchor) {
@@ -9247,7 +9322,7 @@ function renderFinanceTab() {
     <div class="finance-section" style="margin-top:18px">
       <div class="finance-section-header">
         <span class="finance-section-title">Fleet Bolt Tier Bonus</span>
-        <span style="font-size:11px;color:var(--text-muted)">Fleet's share after op cost + Partner B split: ${[...BOLT_BONUS_TIERS].sort((a,b)=>a.floor-b.floor).map(t=>fmt(splitAfterOpCost(t.gross).company)).join(' / ')} SAR at the 4k / 5k / 6k net tiers</span>
+        <span style="font-size:11px;color:var(--text-muted)">Fleet's share after op cost + Partner B split: ${[...BOLT_BONUS_TIERS].sort((a,b)=>a.floor-b.floor).map(t=>fmt(splitAfterOpCost(t.gross, financeMonth).company)).join(' / ')} SAR at the 4k / 5k / 6k net tiers</span>
       </div>
       <div id="finFleetBonusContent"></div>
     </div>` : ''}
@@ -10184,7 +10259,7 @@ function renderFleetBoltBonus() {
   // Fleet's share of the Bolt tier bonus per driver — the canonical opCost-adjusted company
   // split (bonusFor().company), so this section matches the Analytics tab + the P&L cards.
   // The old hardcoded 750/1000/1250 was the pre-opCost 50% and OVERSTATED the fleet's take.
-  const fleetBonusFor = net => bonusFor(net).company;
+  const fleetBonusFor = net => bonusFor(net, monthKey).company;
   const tierLabel     = net => net >= t3 ? `${fmt(t3)} tier` : net >= t2 ? `${fmt(t2)} tier` : net >= t1 ? `${fmt(t1)} tier` : 'below tier';
   const tierClass     = net => net >= t3 ? 'tier-txt-3' : net >= t2 ? 'tier-txt-2' : net >= t1 ? 'tier-txt-1' : 'tier-txt-0';
 
@@ -12099,13 +12174,13 @@ function renderAnalytics() {
     const nextFloor = (projectable && !blocked && !idle) ? TIERS.find(f => f > proj) : undefined;
     const gapToTier = nextFloor ? nextFloor - proj : 0;
     const pushExtra = (nextFloor && remWork>0) ? Math.max(1, Math.ceil(gapToTier / remWork)) : Infinity; // extra SAR/work-day
-    const unlocks   = nextFloor ? bonusFor(nextFloor).company : 0;
+    const unlocks   = nextFloor ? bonusFor(nextFloor, analyticsMonth).company : 0;
     // Reachable if the extra needed is a modest lift on their current work-day pace.
     const pushFeasible = !!nextFloor && remWork>0 && pushExtra <= Math.max(Math.round(avgWork*0.5), 30);
     return { ...a, firstSeen, firstSeenCertain, isNew, left, blocked, idle, proj, band, avgWork,
       accept: a.acDays>0 ? a.acSum/a.acDays : 0,
-      companyBonus: (projectable && !idle) ? bonusFor(proj).company : 0,
-      partnerBBonus: (projectable && !idle) ? bonusFor(proj).partnerB : 0,
+      companyBonus: (projectable && !idle) ? bonusFor(proj, analyticsMonth).company : 0,
+      partnerBBonus: (projectable && !idle) ? bonusFor(proj, analyticsMonth).partnerB : 0,
       accDrop: accAlerts[a.key]?.acceptanceDrop || null,
       nextFloor, gapToTier, pushExtra, unlocks, pushFeasible };
   });
@@ -13072,8 +13147,8 @@ function m8ShowFleetFinance() {
   let bonusTotal = 0;
   const atTier = [], nearTier = [];
   pls.forEach(p => {
-    const b = bonusFor(p.income);
-    const g = bonusGapFor(p.income);
+    const b = bonusFor(p.income, monthKey);
+    const g = bonusGapFor(p.income, monthKey);
     bonusTotal += b.company;
     if (b.tierFloor) atTier.push({ name: p.name, net: p.income, ...b });
     else if (g && g.sarToNext <= 500) nearTier.push({ name: p.name, net: p.income, ...g });
@@ -13110,8 +13185,8 @@ function m8ShowDriverFinance(name) {
   const monthKey = defaultMonth();
   const pl = computeDriverPnL(name, monthKey);
   if (!pl.income && !pl.hasProfile) { m8PickShow(`<span class="vt-err">No data for ${name}</span>`); return; }
-  const b = bonusFor(pl.income);
-  const g = bonusGapFor(pl.income);
+  const b = bonusFor(pl.income, monthKey);
+  const g = bonusGapFor(pl.income, monthKey);
   const combined = pl.netPnL + b.company;
   const netColor = pl.netPnL >= 0 ? 'var(--bolt-green)' : 'var(--red)';
 
