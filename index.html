@@ -10184,6 +10184,7 @@ function buildFinanceModals() {
           <option value="">— none —</option>
           ${AMBASSADOR_LIST.map(a => `<option value="${a}">${a}</option>`).join('')}
         </select>
+        <div id="cpAmbassadorHint" style="font-size:11px;color:var(--cyan);margin-top:4px"></div>
       </div>
       <div class="fin-form-row"><label>Nationality</label>
         <select id="cpNationality">
@@ -10525,6 +10526,44 @@ function matchSheetDriverToDashboard(sheetRow, knownDrivers) {
   return { driverId: null, confidence: 'none', reason: 'No match on phone or name' };
 }
 
+// Phase 1c: read the onboarding-sheet mirror synced by api/bolt/sync-sheet.js.
+// Cached per page load — call fetchSheetAmbassadorSync(true) to force a re-fetch.
+let sheetAmbassadorSyncCache = null;
+async function fetchSheetAmbassadorSync(force) {
+  if (sheetAmbassadorSyncCache && !force) return sheetAmbassadorSyncCache;
+  if (!supabaseOn()) return [];
+  const rows = await jbFetch(`${getSbUrl()}/rest/v1/sheet_ambassador_sync?select=id,name,phone,ambassador`, { headers: sbHeaders() });
+  sheetAmbassadorSyncCache = Array.isArray(rows) ? rows : [];
+  return sheetAmbassadorSyncCache;
+}
+
+// Best-effort phone lookup for a driver from the currently loaded period or, failing
+// that, their most recent historical record.
+function getKnownDriverPhone(name) {
+  const key = driverKey(name);
+  const d = (currentDrivers||[]).find(x => driverKey(x.name) === key);
+  if (d && d.phone) return d.phone;
+  const hist = getDriverAllHistory('', name);
+  for (let i = hist.length - 1; i >= 0; i--) { if (hist[i].d && hist[i].d.phone) return hist[i].d.phone; }
+  return '';
+}
+
+// Suggests an ambassador for a dashboard driver from the synced onboarding sheet.
+// Only ever returns a 'high' confidence match — a shaky guess is worse than no
+// suggestion here, since this feeds real bonus attribution. Caller is responsible
+// for treating this as a SUGGESTION (pre-fill, still editable), never an auto-save.
+async function suggestAmbassadorFromSheet(driverName, driverPhone) {
+  const synced = await fetchSheetAmbassadorSync();
+  if (!synced.length) return null;
+  const match = matchSheetDriverToDashboard(
+    { name: driverName, phone: driverPhone },
+    synced.map(s => ({ driverId: s.id, name: s.name, phone: s.phone }))
+  );
+  if (match.confidence !== 'high' || !match.driverId) return null;
+  const row = synced.find(s => s.id === match.driverId);
+  return (row && row.ambassador) ? row.ambassador : null;
+}
+
 function setAmbMonth(m) { ambMonth = m; renderAmbassadors(); }
 
 // Opens the courier profile modal for a driver, reusing all the existing save +
@@ -10784,6 +10823,21 @@ function openCourierProfileModal(name) {
   setCpAmbassadorValue(profile.ambassador || '');
   document.getElementById('cpNationality').value = profile.nationality || '';
   document.getElementById('cpAmbModel').value = profile.ambassadorModel || '';
+  const cpAmbHint = document.getElementById('cpAmbassadorHint');
+  if (cpAmbHint) cpAmbHint.textContent = '';
+  // Suggest from the synced onboarding sheet if untagged. Fire-and-forget — never
+  // blocks opening the modal; only applies if the field's still empty and this same
+  // driver's modal is still open by the time it resolves (guards a fast tab-switch),
+  // and never overwrites a value the user already picked in the meantime.
+  if (!profile.ambassador) {
+    suggestAmbassadorFromSheet(name, getKnownDriverPhone(name)).then(suggested => {
+      if (!suggested) return;
+      if (document.getElementById('cpDriverName')?.value !== name) return;
+      if (document.getElementById('cpAmbassador').value) return;
+      setCpAmbassadorValue(suggested);
+      if (cpAmbHint) cpAmbHint.textContent = 'Suggested from the onboarding sheet — confirm or change before saving.';
+    });
+  }
   const detected = detectFirstTrip(name);
   document.getElementById('cpAmbFirstTrip').value = profile.ambFirstTrip || detected || '';
   document.getElementById('cpAmbFirstTripAuto').textContent = detected ? `(auto: ${detected})` : '(no trips in data yet)';
