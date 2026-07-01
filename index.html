@@ -11034,12 +11034,27 @@ function handleAmbassadorFile(file) {
 async function ambAutoFillFromSheet(force) {
   const synced = await fetchSheetAmbassadorSync(force);
   if (!Array.isArray(synced) || !synced.length) return { ambSet:0, natSet:0, matched:0 };
-  const sheetRows = synced.map(s => ({ driverId:s.id, name:s.name, phone:s.phone }));
+  // Collapse duplicate sheet rows by phone (a driver who submitted the form twice — one copy
+  // often carries the ambassador, the other is blank). Merging first stops a blank duplicate
+  // from masking the real row OR triggering a false phone-vs-name "conflict" in the matcher.
+  const byPhone = {};
+  synced.forEach(s => {
+    const p9 = normPhoneForMatch(s.phone);
+    if (!p9) return;
+    const cur = byPhone[p9] || { driverId:s.id, name:s.name, phone:s.phone, ambassador:'', nationality:'' };
+    if (!cur.ambassador && s.ambassador)  cur.ambassador  = s.ambassador;
+    if (!cur.nationality && s.nationality) cur.nationality = s.nationality;
+    if (!cur.name && s.name) cur.name = s.name;
+    byPhone[p9] = cur;
+  });
+  const sheetRows = Object.values(byPhone).concat(
+    synced.filter(s => !normPhoneForMatch(s.phone))
+          .map(s => ({ driverId:s.id, name:s.name, phone:s.phone, ambassador:s.ambassador, nationality:s.nationality })));
   let ambSet = 0, natSet = 0, matched = 0;
   getAllDriverNames().forEach(name => {
     const match = matchSheetDriverToDashboard({ name, phone: getKnownDriverPhone(name) }, sheetRows);
     if (match.confidence !== 'high' || !match.driverId) return;
-    const row = synced.find(s => s.id === match.driverId);
+    const row = sheetRows.find(s => s.driverId === match.driverId);
     if (!row) return;
     matched++;
     const p = getCourierProfile(name);
