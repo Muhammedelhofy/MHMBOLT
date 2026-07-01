@@ -1583,6 +1583,7 @@ body::before {
   <div class="tab"        data-tab="ambassadors" onclick="showTab('ambassadors',this)">🎖 Ambassadors</div>
   <div class="tab"        data-tab="blocks"     onclick="showTab('blocks',this);renderBlocks()">⛔ Blocks</div>
   <div class="tab"        data-tab="analytics" onclick="showTab('analytics',this);renderAnalytics()">Analytics</div>
+  <div class="tab"        data-tab="pipeline"  onclick="showTab('pipeline',this);renderPipeline()">🚦 Pipeline</div>
   <div class="tab"        data-tab="starmap"   onclick="showTab('starmap',this)">⭐ Star Map</div>
   <div class="tab"        data-tab="settings"  onclick="showTab('settings',this)">Settings</div>
 </div>
@@ -1720,6 +1721,16 @@ body::before {
       <div class="empty-icon">📈</div>
       <div class="empty-title">No data yet</div>
       <div class="empty-sub">Upload reports to see analytics</div>
+    </div>
+  </div>
+</div>
+
+<!-- Pipeline Panel (Build-133, Phase 2 — onboarding stage-delay analytics) -->
+<div id="pipeline" class="panel">
+  <div id="pipelineContent">
+    <div class="empty-state">
+      <div class="empty-icon">🚦</div>
+      <div class="empty-title">Loading pipeline…</div>
     </div>
   </div>
 </div>
@@ -10563,6 +10574,292 @@ async function suggestAmbassadorFromSheet(driverName, driverPhone) {
   if (match.confidence !== 'high' || !match.driverId) return null;
   const row = synced.find(s => s.id === match.driverId);
   return (row && row.ambassador) ? row.ambassador : null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PIPELINE ANALYTICS (Build-133, Phase 2 of the onboarding-sheet link)
+// Onboarding stage-delay analytics: WHERE do drivers get stuck between New Lead
+// and Active. Reads two Supabase tables (sheet_stage_snapshot = current stage +
+// entered-at per driver; sheet_stage_log = one row per stage change) that
+// api/bolt/sync-stage-log.js mirrors from the onboarding sheet's STAGE SNAPSHOT
+// / STAGE LOG tabs (written by the Apps Script stage-log module).
+//
+// Until that chain is connected there is simply no data, so this tab shows an
+// honest empty state PLUS a "sample data" preview so the design is reviewable
+// now and lights up automatically once real data flows. It reads ONLY those two
+// new tables and never touches earnings / bonus / payout logic.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Canonical pipeline order — mirrors STAGE_LIST in Ops Automation/bolt_ops_master.gs.
+const PIPELINE_STAGES = ['Fleet Check','Fleet Check - Verify','Block Check','Transfer Request',
+  'Transfer Hold','Docs Collection','Istimara Authorization','Submitted to Bolt','Notify Driver','Active',
+  'Blocked - Cannot Unblock','Closed - Blocked','Already exists in other fleet','Rejected'];
+// Terminal stages = driver has left the active funnel (won't be counted as "stuck").
+const PIPELINE_TERMINAL = new Set(['Active','Blocked - Cannot Unblock','Closed - Blocked','Already exists in other fleet','Rejected']);
+// Whose queue each active stage sits in (edit here if ownership changes — mirrors the
+// Khaled/Omar split in the sheet's dailyDigest; Transfer/Submitted wait on Bolt's teams).
+const PIPELINE_STAGE_OWNER = {
+  'Fleet Check':'Khaled','Fleet Check - Verify':'Khaled','Block Check':'Khaled',
+  'Transfer Request':'Bolt CS','Transfer Hold':'Bolt CS','Docs Collection':'Khaled',
+  'Istimara Authorization':'Khaled','Submitted to Bolt':'Bolt','Notify Driver':'Omar' };
+const PIPELINE_STUCK_DAYS = 3;   // current dwell above this = flagged on the "stuck now" list
+
+let pipelineMode = 'live';       // 'live' | 'sample'
+let stageSnapshotCache = null, stageLogCache = null;
+
+async function fetchStageSnapshot(force) {
+  if (stageSnapshotCache && !force) return stageSnapshotCache;
+  if (!supabaseOn()) return [];
+  const rows = await jbFetch(`${getSbUrl()}/rest/v1/sheet_stage_snapshot?select=driver_id,iqama,name,current_stage,entered_at`, { headers: sbHeaders() });
+  stageSnapshotCache = Array.isArray(rows) ? rows : [];
+  return stageSnapshotCache;
+}
+async function fetchStageLog(force) {
+  if (stageLogCache && !force) return stageLogCache;
+  if (!supabaseOn()) return [];
+  const rows = await jbFetch(`${getSbUrl()}/rest/v1/sheet_stage_log?select=driver_id,name,from_stage,to_stage,days_in_from,source,changed_at&order=changed_at.asc`, { headers: sbHeaders() });
+  stageLogCache = Array.isArray(rows) ? rows : [];
+  return stageLogCache;
+}
+function pipelineRefresh() { stageSnapshotCache = null; stageLogCache = null; renderPipeline(); }
+function setPipelineMode(m) { pipelineMode = m; renderPipeline(); }
+
+function pplMedian(arr) {
+  if (!arr || !arr.length) return null;
+  const a = [...arr].sort((x,y)=>x-y), m = Math.floor(a.length/2);
+  return a.length % 2 ? a[m] : (a[m-1]+a[m])/2;
+}
+// Format a day-count for humans: <1h / Nh / N.Nd.
+function pplDays(d) {
+  if (d == null || d === '' || isNaN(d)) return '—';
+  d = Math.max(0, +d);
+  if (d < 1/24) return '<1h';
+  if (d < 1)    return Math.round(d*24) + 'h';
+  return (d < 10 ? d.toFixed(1) : Math.round(d)) + 'd';
+}
+
+async function renderPipeline() {
+  const el = document.getElementById('pipelineContent');
+  if (!el) return;
+  let snapshot = [], log = [], source = pipelineMode;
+  if (pipelineMode === 'sample') {
+    const s = pipelineSampleData(); snapshot = s.snapshot; log = s.log;
+  } else {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">Loading pipeline…</div></div>`;
+    try { const r = await Promise.all([fetchStageSnapshot(), fetchStageLog()]); snapshot = r[0]||[]; log = r[1]||[]; }
+    catch(_) { snapshot = []; log = []; }
+    if (!(snapshot.length || log.length)) { el.innerHTML = pipelineEmptyStateHtml(); return; }
+  }
+  el.innerHTML = pipelineDashboardHtml(snapshot, log, source);
+}
+
+function pipelineEmptyStateHtml() {
+  return `<div class="empty-state" style="padding:34px 20px">
+      <div class="empty-icon">🚦</div>
+      <div class="empty-title">No pipeline data yet</div>
+      <div class="empty-sub" style="max-width:520px;margin:8px auto 0;line-height:1.5">
+        This tab shows <b>where drivers get stuck</b> in onboarding (Fleet Check → … → Active) —
+        average days per stage, who's stuck longest right now, and typical time to Active.
+        It lights up automatically once the onboarding sheet's stage log is connected
+        (paste the Apps Script stage-log module, then the sync runs).
+      </div>
+      <div style="margin-top:18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button class="save-btn" onclick="setPipelineMode('sample')">▶ Preview with sample data</button>
+        <button class="save-btn" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border)" onclick="pipelineRefresh()">↻ Check for live data</button>
+      </div>
+    </div>`;
+}
+
+function pipelineDashboardHtml(snapshot, log, source) {
+  const now = Date.now(), DAY = 86400000;
+  const curDwell = r => { const t = Date.parse(r.entered_at); return isNaN(t) ? null : (now - t)/DAY; };
+
+  // Current-state metrics (from the snapshot).
+  const distribution = {};
+  const active = [];
+  (snapshot||[]).forEach(r => {
+    const st = r.current_stage || '(unknown)';
+    distribution[st] = (distribution[st]||0) + 1;
+    if (!PIPELINE_TERMINAL.has(st))
+      active.push({ name: r.name || r.driver_id || '—', stage: st, owner: PIPELINE_STAGE_OWNER[st]||'—', dwell: curDwell(r) });
+  });
+  active.sort((a,b)=>(b.dwell||0)-(a.dwell||0));
+
+  // Owner load (active drivers grouped by whose queue they're in).
+  const ownerMap = {};
+  active.forEach(a => { const o = ownerMap[a.owner] || (ownerMap[a.owner]={n:0,sum:0,k:0}); o.n++; if (a.dwell!=null){ o.sum+=a.dwell; o.k++; } });
+
+  // Dwell-per-stage (from the change history) — the bottleneck view.
+  const dwellByStage = {};
+  (log||[]).forEach(r => {
+    const d = +r.days_in_from;
+    if (r.from_stage && r.days_in_from !== '' && !isNaN(d) && r.from_stage.charAt(0) !== '(')
+      (dwellByStage[r.from_stage] = dwellByStage[r.from_stage] || []).push(d);
+  });
+  const dwellRows = Object.keys(dwellByStage).map(st => {
+    const arr = dwellByStage[st];
+    return { stage: st, avg: arr.reduce((s,x)=>s+x,0)/arr.length, med: pplMedian(arr), n: arr.length };
+  }).sort((a,b)=>b.avg-a.avg);
+  const maxAvg = dwellRows.reduce((m,r)=>Math.max(m,r.avg),0) || 1;
+
+  // Typical time to Active (median of each Active driver's summed stage dwell).
+  const perDriver = {}, reachedActive = new Set();
+  (log||[]).forEach(r => {
+    const key = r.driver_id || r.name, d = +r.days_in_from;
+    if (r.days_in_from !== '' && !isNaN(d)) perDriver[key] = (perDriver[key]||0) + d;
+    if (r.to_stage === 'Active') reachedActive.add(key);
+  });
+  const ttaVals = [...reachedActive].map(k => perDriver[k]).filter(v => v!=null && !isNaN(v));
+  const medianTTA = ttaVals.length ? pplMedian(ttaVals) : null;
+
+  // KPIs.
+  const activeCount  = active.length;
+  const longestWait  = active.length ? active[0].dwell : null;
+  const stuckCount   = active.filter(a => (a.dwell||0) > PIPELINE_STUCK_DAYS).length;
+  const reachedCount = reachedActive.size;
+
+  const banner = source === 'sample'
+    ? `<div style="background:rgba(255,170,0,.12);border:1px solid var(--amber);border-radius:4px;padding:9px 12px;margin-bottom:14px;font-size:12px;color:var(--amber);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+         <span>⚠️ <b>SAMPLE DATA</b> — a preview of the design, not real drivers. Connect the onboarding stage log to see live numbers.</span>
+         <button class="save-btn" style="padding:4px 10px;font-size:11px" onclick="setPipelineMode('live')">Show live data</button>
+       </div>`
+    : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+         <span>🟢 Live · synced from the onboarding sheet</span>
+         <span><button class="save-btn" style="padding:4px 10px;font-size:11px;background:var(--bg-card);color:var(--text);border:1px solid var(--border)" onclick="setPipelineMode('sample')">View sample</button>
+         <button class="save-btn" style="padding:4px 10px;font-size:11px;background:var(--bg-card);color:var(--text);border:1px solid var(--border)" onclick="pipelineRefresh()">↻ Refresh</button></span>
+       </div>`;
+
+  const kpi = (label, val, sub, color) =>
+    `<div class="akpi" style="border-left-color:${color}"><div class="akpi-label">${label}</div><div class="akpi-value">${val}</div><div class="akpi-delta flat">${sub}</div></div>`;
+
+  // Stage distribution (active stages, in pipeline order).
+  const distMax = Math.max(1, ...PIPELINE_STAGES.filter(s=>!PIPELINE_TERMINAL.has(s)).map(s=>distribution[s]||0));
+  const distHtml = PIPELINE_STAGES.filter(s=>!PIPELINE_TERMINAL.has(s)).map(st => {
+    const c = distribution[st]||0, pct = Math.round(c/distMax*100);
+    return `<div style="display:flex;align-items:center;gap:10px">
+      <div style="width:150px;flex-shrink:0;font-size:11px;color:var(--text)">${st}<div style="font-size:9px;color:var(--text-muted)">${PIPELINE_STAGE_OWNER[st]||''}</div></div>
+      <div style="flex:1;background:rgba(255,255,255,.04);border-radius:3px;height:22px;position:relative;overflow:hidden">
+        <div style="height:100%;width:${c?Math.max(pct,6):0}%;background:var(--accent,#56BEF0);opacity:.8;border-radius:3px"></div>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;padding:0 9px;font-size:11px;color:var(--text)"><b>${c}</b></div>
+      </div></div>`;
+  }).join('');
+  const terminalHtml = PIPELINE_STAGES.filter(s=>PIPELINE_TERMINAL.has(s)).map(st =>
+    `<span style="font-size:11px;color:var(--text-muted);white-space:nowrap">${st}: <b style="color:var(--text)">${distribution[st]||0}</b></span>`).join('<span style="color:var(--border)">·</span>');
+
+  // Bottlenecks — avg dwell per stage.
+  const dwellHtml = dwellRows.length ? dwellRows.map((r,i) => {
+    const pct = Math.round(r.avg/maxAvg*100);
+    const col = i===0 ? 'var(--red)' : i<3 ? 'var(--amber)' : 'var(--green)';
+    return `<div style="display:flex;align-items:center;gap:10px">
+      <div style="width:150px;flex-shrink:0;font-size:11px;color:var(--text)">${r.stage}</div>
+      <div style="flex:1;background:rgba(255,255,255,.04);border-radius:3px;height:22px;position:relative;overflow:hidden">
+        <div style="height:100%;width:${Math.max(pct,4)}%;background:${col};opacity:.8;border-radius:3px"></div>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;padding:0 9px;font-size:11px;color:var(--text)"><b>${pplDays(r.avg)}</b> <span style="color:var(--text-muted);margin-left:6px">avg · ${pplDays(r.med)} median · n=${r.n}</span></div>
+      </div></div>`;
+  }).join('') : `<div style="font-size:12px;color:var(--text-muted);padding:6px 2px">No completed stage transitions logged yet — dwell averages appear once drivers start moving between stages.</div>`;
+
+  // Stuck longest right now.
+  const stuckRows = active.slice(0,15).map(a => {
+    const over = (a.dwell||0) > PIPELINE_STUCK_DAYS;
+    return `<tr style="border-top:1px solid var(--border)">
+      <td style="padding:6px 9px;font-size:12px;color:var(--text)">${a.name}</td>
+      <td style="padding:6px 9px;font-size:12px;color:var(--text-muted)">${a.stage}</td>
+      <td style="padding:6px 9px;font-size:12px;color:var(--text-muted)">${a.owner}</td>
+      <td style="padding:6px 9px;font-size:12px;text-align:right;font-weight:700;color:${over?'var(--red)':'var(--text)'}">${pplDays(a.dwell)}</td></tr>`;
+  }).join('');
+  const stuckHtml = active.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:rgba(0,0,0,.15)">
+        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Driver</th>
+        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Stage</th>
+        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Owner</th>
+        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Waiting</th>
+      </tr></thead><tbody>${stuckRows}</tbody></table></div>`
+    : `<div style="font-size:12px;color:var(--text-muted);padding:6px 2px">No drivers currently in the active pipeline.</div>`;
+
+  // Owner load.
+  const ownerHtml = Object.keys(ownerMap).sort((a,b)=>ownerMap[b].n-ownerMap[a].n).map(o => {
+    const m = ownerMap[o], avg = m.k ? m.sum/m.k : null;
+    return `<div class="akpi" style="border-left-color:#56BEF0"><div class="akpi-label">${o}</div><div class="akpi-value">${m.n}</div><div class="akpi-delta flat">avg wait ${pplDays(avg)}</div></div>`;
+  }).join('') || `<div style="font-size:12px;color:var(--text-muted)">No active-pipeline drivers.</div>`;
+
+  return banner + `
+    <div class="analytics-kpi-row" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+      ${kpi('In pipeline', activeCount, 'not yet Active', '#56BEF0')}
+      ${kpi('Stuck &gt; '+PIPELINE_STUCK_DAYS+'d', stuckCount, 'need a nudge', stuckCount?'var(--red)':'var(--green)')}
+      ${kpi('Longest wait', pplDays(longestWait), 'in current stage', '#f59e0b')}
+      ${kpi('Reached Active', reachedCount, 'logged', 'var(--green)')}
+      ${kpi('Typical → Active', pplDays(medianTTA), 'median, New→Active', '#8b5cf6')}
+    </div>
+
+    <div class="chart-card" style="margin-bottom:16px">
+      <div class="chart-card-title">🐌 Where drivers get stuck — average days per stage</div>
+      <div style="display:flex;flex-direction:column;gap:7px;margin-top:8px">${dwellHtml}</div>
+    </div>
+
+    <div class="chart-card" style="margin-bottom:16px">
+      <div class="chart-card-title">Who's in the pipeline right now</div>
+      <div style="display:flex;flex-direction:column;gap:7px;margin-top:8px">${distHtml}</div>
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap;align-items:center"><span style="font-size:9px;color:var(--text-muted);letter-spacing:.05em">OUTCOMES</span>${terminalHtml}</div>
+    </div>
+
+    <div class="chart-card" style="margin-bottom:16px">
+      <div class="chart-card-title">👥 Load by owner <span style="font-size:11px;color:var(--text-muted);font-weight:400">· active drivers per queue</span></div>
+      <div class="analytics-kpi-row" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-top:8px">${ownerHtml}</div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-card-title">⏳ Stuck longest right now <span style="font-size:11px;color:var(--text-muted);font-weight:400">· top 15 · red = over ${PIPELINE_STUCK_DAYS} days</span></div>
+      <div style="margin-top:8px">${stuckHtml}</div>
+    </div>`;
+}
+
+// Deterministic synthetic data so the "sample" preview is stable + shows realistic
+// bottlenecks (Block Check + Transfer slow). Same shape as the live fetches, so the
+// exact same render code proves out against it.
+function pipelineSampleData() {
+  let seed = 20260701;
+  const rnd = () => { seed = (seed*1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const activeStages = PIPELINE_STAGES.filter(s => !PIPELINE_TERMINAL.has(s));
+  const now = Date.now(), DAY = 86400000;
+  const typical = { 'Fleet Check':0.5,'Fleet Check - Verify':1,'Block Check':4,'Transfer Request':5,
+    'Transfer Hold':6,'Docs Collection':2,'Istimara Authorization':1.5,'Submitted to Bolt':3,'Notify Driver':0.5 };
+  const snapshot = [], log = [];
+  let n = 1;
+  activeStages.forEach((stage, si) => {
+    const count = 2 + Math.floor(rnd()*6);
+    for (let i=0;i<count;i++) {
+      const id = 'S'+String(n).padStart(3,'0'), name = 'Sample Driver '+String(n).padStart(2,'0'); n++;
+      const dwell = Math.max(0.05, (typical[stage]||2) * (0.4 + rnd()*1.6));
+      const entered = now - dwell*DAY;
+      snapshot.push({ driver_id:id, iqama:'', name, current_stage:stage, entered_at:new Date(entered).toISOString() });
+      let t = entered;
+      for (let k=si;k>0;k--) {
+        const from = activeStages[k-1], dur = Math.max(0.05,(typical[from]||2)*(0.4+rnd()*1.4));
+        log.push({ driver_id:id, name, from_stage:from, to_stage:activeStages[k], days_in_from:Math.round(dur*1000)/1000, source:'auto', changed_at:new Date(t).toISOString() });
+        t -= dur*DAY;
+      }
+      log.push({ driver_id:id, name, from_stage:'(new)', to_stage:activeStages[0], days_in_from:'', source:'auto', changed_at:new Date(t).toISOString() });
+    }
+  });
+  for (let i=0;i<12;i++) {                       // reached Active
+    const id='S'+String(n).padStart(3,'0'), name='Sample Driver '+String(n).padStart(2,'0'); n++;
+    snapshot.push({ driver_id:id, iqama:'', name, current_stage:'Active', entered_at:new Date(now-(rnd()*8)*DAY).toISOString() });
+    let t = now - (10 + rnd()*20)*DAY;
+    log.push({ driver_id:id, name, from_stage:'(new)', to_stage:activeStages[0], days_in_from:'', source:'auto', changed_at:new Date(t).toISOString() });
+    for (let k=1;k<activeStages.length;k++) {
+      const from=activeStages[k-1], dur=Math.max(0.05,(typical[from]||2)*(0.4+rnd()*1.4));
+      t += dur*DAY;
+      log.push({ driver_id:id, name, from_stage:from, to_stage:activeStages[k], days_in_from:Math.round(dur*1000)/1000, source:'auto', changed_at:new Date(t).toISOString() });
+    }
+    log.push({ driver_id:id, name, from_stage:'Notify Driver', to_stage:'Active', days_in_from:Math.round((0.3+rnd())*1000)/1000, source:'auto', changed_at:new Date(t).toISOString() });
+  }
+  for (let i=0;i<3;i++) {                        // rejected
+    const id='S'+String(n).padStart(3,'0'), name='Sample Driver '+String(n).padStart(2,'0'); n++;
+    const when = now-(rnd()*15)*DAY;
+    snapshot.push({ driver_id:id, iqama:'', name, current_stage:'Rejected', entered_at:new Date(when).toISOString() });
+    log.push({ driver_id:id, name, from_stage:'Block Check', to_stage:'Rejected', days_in_from:Math.round((1+rnd()*4)*1000)/1000, source:'manual', changed_at:new Date(when).toISOString() });
+  }
+  return { snapshot, log };
 }
 
 function setAmbMonth(m) { ambMonth = m; renderAmbassadors(); }
