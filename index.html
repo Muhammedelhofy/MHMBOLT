@@ -10710,11 +10710,12 @@ function pipelineDashboardHtml(snapshot, log, source) {
   const ownerMap = {};
   active.forEach(a => { const o = ownerMap[a.owner] || (ownerMap[a.owner]={n:0,sum:0,k:0}); o.n++; if (a.dwell!=null){ o.sum+=a.dwell; o.k++; } });
 
-  // Dwell-per-stage (from the change history) — the bottleneck view.
+  // Dwell-per-stage (from the change history) — the bottleneck view. Skips entry markers
+  // ("(new)"/"(baseline)") and terminal stages (a driver isn't "stuck" in a finished stage).
   const dwellByStage = {};
   (log||[]).forEach(r => {
     const d = +r.days_in_from;
-    if (r.from_stage && r.days_in_from !== '' && !isNaN(d) && r.from_stage.charAt(0) !== '(')
+    if (r.from_stage && r.days_in_from !== '' && !isNaN(d) && r.from_stage.charAt(0) !== '(' && !PIPELINE_TERMINAL.has(r.from_stage))
       (dwellByStage[r.from_stage] = dwellByStage[r.from_stage] || []).push(d);
   });
   const dwellRows = Object.keys(dwellByStage).map(st => {
@@ -10723,21 +10724,28 @@ function pipelineDashboardHtml(snapshot, log, source) {
   }).sort((a,b)=>b.avg-a.avg);
   const maxAvg = dwellRows.reduce((m,r)=>Math.max(m,r.avg),0) || 1;
 
-  // Typical time to Active (median of each Active driver's summed stage dwell).
-  const perDriver = {}, reachedActive = new Set();
+  // Typical time to Active — ONLY for drivers whose full journey was tracked: entered the
+  // pipeline after logging began (have a "(new)" row) AND reached Active. Baseline-seeded
+  // drivers (already Active when logging started) are excluded, so this can't show a false
+  // "<1h" from their empty journey; it stays "—" until real leads flow New→Active.
+  const enteredAt = {}, activeAt = {};
   (log||[]).forEach(r => {
-    const key = r.driver_id || r.name, d = +r.days_in_from;
-    if (r.days_in_from !== '' && !isNaN(d)) perDriver[key] = (perDriver[key]||0) + d;
-    if (r.to_stage === 'Active') reachedActive.add(key);
+    const key = r.driver_id || r.name, t = Date.parse(r.changed_at);
+    if (isNaN(t)) return;
+    if (r.from_stage === '(new)' && (enteredAt[key] == null || t < enteredAt[key])) enteredAt[key] = t;
+    if (r.to_stage === 'Active' && (activeAt[key] == null || t < activeAt[key])) activeAt[key] = t;
   });
-  const ttaVals = [...reachedActive].map(k => perDriver[k]).filter(v => v!=null && !isNaN(v));
+  const ttaVals = [];
+  Object.keys(activeAt).forEach(key => {
+    if (enteredAt[key] != null && activeAt[key] >= enteredAt[key]) ttaVals.push((activeAt[key] - enteredAt[key]) / DAY);
+  });
   const medianTTA = ttaVals.length ? pplMedian(ttaVals) : null;
 
   // KPIs.
   const activeCount  = active.length;
   const longestWait  = active.length ? active[0].dwell : null;
   const stuckCount   = active.filter(a => (a.dwell||0) > PIPELINE_STUCK_DAYS).length;
-  const reachedCount = reachedActive.size;
+  const activeNow    = distribution['Active'] || 0;
 
   const banner = source === 'sample'
     ? `<div style="background:rgba(255,170,0,.12);border:1px solid var(--amber);border-radius:4px;padding:9px 12px;margin-bottom:14px;font-size:12px;color:var(--amber);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
@@ -10808,8 +10816,8 @@ function pipelineDashboardHtml(snapshot, log, source) {
       ${kpi('In pipeline', activeCount, 'not yet Active', '#56BEF0')}
       ${kpi('Stuck &gt; '+PIPELINE_STUCK_DAYS+'d', stuckCount, 'need a nudge', stuckCount?'var(--red)':'var(--green)')}
       ${kpi('Longest wait', pplDays(longestWait), 'in current stage', '#f59e0b')}
-      ${kpi('Reached Active', reachedCount, 'logged', 'var(--green)')}
-      ${kpi('Typical → Active', pplDays(medianTTA), 'median, New→Active', '#8b5cf6')}
+      ${kpi('Active now', activeNow, 'reached Active', 'var(--green)')}
+      ${kpi('Typical → Active', medianTTA==null ? '—' : pplDays(medianTTA), medianTTA==null ? 'builds as new leads finish' : `median of ${ttaVals.length} tracked`, '#8b5cf6')}
     </div>
 
     <div class="chart-card" style="margin-bottom:16px">
