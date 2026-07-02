@@ -7037,9 +7037,17 @@ function buildCourierSummaryTable(entries, searchFilter) {
 // re-saved compressed on the next write.
 const LOCAL_MAX_DAYS = 400;  // ~13 months of daily uploads (was a hard 120)
 
+// Memoized by localStorage raw-string identity: parsing + codec-unpacking the full history
+// (~90KB) is the app's hottest cost — getHistory() is called dozens of times per render (once
+// per driver via getMonthlyNet, plus every history-scanning helper). Caching the unpacked array
+// keyed on the raw string means we parse ONCE per render and reuse it until the next write
+// (saveHistory stores a new string → next call re-parses). We return a shallow COPY so the
+// ~20 callers that .sort() the result in place can't reorder the cache.
+let _histCacheRaw = null, _histCacheArr = null;
 function getHistory() {
   const raw = localStorage.getItem('khair_perf_history');
-  if (!raw) return [];
+  if (!raw) { _histCacheRaw = null; _histCacheArr = null; return []; }
+  if (raw === _histCacheRaw && _histCacheArr) return _histCacheArr.slice();
   let parsed;
   try { parsed = JSON.parse(raw); } catch(_) { return []; }
   let arr;
@@ -7051,7 +7059,8 @@ function getHistory() {
   // h.drivers.find/.map — the documented "no voice at all" / blank-render class.
   // Normalising once here protects all ~30 direct .drivers.* call sites.
   for (const e of arr) if (e && !Array.isArray(e.drivers)) e.drivers = [];
-  return arr;
+  _histCacheRaw = raw; _histCacheArr = arr;
+  return arr.slice();
 }
 
 // Saves history compressed + capped to LOCAL_MAX_DAYS. If localStorage is full
@@ -13734,6 +13743,46 @@ function buildTodayAttention(R, W) {
   </div>`;
 }
 
+// Build-170: daily pulse — the most-recent DATA day vs the day before (fleet net · active ·
+// trips), plus a freshness read so a stale upload is obvious. Aggregates from h.drivers (never
+// h.totalNet, which is absent on cloud-pulled entries). "Fleet net" = drivers' net activity,
+// clearly labelled — NOT company money (the Money tile keeps the company P&L separate).
+function computeDailyPulse() {
+  const hist = getHistory();
+  if (!hist.length) return null;
+  const sorted = hist.slice().sort((a, b) => periodSortKey(b.period) - periodSortKey(a.period));
+  const agg = h => { let net = 0, trips = 0, active = 0;
+    (h.drivers || []).forEach(d => { const n = sN(d.netEarnings), o = sN(d.orders), hrs = sN(d.hoursOnline);
+      net += n; trips += o; if (hrs > 0 || o > 0) active++; });
+    return { net, trips, active }; };
+  const latest = sorted[0], prior = sorted[1] || null;
+  // Freshness from the LABEL date (periodSortKey runs ~1 day behind the label string).
+  let daysAgo = null;
+  const mm = String(latest.period).match(/(\d{1,2})\s(\w{3})\s(\d{4})/);
+  if (mm && MONTH_MAP[mm[2]] != null) {
+    const ld = new Date(+mm[3], MONTH_MAP[mm[2]], +mm[1]), now = new Date();
+    daysAgo = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - ld) / 86400000);
+  }
+  return { latest: latest.period, prior: prior ? prior.period : null, L: agg(latest), P: prior ? agg(prior) : null, daysAgo };
+}
+function buildTodayPulse() {
+  const p = computeDailyPulse();
+  if (!p) return '';
+  const stale = p.daysAgo != null && p.daysAgo >= 2;
+  const fresh = p.daysAgo == null ? '' : (p.daysAgo <= 0 ? 'today' : p.daysAgo === 1 ? 'yesterday' : p.daysAgo + 'd ago');
+  const pct = (cur, prev) => { if (prev == null || !prev) return ''; const d = cur - prev, c = d >= 0 ? 'var(--green)' : 'var(--red)';
+    return ` <span style="color:${c}">${d >= 0 ? '▲' : '▼'}${Math.abs(Math.round(d / Math.abs(prev) * 100))}%</span>`; };
+  const abs = (cur, prev) => { if (prev == null) return ''; const d = cur - prev, c = d >= 0 ? 'var(--green)' : 'var(--red)';
+    return ` <span style="color:${c}">${d >= 0 ? '+' : ''}${fmt(d)}</span>`; };
+  return `<div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:0 4px 12px;padding:9px 13px;border:1px solid ${stale ? 'var(--amber)' : 'var(--border)'};border-radius:8px;background:var(--bg-card);font-size:12px">
+    <span>📅 <b>Latest data</b> · ${p.latest}${fresh ? ` <span style="color:${stale ? 'var(--amber)' : 'var(--text-muted)'}">(${fresh}${stale ? " — upload today's CSV" : ''})</span>` : ''}</span>
+    <span style="color:var(--text-muted)">Fleet net <b style="color:var(--text)">${fmt(Math.round(p.L.net))}</b>${pct(p.L.net, p.P && p.P.net)}</span>
+    <span style="color:var(--text-muted)">Active <b style="color:var(--text)">${p.L.active}</b>${abs(p.L.active, p.P && p.P.active)}</span>
+    <span style="color:var(--text-muted)">Trips <b style="color:var(--text)">${fmt(p.L.trips)}</b>${abs(p.L.trips, p.P && p.P.trips)}</span>
+    ${p.prior ? `<span style="color:var(--text-muted);font-size:11px">vs ${p.prior}</span>` : '<span style="color:var(--text-muted);font-size:11px">first day of data</span>'}
+  </div>`;
+}
+
 function renderToday() {
   const el = document.getElementById('todayContent');
   if (!el) return;
@@ -13834,6 +13883,7 @@ function renderToday() {
         <button class="save-btn" style="padding:5px 14px;font-size:11px" onclick="openChaseList()">📋 CHASE LIST</button>
       </div>
     </div>
+    ${buildTodayPulse()}
     ${buildTodayAttention(R, W)}
     <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:stretch">
       ${tile("todayGoExec(event)",'💰','Money', moneyBody, '👔 Executive P&L — company money only')}
@@ -14116,7 +14166,7 @@ function bioScanThenOpen(id, rowEl, periodFilter) {
   setTimeout(() => {
     overlay.classList.remove('active');
     openModal(id, periodFilter || null);
-  }, 460);
+  }, 180);   // was 460 — the scan still flashes but the driver modal opens ~1/3 s sooner
 }
 
 // ═══════════════════════════════════════════
