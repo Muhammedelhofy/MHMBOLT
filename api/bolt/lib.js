@@ -185,6 +185,16 @@ async function fetchAndAggregateFleet(date) {
       dr.boltSuspendedSince     = prof.suspended_since || prof.suspension_started_at || prof.blocked_at || prof.state_changed_at || "";
       dr.hasCashPayment       = prof.has_cash_payment ?? null;
       dr.vehiclePlate         = prof.active_vehicle?.reg_number || "";
+      // Build-167: the API exposes suspension on the VEHICLE too — a driver can look "active"
+      // while their car is blocked. Capture the vehicle's own state + reason so those surface.
+      dr.vehicleState            = prof.active_vehicle?.state || "";
+      dr.vehicleSuspensionReason = prof.active_vehicle?.suspension_reason || "";
+      // Category enablement ("N/M"): the API gives active + inactive category NAME arrays.
+      // (The CSV path already fills activeCategories from its own column — only set from the
+      // API when it isn't already populated, so we don't clobber a CSV value.)
+      if (Array.isArray(prof.active_categories) && prof.active_categories.length)
+        dr.activeCategories = prof.active_categories.join(", ");
+      dr.inactiveCategories = Array.isArray(prof.inactive_categories) ? prof.inactive_categories.join(", ") : "";
     }
 
     if (dr._cnt > 0) dr.distanceAvg = r2(dr.distanceTotal / dr._cnt);

@@ -3121,6 +3121,22 @@ function renderModalBody() {
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:${d.boltSuspensionReason?'5px':'0'}"><span style="color:var(--red);font-weight:700;letter-spacing:.05em;font-size:12px">⛔ DRIVER ${d.boltState.toUpperCase()} ON BOLT PLATFORM</span>${d.boltSuspensionReason?blockCatChip(d.boltSuspensionCategory||classifyBlockCategory(d.boltSuspensionReason),true):''}</div>
       ${d.boltSuspensionReason?`<div style="font-size:11px;color:var(--text-muted)">Reason: ${stripHtml(d.boltSuspensionReason)}</div>`:''}
     </div>` : ''}
+    ${(() => {   // Build-167: vehicle suspension + partial ride-categories, from the latest sync snapshot
+      const sd = latestDriverSnapshot().drivers.find(x => driverKey(x.name) === driverKey(d.name));
+      if (!sd) return '';
+      let out = '';
+      if (sd.vehicleState && sd.vehicleState !== 'active') {
+        out += `<div style="background:rgba(255,170,0,.08);border:1px solid rgba(255,170,0,.35);border-radius:3px;padding:10px 14px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:${sd.vehicleSuspensionReason?'5px':'0'}"><span style="color:var(--amber);font-weight:700;letter-spacing:.05em;font-size:12px">🚗 VEHICLE ${sd.vehicleState.toUpperCase()}${sd.vehiclePlate?' · '+sd.vehiclePlate:''}</span>${sd.vehicleSuspensionReason?blockCatChip(classifyBlockCategory(sd.vehicleSuspensionReason),true):''}</div>
+          ${sd.vehicleSuspensionReason?`<div style="font-size:11px;color:var(--text-muted)">Reason: ${stripHtml(sd.vehicleSuspensionReason)}</div>`:''}
+        </div>`;
+      }
+      const ic = (sd.inactiveCategories||'').trim();
+      if (ic) { const b = catBreakdown(sd);
+        out += `<div style="background:rgba(255,170,0,.06);border:1px solid rgba(255,170,0,.25);border-radius:3px;padding:8px 14px;margin-bottom:12px;font-size:11px;color:var(--text-muted)">◧ <b style="color:var(--amber)">${b.active}/${b.total}</b> ride categories active — disabled: ${stripHtml(ic)}</div>`;
+      }
+      return out;
+    })()}
     <div class="target-section">
       <div class="target-section-title">Monthly Target — ${fmt(targetEffTarget)} SAR${targetEffTarget!==target?`<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">(prorated from ${fmt(target)})</span>`:''}<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">· ${targetScopeLbl}</span></div>
       <div class="target-big">
@@ -7188,7 +7204,7 @@ function clearAllData() {
 // don't see this exact string, your browser is serving a cached old HTML.
 // Force-refresh with Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac).
 // ═══════════════════════════════════════════
-const BUILD_VERSION = 'v5.4 — 2026-07-02 — Build-166: Bolt-style suspensions — category (auto-classify + override), per-driver duration/since, category breakdown';
+const BUILD_VERSION = 'v5.5 — 2026-07-02 — Build-167: vehicle-level suspensions + partial ride-category (N/M) tracking from the Bolt API';
 console.log('%cBolt Dashboard ' + BUILD_VERSION, 'color:#34d186;font-weight:bold');
 
 // ═══════════════════════════════════════════
@@ -7672,11 +7688,58 @@ function setBlockCategory(id, category){
   renderBlocks();
 }
 
+// Build-167: vehicle-level suspensions + partial category enablement are LIVE-snapshot signals
+// (from the latest synced day's driver data — the API fills vehicleState / inactiveCategories;
+// CSV-uploaded days won't have them). A driver can look "active" while their CAR is blocked, so
+// these never appear in the driver block log — they get their own section.
+function latestDriverSnapshot(){
+  const h = [...getHistory()].sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period))[0];
+  return { period: (h && h.period) || '', drivers: (h && Array.isArray(h.drivers)) ? h.drivers : [] };
+}
+function catBreakdown(d){
+  const a = (d.activeCategories||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const i = (d.inactiveCategories||'').split(',').map(s=>s.trim()).filter(Boolean);
+  return { active:a.length, total:a.length+i.length, disabled:i };
+}
+function buildVehicleCategorySection(){
+  const snap = latestDriverSnapshot();
+  const veh  = snap.drivers.filter(d => d.vehicleState && d.vehicleState !== 'active')
+                 .sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const part = snap.drivers.filter(d => (d.inactiveCategories||'').trim())
+                 .sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  if (!veh.length && !part.length) return { html:'', vehN:0, catN:0 };
+  const he = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const nm = d => lookupForeignName(d.name) || d.name || '—';
+  const vehRows = veh.map(d => {
+    const cat = classifyBlockCategory(d.vehicleSuspensionReason);
+    return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:5px 8px;border-top:1px solid var(--border);font-size:12px">
+      <span><b>${he(nm(d))}</b>${d.vehiclePlate?` <span style="color:var(--text-muted);font-size:11px">${he(d.vehiclePlate)}</span>`:''} ${blockCatChip(cat,true)}</span>
+      <span style="color:var(--text-muted);text-align:right;max-width:58%">${he(stripHtml(d.vehicleSuspensionReason))||'car suspended'}</span>
+    </div>`;
+  }).join('');
+  const partRows = part.map(d => { const b = catBreakdown(d);
+    return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:5px 8px;border-top:1px solid var(--border);font-size:12px">
+      <span><b>${he(nm(d))}</b> <span style="color:var(--amber)">${b.active}/${b.total} categories</span></span>
+      <span style="color:var(--text-muted)">off: ${he(b.disabled.join(', '))||'—'}</span>
+    </div>`;
+  }).join('');
+  const html = `<div style="border:1px solid var(--border);border-radius:10px;padding:8px 6px;margin-bottom:16px;background:var(--bg-card)">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:2px 8px 6px">
+      <b style="font-size:13px">🚗 Vehicle &amp; category status</b>
+      <span style="font-size:11px;color:var(--text-muted)">latest sync · ${he(snap.period)}</span>
+    </div>
+    ${veh.length?`<div style="padding:0 4px 4px"><div style="font-size:11px;color:var(--red);font-weight:700;padding:3px 8px">🚗 CAR SUSPENDED — ${veh.length} <span style="font-weight:400;color:var(--text-muted)">(driver may still show active)</span></div>${vehRows}</div>`:''}
+    ${part.length?`<div style="padding:6px 4px 4px"><div style="font-size:11px;color:var(--amber);font-weight:700;padding:3px 8px">◧ PARTIAL CATEGORIES — ${part.length} <span style="font-weight:400;color:var(--text-muted)">(dropped from a ride category)</span></div>${partRows}</div>`:''}
+  </div>`;
+  return { html, vehN:veh.length, catN:part.length };
+}
+
 function renderBlocks() {
   const el = document.getElementById('blocksContent');
   if (!el) return;
   const all = getBlockLog();
-  if (!all.length) {
+  const vc = buildVehicleCategorySection();          // Build-167: vehicle + partial-category snapshot
+  if (!all.length && !vc.vehN && !vc.catN) {
     el.innerHTML = `<div class="empty-state"><div class="empty-icon">⛔</div><div class="empty-title">No block data yet</div><div class="empty-sub">Run a Bolt sync or add block events via a driver modal</div></div>`;
     return;
   }
@@ -7862,6 +7925,8 @@ function renderBlocks() {
         </div>` : ''}
       </div>
 
+      ${vc.html}
+
       <!-- Suspensions by category (Build-166) — click a card to filter, mirrors Bolt's portal -->
       <div style="margin-bottom:16px">
         <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:6px">CURRENT SUSPENSIONS BY CATEGORY — click to filter</div>
@@ -7942,6 +8007,9 @@ function packDriver(d) {
   putS('bsc', d.boltSuspensionCategory);
   putS('bss', d.boltSuspendedSince);
   putS('vp', d.vehiclePlate);
+  putS('vs', d.vehicleState);              // Build-167: vehicle suspension
+  putS('vsr', d.vehicleSuspensionReason);
+  putS('ic', d.inactiveCategories);        // disabled ride categories
   if (d.hasCashPayment != null) o.hcp = d.hasCashPayment ? 1 : 0;
   if (d.isActive) o.a = 1;
   putN('gia', d.grossInApp); putN('act', d.acceptanceTotal); putN('ce', d.cashEarnings); putN('cf', d.cancellationFees);
@@ -7965,7 +8033,8 @@ function unpackDriver(o) {
     activeCategories: o.cat || '', isActive: !!o.a,
     boltState: o.bs || '', boltSuspensionReason: o.bsr || '',
     boltSuspensionCategory: o.bsc || '', boltSuspendedSince: o.bss || '',
-    vehiclePlate: o.vp || '', hasCashPayment: o.hcp != null ? !!o.hcp : null,
+    vehiclePlate: o.vp || '', vehicleState: o.vs || '', vehicleSuspensionReason: o.vsr || '', inactiveCategories: o.ic || '',
+    hasCashPayment: o.hcp != null ? !!o.hcp : null,
     grossInApp: o.gia || 0, acceptanceTotal: o.act || 0, cashEarnings: o.ce || 0, cancellationFees: o.cf || 0,
     tollFees: o.tf || 0, expenseReimbursements: o.er || 0, bookingFees: o.bf || 0, refundsToRiders: o.rr || 0,
     commissionDiscountInApp: o.cdi || 0, commissionDiscountCash: o.cdc || 0,
