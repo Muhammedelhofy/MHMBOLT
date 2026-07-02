@@ -11271,8 +11271,29 @@ async function fetchSheetAmbassadorSync(force) {
   if (sheetAmbassadorSyncCache && !force) return sheetAmbassadorSyncCache;
   if (!supabaseOn()) return [];
   const rows = await jbFetch(`${getSbUrl()}/rest/v1/sheet_ambassador_sync?select=id,name,phone,ambassador,nationality`, { headers: sbHeaders() });
-  sheetAmbassadorSyncCache = Array.isArray(rows) ? rows : [];
+  sheetAmbassadorSyncCache = dedupeSyncedByPhone(Array.isArray(rows) ? rows : []);
   return sheetAmbassadorSyncCache;
+}
+
+// Phone-match hardening (Build-169): the onboarding sheet can hold more than one row on the
+// same phone — a driver re-entered under a new Driver ID (leaving a stale row the sync hasn't
+// purged), or two rows for the same person from the form + call-list paths. When those rows
+// disagree on the ambassador (one blank, one tagged), a naive "first match by phone" could pick
+// the BLANK row and silently drop a real attribution. Collapse rows sharing a normalized phone,
+// keeping the most-complete one (has-ambassador beats blank, then has-nationality). Phone-less
+// rows pass through untouched (matched by name elsewhere). This runs on every consumer of the
+// cache — attribution, suggestions, and the lead funnel — so none of them can be shadowed.
+function dedupeSyncedByPhone(rows) {
+  const score = r => (r.ambassador && String(r.ambassador).trim() ? 2 : 0) + (r.nationality && String(r.nationality).trim() ? 1 : 0);
+  const byPhone = new Map();
+  const noPhone = [];
+  rows.forEach(r => {
+    const p9 = normPhoneForMatch(r.phone);
+    if (!p9) { noPhone.push(r); return; }
+    const cur = byPhone.get(p9);
+    if (!cur || score(r) > score(cur)) byPhone.set(p9, r);   // keep the richer row; tie → first seen
+  });
+  return [...byPhone.values(), ...noPhone];
 }
 
 // Reads the canonical ambassador names synced from the sheet's AMBASSADORS tab by

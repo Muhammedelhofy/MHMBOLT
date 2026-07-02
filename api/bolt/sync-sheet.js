@@ -100,6 +100,20 @@ async function upsertSyncedDrivers(rows) {
   if (!resp.ok) throw new Error(`Supabase upsert: ${resp.status} ${await resp.text()}`);
 }
 
+// Keep `sheet_ambassador_sync` an exact mirror of the sheet's current DRIVERS rows: delete any
+// table row whose Driver ID is no longer present (a driver removed or renumbered in the sheet).
+// Without this the table was upsert-only, so deleted/renumbered rows lingered as GHOSTS — stale
+// duplicates on a shared phone that could shadow a real ambassador attribution on the dashboard.
+// Guarded by the caller to only run when at least one row was read, so a transient empty/partial
+// read can never wipe the table.
+async function deleteSyncedDriversNotIn(ids) {
+  if (!ids.length) return;
+  const inList = ids.map(id => `"${String(id).replace(/"/g, '""')}"`).join(",");
+  const url = `${process.env.SUPABASE_URL}/rest/v1/sheet_ambassador_sync?id=not.in.(${encodeURIComponent(inList)})`;
+  const resp = await fetch(url, { method: "DELETE", headers: { ...sbHeaders(), Prefer: "return=minimal" } });
+  if (!resp.ok) throw new Error(`Supabase sync delete: ${resp.status} ${await resp.text()}`);
+}
+
 async function upsertAmbassadors(rows) {
   if (!rows.length) return;
   const url = `${process.env.SUPABASE_URL}/rest/v1/ambassadors`;
@@ -177,6 +191,9 @@ module.exports = async function handler(req, res) {
     for (let i = 0; i < rows.length; i += 500) {
       await upsertSyncedDrivers(rows.slice(i, i + 500));
     }
+    // Mirror deletions/renumbers: purge any Supabase row whose Driver ID isn't in this read
+    // (guarded above — rows.length >= 1 here since we returned early on < 2 sheet rows).
+    await deleteSyncedDriversNotIn(rows.map(r => r.id));
 
     // ── AMBASSADORS tab → `ambassadors` table ─────────────────────────────────
     // Runs in its own try/catch so a problem here (e.g. the tab not created yet) never
