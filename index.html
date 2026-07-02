@@ -1578,7 +1578,8 @@ body::before {
 
 <!-- Tabs -->
 <div class="tabs">
-  <div class="tab active" data-tab="captains"  onclick="showTab('captains',this)">Captains</div>
+  <div class="tab active" data-tab="today"     onclick="showTab('today',this)">🎯 Today</div>
+  <div class="tab"        data-tab="captains"  onclick="showTab('captains',this)">Captains</div>
   <div class="tab"        data-tab="finance"   onclick="showTab('finance',this)">Finance</div>
   <div class="tab"        data-tab="ambassadors" onclick="showTab('ambassadors',this)">🎖 Ambassadors</div>
   <div class="tab"        data-tab="blocks"     onclick="showTab('blocks',this);renderBlocks()">⛔ Blocks</div>
@@ -1588,8 +1589,16 @@ body::before {
   <div class="tab"        data-tab="settings"  onclick="showTab('settings',this)">Settings</div>
 </div>
 
+<!-- Today Panel (Build-156) — the manager's front door: five tiles, each answering a
+     morning question, each deep-linking to the tab with the detail. -->
+<div id="today" class="panel active">
+  <div id="todayContent">
+    <div class="empty-state"><div class="empty-icon">🎯</div><div class="empty-title">Loading today's picture…</div><div class="empty-sub">Pulls automatically once fleet data is loaded.</div></div>
+  </div>
+</div>
+
 <!-- Captains Panel -->
-<div id="captains" class="panel active">
+<div id="captains" class="panel">
   <div id="captainsContent">
     <div class="empty-state">
       <div class="empty-icon">👥</div>
@@ -2086,6 +2095,7 @@ function _doShowTab(id, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   el.classList.add('active');
+  if (id === 'today')    renderToday();
   if (id === 'captains') renderCaptains();
   if (id === 'finance')  renderFinanceTab();
   if (id === 'ambassadors') renderAmbassadors();
@@ -2197,6 +2207,7 @@ function confirmUpload() {
   renderCaptains();
   renderHistory();
   renderFinanceTab(); // refresh Transfer Log + all Finance views after upload
+  if (document.getElementById('today')?.classList.contains('active')) renderToday(); // Build-156
   checkCortexAlerts(currentDrivers, period);
   toast(`${currentDrivers.length} drivers saved for ${period}`);
   syncToCloud(); // auto-sync to cloud — manager sees it instantly
@@ -7171,7 +7182,7 @@ function clearAllData() {
 // don't see this exact string, your browser is serving a cached old HTML.
 // Force-refresh with Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac).
 // ═══════════════════════════════════════════
-const BUILD_VERSION = 'v5.1 — 2026-07-02 — Builds 150-153: pipeline funnel + weekly flow + new-driver ramp cohort + chase-list export';
+const BUILD_VERSION = 'v5.2 — 2026-07-02 — Builds 156-158: Today landing tab + Executive P&L + chase outcome loop';
 console.log('%cBolt Dashboard ' + BUILD_VERSION, 'color:#34d186;font-weight:bold');
 
 // ═══════════════════════════════════════════
@@ -9332,6 +9343,7 @@ function renderFinanceTab() {
     <div class="fin-period-bar">
       ${periodControls}
       <div class="view-toggle">
+        <button class="view-toggle-btn ${financeViewMode==='exec'?'active':''}" onclick="setFinanceView('exec')" title="CEO view — monthly P&L trend and unit economics">👔 Executive</button>
         <button class="view-toggle-btn ${financeViewMode==='courier'?'active':''}" onclick="setFinanceView('courier')">By Captain</button>
         <button class="view-toggle-btn ${financeViewMode==='model'?'active':''}" onclick="setFinanceView('model')">By Model</button>
         <button class="view-toggle-btn ${financeViewMode==='cycle'?'active':''}" onclick="setFinanceView('cycle')">Cycle Reconciliation</button>
@@ -9362,6 +9374,7 @@ function renderFinanceTab() {
   else if (financeViewMode === 'model')      renderFinanceModelView();
   else if (financeViewMode === 'cycle')      renderFinanceCycleView();
   else if (financeViewMode === 'transfers')  renderFinanceTransferView();
+  else if (financeViewMode === 'exec')       renderFinanceExecView();
   renderFinanceAlerts();
   if (!isTransfers) { renderFinBonus(); renderFleetBoltBonus(); }
 }
@@ -9567,6 +9580,113 @@ function renderFinanceCourierView() {
     </div>
   `;
 }
+// ── 👔 Executive P&L view (Build-157) ─────────────────────────────────────────
+// The CEO layer over the same per-captain engine: one column per month (last 6),
+// revenue components → fleet keeps → Bolt tier bonus → company net, plus unit
+// economics (net per active driver) and a data-quality footer. Every number comes
+// from computeDriverPnL / bonusFor — the exact functions behind By Captain — so
+// this view can never disagree with the detail views.
+function computeExecMonth(monthKey) {
+  const names = getDriversInMonth(monthKey);
+  Object.keys(loadCourierProfiles()).forEach(k => { if (!names.some(d => driverKey(d) === k)) names.push(k); });
+  const pls = names.map(n => computeDriverPnL(n, monthKey));
+  const S = { month: monthKey, driversNet:0, inflow:0, outflow:0, bonusPaid:0, fleetKeeps:0,
+              tierCompany:0, tierPartnerB:0, activeN:0, noProfile:0 };
+  pls.forEach(p => {
+    S.driversNet += p.income;
+    S.inflow  += Math.max(0,p.acctRent) + Math.max(0,p.carRent) + Math.max(0,p.other);
+    S.outflow += Math.min(0,p.acctRent) + Math.min(0,p.carRent) + p.salary + p.fleetCut + Math.min(0,p.other);
+    S.bonusPaid  += p.bonusCost;
+    S.fleetKeeps += p.netPnL;
+    if (p.income > 0) { S.activeN++; if (!p.hasProfile) S.noProfile++; }
+    const b = bonusFor(p.income, monthKey);
+    S.tierCompany += b.company; S.tierPartnerB += b.partnerB;
+  });
+  S.companyNet = S.fleetKeeps + S.tierCompany;
+  S.perDriver  = S.activeN ? S.companyNet / S.activeN : 0;
+  S.reconciled = typeof isMonthReconciled === 'function' && isMonthReconciled(monthKey);
+  return S;
+}
+
+function renderFinanceExecView() {
+  const host = document.getElementById('financeMainContent');
+  if (!host) return;
+  const R = computeRosterForMonth('');
+  if (!R || !R.months.length) {
+    host.innerHTML = `<div class="finance-section"><div class="finance-empty">No monthly data yet — upload Bolt CSVs first.</div></div>`;
+    return;
+  }
+  const now = new Date();
+  const curKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const months = [...R.months].sort().slice(-6);       // oldest → newest, last 6
+  const cols = months.map(computeExecMonth);
+
+  const sig = v => v === 0 ? '<span style="color:var(--text-muted)">—</span>'
+    : `<span style="color:${v>0?'var(--green)':'var(--red)'}">${v>0?'+':''}${fmt(Math.round(v))}</span>`;
+  const money = v => fmt(Math.round(v));
+  const th = c => `<th style="padding:8px 12px;text-align:right;font-size:11px;white-space:nowrap;color:${c.month===curKey?'var(--cyan)':'var(--text-muted)'}">${monthLabel(c.month)}${c.month===curKey?'<div style="font-size:9px;font-weight:400">in progress</div>':''}</th>`;
+  const rowH = (label, cells, opts) => `<tr style="${opts&&opts.strong?'background:var(--bg-card2);font-weight:700;':''}border-top:1px solid ${opts&&opts.strong?'rgba(0,255,179,.25)':'var(--border)'}">
+    <td style="padding:8px 12px;font-size:12px;${opts&&opts.strong?'':'color:var(--text-muted)'};white-space:nowrap">${label}</td>
+    ${cells.map(c=>`<td style="padding:8px 12px;text-align:right;font-family:var(--mono);font-size:12px;white-space:nowrap">${c}</td>`).join('')}
+  </tr>`;
+
+  // Month-over-month on company net — compare the two most recent CLOSED months when
+  // possible; if the newest column is the in-progress month, say so explicitly.
+  const closed = cols.filter(c => c.month !== curKey);
+  let momLine = '';
+  if (closed.length >= 2) {
+    const a = closed[closed.length-2], b = closed[closed.length-1];
+    const d = b.companyNet - a.companyNet, pct = a.companyNet ? Math.round(d/Math.abs(a.companyNet)*100) : null;
+    momLine = `Company net ${monthLabel(b.month)} vs ${monthLabel(a.month)}: <b style="color:${d>=0?'var(--green)':'var(--red)'}">${d>=0?'+':''}${fmt(Math.round(d))} SAR${pct!=null?` (${d>=0?'+':''}${pct}%)`:''}</b>`;
+  }
+
+  const maxNet = Math.max(1, ...cols.map(c => Math.abs(c.companyNet)));
+  const trend = `<div style="display:flex;gap:10px;align-items:flex-end;padding:4px 12px 10px">
+    ${cols.map(c => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+      <div style="font-size:10px;font-family:var(--mono);color:${c.companyNet>=0?'var(--bolt-green)':'var(--red)'}">${fmt(Math.round(c.companyNet))}</div>
+      <div title="${monthLabel(c.month)} company net" style="width:70%;max-width:64px;border-radius:3px 3px 0 0;background:${c.companyNet>=0?'var(--bolt-green)':'var(--red)'};opacity:${c.month===curKey?.45:.85};height:${Math.max(4, Math.round(Math.abs(c.companyNet)/maxNet*72))}px"></div>
+      <div style="font-size:9px;color:var(--text-muted);white-space:nowrap">${monthLabel(c.month).replace(' 20',' ')}${c.month===curKey?' ⏳':''}</div>
+    </div>`).join('')}
+  </div>`;
+
+  const dq = cols.map(c => {
+    const bits = [];
+    if (c.noProfile) bits.push(`<span style="color:var(--amber)">${c.noProfile} no-profile</span>`);
+    bits.push(c.reconciled ? '<span style="color:var(--green)">recon ✓</span>' : (c.month===curKey?'<span style="color:var(--text-muted)">open</span>':'<span style="color:var(--amber)">recon due</span>'));
+    return `<div style="font-size:10px">${bits.join('<br>')}</div>`;
+  });
+
+  host.innerHTML = `
+    <div class="finance-section">
+      <div class="finance-section-header">
+        <span class="finance-section-title">👔 Executive P&L — last ${cols.length} month${cols.length>1?'s':''}</span>
+        <span style="font-size:11px;color:var(--text-muted)">${momLine || 'Company net = fleet keeps + Bolt tier bonus (company share, after op cost + Partner B split)'}</span>
+      </div>
+      ${trend}
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
+        <thead><tr><th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-muted)">SAR</th>${cols.map(th).join('')}</tr></thead>
+        <tbody>
+          ${rowH(`Drivers' Bolt net <span style="font-size:10px">(context — drivers' money)</span>`, cols.map(c=>money(c.driversNet)))}
+          ${rowH('Fleet inflows (rents + cuts in)', cols.map(c=>sig(c.inflow)))}
+          ${rowH('Fleet outflows (salaries, rents out)', cols.map(c=>sig(c.outflow)))}
+          ${rowH('Ambassador + Saudi bonuses', cols.map(c=>sig(c.bonusPaid)))}
+          ${rowH('Fleet keeps (per-captain P&L)', cols.map(c=>sig(c.fleetKeeps)))}
+          ${rowH('Bolt tier bonus — company share', cols.map(c=>sig(c.tierCompany)))}
+          ${rowH('<span style="font-size:10px">Partner B share (info, not company money)</span>', cols.map(c=>`<span style="font-size:11px;color:var(--text-muted)">${money(c.tierPartnerB)}</span>`))}
+          ${rowH('★ COMPANY NET', cols.map(c=>sig(c.companyNet)), {strong:true})}
+          ${rowH('Active drivers', cols.map(c=>String(c.activeN)))}
+          ${rowH('Net per active driver', cols.map(c=>sig(c.perDriver)))}
+          ${rowH('Data quality', dq)}
+        </tbody>
+      </table></div>
+      <div style="font-size:10px;color:var(--text-muted);padding:10px 12px">
+        The in-progress month uses month-to-date nets, so its tier bonus is understated until month-end.
+        "No-profile" earners count as raw net in Fleet keeps (no rent/salary applied) — fill their cost profiles to sharpen these numbers.
+        Reconcile each closed month (📋 Reconcile w/ Bolt) to lock the final figures.
+      </div>
+    </div>`;
+}
+
 // Finance By-Captain dropdown helpers
 function toggleFinCourierDd() {
   const dd = document.getElementById('finCourierDd');
@@ -12432,14 +12552,13 @@ function setAnalyticsDrillSort(col) {
   renderAnalytics();
 }
 
-function renderAnalytics() {
-  const el = document.getElementById('analyticsContent');
-  if (!el) return;
+// ── Shared roster computation (Build-156 refactor) ───────────────────────────
+// The single source of truth behind the Analytics tab, the 🎯 Today tab and the
+// chase-list export. Body moved VERBATIM out of renderAnalytics — same projection,
+// same push feasibility, same flags. Pass '' to resolve to the latest month.
+function computeRosterForMonth(monthSel) {
   const history = getHistory();
-  if (!history.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">No data yet</div><div class="empty-sub">Upload reports to see fleet performance</div></div>`;
-    return;
-  }
+  if (!history.length) return null;
 
   const allSorted = [...history].sort((a,b)=>periodSortKey(a.period)-periodSortKey(b.period));
   // Derive available months from the PERIOD strings. (Cloud-pulled history lacks
@@ -12449,41 +12568,31 @@ function renderAnalytics() {
   allSorted.forEach(h => { const pk = periodMonthKey(h.period); const m = pk && pk.match(/(\w{3})\s(\d{4})/);
     if (m && MONTH_MAP[m[1]] != null) monthSet.add(m[2] + '-' + String(MONTH_MAP[m[1]]+1).padStart(2,'0')); });
   const months = [...monthSet].sort().reverse();        // 'YYYY-MM', newest first
-  // Default to the latest month (the bonus pipeline is a monthly concept). 'all' stays clickable.
-  if (analyticsMonth === '' || (analyticsMonth !== 'all' && !months.includes(analyticsMonth)))
-    analyticsMonth = months[0] || 'all';
-
-  const monthBtnHtml = ['all', ...months].map(m => {
-    const lbl = m === 'all' ? 'All time' : monthLabel(m);
-    return `<button class="sort-btn${analyticsMonth === m ? ' active' : ''}" onclick="setAnalyticsMonth('${m}')">${lbl}</button>`;
-  }).join('');
-  const selectorHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center">${monthBtnHtml}
-    <span style="flex:1"></span>
-    <button class="save-btn" style="padding:5px 14px;font-size:11px" onclick="openChaseList()" title="WhatsApp-ready follow-up list for the team">📋 CHASE LIST</button></div>`;
+  // Default to the latest month (the bonus pipeline is a monthly concept). 'all' stays valid.
+  if (monthSel === '' || (monthSel !== 'all' && !months.includes(monthSel)))
+    monthSel = months[0] || 'all';
 
   function filterByMonth(data) {
-    if (analyticsMonth === 'all') return data;
-    const [y,m] = analyticsMonth.split('-').map(Number);
+    if (monthSel === 'all') return data;
+    const [y,m] = monthSel.split('-').map(Number);
     const targetMonth = m - 1;
     return data.filter(h => { const pk = periodMonthKey(h.period); const pm = pk && pk.match(/(\w{3})\s(\d{4})/);
       return pm && MONTH_MAP[pm[1]] === targetMonth && parseInt(pm[2]) === y; });
   }
   const viewData = filterByMonth(allSorted);
-  const periodLabel = analyticsMonth === 'all' ? 'All time' : monthLabel(analyticsMonth);
-  if (!viewData.length) { el.innerHTML = selectorHtml + `<div style="text-align:center;padding:60px 0;color:var(--text-muted);font-size:14px">No data for ${periodLabel}.</div>`; return; }
-
-  ['revenue','orders','acceptance','topDrivers','cashSplit'].forEach(destroyChart);
+  const periodLabel = monthSel === 'all' ? 'All time' : monthLabel(monthSel);
+  if (!viewData.length) return { months, monthSel, viewData, periodLabel };
 
   // ── Month context for the RUN-RATE ──────────────────────────────────────────
   // The projection answers "where will this driver LAND this month at the current
   // pace". The run-rate divides month-to-date net by the CALENDAR DAYS ELAPSED in
   // the month (1st → today), NOT by the days they happened to work — so a driver who
   // banked 3,000 then stopped/was blocked on the 30th projects ~3,000, not 6,000.
-  const projectable = analyticsMonth !== 'all';
+  const projectable = monthSel !== 'all';
   const today = new Date();
   let daysInMonth = 30, elapsedDays = 30, remainingDays = 0, remTotal = 0, isCurrentMonth = false, isPastMonth = false, py = 0, pm = 0;
   if (projectable) {
-    [py, pm] = analyticsMonth.split('-').map(Number);   // pm = 1..12
+    [py, pm] = monthSel.split('-').map(Number);         // pm = 1..12
     daysInMonth = new Date(py, pm, 0).getDate();        // CALENDAR length: Jun 30, Jul 31, Feb 28/29
     isCurrentMonth = (today.getFullYear()===py && (today.getMonth()+1)===pm);
     isPastMonth = (py < today.getFullYear()) || (py===today.getFullYear() && (today.getMonth()+1) > pm);
@@ -12543,17 +12652,46 @@ function renderAnalytics() {
     const nextFloor = (projectable && !blocked && !idle) ? TIERS.find(f => f > proj) : undefined;
     const gapToTier = nextFloor ? nextFloor - proj : 0;
     const pushExtra = (nextFloor && remWork>0) ? Math.max(1, Math.ceil(gapToTier / remWork)) : Infinity; // extra SAR/work-day
-    const unlocks   = nextFloor ? bonusFor(nextFloor, analyticsMonth).company : 0;
+    const unlocks   = nextFloor ? bonusFor(nextFloor, monthSel).company : 0;
     // Reachable if the extra needed is a modest lift on their current work-day pace.
     const pushFeasible = !!nextFloor && remWork>0 && pushExtra <= Math.max(Math.round(avgWork*0.5), 30);
     return { ...a, firstSeen, firstSeenCertain, isNew, left, blocked, idle, proj, band, avgWork,
       accept: a.acDays>0 ? a.acSum/a.acDays : 0,
-      companyBonus: (projectable && !idle) ? bonusFor(proj, analyticsMonth).company : 0,
-      partnerBBonus: (projectable && !idle) ? bonusFor(proj, analyticsMonth).partnerB : 0,
+      companyBonus: (projectable && !idle) ? bonusFor(proj, monthSel).company : 0,
+      partnerBBonus: (projectable && !idle) ? bonusFor(proj, monthSel).partnerB : 0,
       accDrop: accAlerts[a.key]?.acceptanceDrop || null,
       nextFloor, gapToTier, pushExtra, unlocks, pushFeasible };
   });
   const current = drivers.filter(d => !d.left);
+
+  return { months, monthSel, viewData, periodLabel, projectable, isCurrentMonth, isPastMonth,
+    daysInMonth, elapsedDays, remainingDays, remTotal, remWork, TIERS, bandOf,
+    drivers, current, blockedCount: blockedKeys.size };
+}
+
+function renderAnalytics() {
+  const el = document.getElementById('analyticsContent');
+  if (!el) return;
+  const R = computeRosterForMonth(analyticsMonth);
+  if (!R) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">No data yet</div><div class="empty-sub">Upload reports to see fleet performance</div></div>`;
+    return;
+  }
+  analyticsMonth = R.monthSel;
+  const { months, viewData, periodLabel, projectable, isCurrentMonth, isPastMonth,
+    daysInMonth, elapsedDays, remTotal, remWork, TIERS, bandOf, drivers, current, blockedCount } = R;
+
+  const monthBtnHtml = ['all', ...months].map(m => {
+    const lbl = m === 'all' ? 'All time' : monthLabel(m);
+    return `<button class="sort-btn${analyticsMonth === m ? ' active' : ''}" onclick="setAnalyticsMonth('${m}')">${lbl}</button>`;
+  }).join('');
+  const selectorHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center">${monthBtnHtml}
+    <span style="flex:1"></span>
+    <button class="save-btn" style="padding:5px 14px;font-size:11px" onclick="openChaseList()" title="WhatsApp-ready follow-up list for the team">📋 CHASE LIST</button></div>`;
+  if (!viewData.length) { el.innerHTML = selectorHtml + `<div style="text-align:center;padding:60px 0;color:var(--text-muted);font-size:14px">No data for ${periodLabel}.</div>`; return; }
+
+  ['revenue','orders','acceptance','topDrivers','cashSplit'].forEach(destroyChart);
+
   // Build-153: cache the computed roster so the chase-list export reuses EXACTLY the
   // numbers on screen — no second source of truth to drift.
   analyticsLastCompute = { current, projectable, isCurrentMonth, remTotal, remWork, periodLabel, monthKey: analyticsMonth, TIERS };
@@ -12565,7 +12703,7 @@ function renderAnalytics() {
   const slowCount    = projectable ? current.filter(d=>!d.idle && d.band===0).length : 0; // working but projecting < 4k
   const newCount     = current.filter(d=>d.isNew).length;
   const leftCount    = drivers.filter(d=>d.left).length;
-  const blockedCount = blockedKeys.size;              // matches the Blocks tab (current status)
+  // blockedCount comes from computeRosterForMonth — matches the Blocks tab (current status).
 
   // ── Pipeline (projectable months only) ──
   const buckets = [
@@ -12848,6 +12986,18 @@ async function openChaseList() {
   const name = d => lookupForeignName(d.name) || d.name;
   const tel  = d => phones[d.key] ? ' · 📞 ' + phones[d.key] : '';
   const ago  = k => lastTrip[k] ? Math.max(0, Math.floor((now - lastTrip[k]) / DAY)) : null;
+  // Build-158: chase-outcome loop — annotate who was already chased recently, and report
+  // whether the last chase actually moved anyone (a trip AFTER the chase date).
+  const allProfiles = loadCourierProfiles();
+  const chasedAtOf = k => { const p = allProfiles[k]; const t = p && p.lastChased ? Date.parse(p.lastChased) : NaN; return isNaN(t) ? null : t; };
+  const chasedNote = d => { const t = chasedAtOf(d.key); if (t == null) return '';
+    const dd = Math.floor((now - t)/DAY); return dd <= 14 ? ` · ☎ chased ${dd === 0 ? 'today' : dd + 'd ago'}` : ''; };
+  let chasedN = 0, movedN = 0;
+  Object.keys(allProfiles).forEach(k => {
+    const t = chasedAtOf(k); if (t == null) return;
+    const age = (now - t)/DAY; if (age < 2 || age > 14) return;   // too fresh to judge / too old to credit
+    chasedN++; if (lastTrip[k] && lastTrip[k] > t) movedN++;
+  });
   const prevLabel = new Date(prevY, prevM0, 1).toLocaleDateString('en-GB', { month: 'short' });
   const monLabel  = new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'short' });
 
@@ -12864,13 +13014,13 @@ async function openChaseList() {
   L.push(`${c.periodLabel}${c.isCurrentMonth ? ' · ' + c.remTotal + ' day' + (c.remTotal!==1?'s':'') + ' left incl. today' : ''}`);
   if (push.length) {
     L.push('', `⚡ *EASY WINS — small push, real bonus (${push.length})*`);
-    push.forEach((d,i) => L.push(`${i+1}. ${name(d)} — on ${fmt(d.proj)} pace, needs *+${fmt(d.pushExtra)}/work-day* → ${d.nextFloor/1000}k tier (bonus +${fmt(d.unlocks)})${tel(d)}`));
+    push.forEach((d,i) => L.push(`${i+1}. ${name(d)} — on ${fmt(d.proj)} pace, needs *+${fmt(d.pushExtra)}/work-day* → ${d.nextFloor/1000}k tier (bonus +${fmt(d.unlocks)})${tel(d)}${chasedNote(d)}`));
   }
   if (slow.length) {
     L.push('', `🔻 *BELOW 4K — working, no bonus yet (${slow.length})*`);
     slow.forEach((d,i) => {
       const need = (c.remWork > 0 && d.nextFloor) ? ` · needs +${fmt(d.pushExtra === Infinity ? Math.ceil(d.gapToTier / Math.max(1,c.remWork)) : d.pushExtra)}/work-day for 4k` : '';
-      L.push(`${i+1}. ${name(d)} — banked ${fmt(Math.round(d.net))} · ${d.days} work day${d.days!==1?'s':''} · pace →${fmt(d.proj)}/mo${need}${tel(d)}`);
+      L.push(`${i+1}. ${name(d)} — banked ${fmt(Math.round(d.net))} · ${d.days} work day${d.days!==1?'s':''} · pace →${fmt(d.proj)}/mo${need}${tel(d)}${chasedNote(d)}`);
     });
   }
   if (idleEarners.length || idleNever.length) {
@@ -12880,16 +13030,31 @@ async function openChaseList() {
       const ctx = [];
       if (a != null) ctx.push(`last trip ${a === 0 ? 'today' : a + 'd ago'}`);
       if (prevNet[d.key]) ctx.push(`did ${fmt(Math.round(prevNet[d.key]))} SAR in ${prevLabel}`);
-      L.push(`${i+1}. ${name(d)} — ${ctx.join(' · ') || 'no recent activity'}${tel(d)}`);
+      L.push(`${i+1}. ${name(d)} — ${ctx.join(' · ') || 'no recent activity'}${tel(d)}${chasedNote(d)}`);
     });
     if (idleNever.length)
       L.push(`_Never earned yet (${idleNever.length}):_ ${idleNever.map(d => name(d)).join(', ')}`);
   }
   L.push('', '—');
   if (onTable) L.push(`💰 Company bonus within reach this month: *+${fmt(onTable)} SAR* (the ⚡ list)`);
+  if (chasedN) L.push(`☎ Follow-through: of ${chasedN} chased 2–14 days ago, *${movedN} moved* (had a trip after the chase)${chasedN-movedN ? ` — ${chasedN-movedN} still silent` : ''}.`);
   if (blockedIdle) L.push(`⛔ ${blockedIdle} blocked driver${blockedIdle!==1?'s':''} excluded — unblocking is a different worklist (Blocks tab).`);
 
+  // Build-158: remember who's on this list so "mark all as chased" knows the audience.
+  chaseListedDrivers = [...push, ...slow, ...idleEarners, ...idleNever].map(d => d.name);
   showChaseModal(L.join('\n'));
+}
+
+// Build-158: stamp everyone on the current chase list as chased today (stored on the
+// courier profile → syncs to cloud like every other profile field). The next chase
+// list then annotates them and scores follow-through.
+let chaseListedDrivers = [];
+function markChaseListChased() {
+  if (!chaseListedDrivers.length) { toast('Build a chase list first'); return; }
+  const iso = new Date().toISOString();
+  chaseListedDrivers.forEach(n => { const p = getCourierProfile(n); p.lastChased = iso; upsertCourierProfile(n, p); });
+  syncToCloud();
+  toast(`☎ Marked ${chaseListedDrivers.length} drivers as chased today`);
 }
 
 function showChaseModal(text) {
@@ -12904,7 +13069,8 @@ function showChaseModal(text) {
         <button onclick="document.getElementById('chaseModal').style.display='none'" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:2px;padding:3px 10px;cursor:pointer;font-size:11px">✕ CLOSE</button>
       </div>
       <textarea id="chaseText" readonly style="flex:1;min-height:340px;background:#020A14;color:var(--text);border:none;outline:none;padding:14px 16px;font-family:var(--mono);font-size:12px;line-height:1.55;resize:none;white-space:pre-wrap"></textarea>
-      <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end">
+      <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+        <button class="save-btn" onclick="markChaseListChased()" style="padding:8px 18px;background:var(--bg-card);color:var(--text);border:1px solid var(--border)" title="Stamps today's date on every driver listed — the next list shows who was chased and whether they moved">☎ MARK ALL AS CHASED</button>
         <button class="save-btn" onclick="copyChaseList()" style="padding:8px 18px">📋 COPY ALL</button>
       </div>
     </div>`;
@@ -12921,6 +13087,130 @@ function copyChaseList() {
   const done = () => toast('Copied — paste into the team WhatsApp');
   if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); document.execCommand('copy'); done(); });
   else { ta.select(); document.execCommand('copy'); done(); }
+}
+
+// ── 🎯 Today tab (Build-156) ──────────────────────────────────────────────────
+// The manager's front door: five tiles that answer the morning questions — money,
+// who to chase, onboarding health, bonus data-health, and blockers — each tile
+// deep-links to the tab with the detail. All numbers come from the SAME sources
+// as the tabs they link to (computeRosterForMonth + the pipeline caches), so
+// Today can never disagree with the detail view behind it.
+function todayGo(tab) { const t = document.querySelector(`.tab[data-tab="${tab}"]`); if (t) t.click(); }
+
+function renderToday() {
+  const el = document.getElementById('todayContent');
+  if (!el) return;
+  const R = computeRosterForMonth('');                 // latest month with data
+  if (!R || !R.viewData || !R.viewData.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🎯</div><div class="empty-title">No fleet data yet</div><div class="empty-sub">Pull from cloud (⇩ PULL above) or upload a Bolt CSV — Today lights up automatically.</div></div>`;
+    return;
+  }
+  const { current, periodLabel, projectable, isCurrentMonth, remTotal, monthSel, blockedCount } = R;
+
+  // Money
+  const monthNet  = current.reduce((s,d)=>s+d.net,0);
+  const projBonus = current.reduce((s,d)=>s+(d.idle?0:d.companyBonus),0);
+  const [y, m] = monthSel.split('-').map(Number);
+  const pm0 = m === 1 ? 11 : m - 2, py = m === 1 ? y - 1 : y;
+  // Apples-to-apples: for an in-progress month, compare against the previous month's
+  // FIRST N days (same days elapsed) — not its full total, which would always read -9x%.
+  const dayCut = isCurrentMonth ? new Date().getDate() : 31;
+  let prevNet = 0;
+  getHistory().forEach(h => { const pk = periodMonthKey(h.period), mm = pk && pk.match(/(\w{3})\s(\d{4})/);
+    if (!(mm && MONTH_MAP[mm[1]] === pm0 && parseInt(mm[2]) === py)) return;
+    const dayN = new Date(periodSortKey(h.period)).getDate();
+    if (dayN > dayCut) return;
+    (h.drivers||[]).forEach(d => prevNet += sN(d.netEarnings)); });
+  const prevLabel = new Date(py, pm0, 1).toLocaleDateString('en-GB',{month:'short'})
+    + (isCurrentMonth ? ` (first ${dayCut} day${dayCut!==1?'s':''})` : ' (full month)');
+
+  // Chase
+  const idleN = current.filter(d=>d.idle && !d.blocked).length;
+  const slowN = projectable ? current.filter(d=>!d.idle && !d.blocked && d.band===0).length : 0;
+  const easy  = current.filter(d=>d.pushFeasible);
+  const easySar = easy.reduce((s,d)=>s+d.unlocks,0);
+
+  // Bonus health
+  const profiles = loadCourierProfiles();
+  const noAmb = current.filter(d => d.net > 0 && !(profiles[d.key] && profiles[d.key].ambassador)).length;
+  let natPending = 0;
+  Object.keys(profiles).forEach(k => { const p = profiles[k]; if (p && p.ambassador && (!p.nationality || !p.nationalityConfirmed)) natPending++; });
+  const prevKey = py + '-' + String(pm0+1).padStart(2,'0');
+  const reconDue = R.months.includes(prevKey) && typeof isMonthReconciled === 'function' && !isMonthReconciled(prevKey);
+  const noProfile = current.filter(d => d.net > 0 && !Object.prototype.hasOwnProperty.call(profiles, d.key)).length;
+
+  const dateLine = new Date().toLocaleDateString('en-GB',{weekday:'long', day:'2-digit', month:'long'});
+  const big  = (v,unit) => `<span style="font-size:26px;font-weight:800;font-family:var(--mono)">${v}</span>${unit?`<span style="font-size:12px;color:var(--text-muted)"> ${unit}</span>`:''}`;
+  const row  = (label, valHtml) => `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:3px 0;font-size:12px"><span style="color:var(--text-muted)">${label}</span><span>${valHtml}</span></div>`;
+  const attn = n => n ? `<b style="color:var(--amber)">${n}</b>` : `<span style="color:var(--text-muted)">0</span>`;
+  const tile = (target, icon, title, body, footer) => `
+    <div class="chart-card" onclick="todayGo('${target}')" style="cursor:pointer;display:flex;flex-direction:column;gap:6px;min-width:230px;flex:1 1 260px">
+      <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:center"><span>${icon} ${title}</span><span style="font-size:11px;color:var(--text-muted)">open →</span></div>
+      <div style="flex:1">${body}</div>
+      ${footer ? `<div style="font-size:11px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:6px">${footer}</div>` : ''}
+    </div>`;
+
+  const deltaPct = prevNet > 0 ? Math.round((monthNet - prevNet) / prevNet * 100) : null;
+  const moneyBody = `${big(fmt(Math.round(monthNet)),'SAR fleet net · '+periodLabel)}
+    ${row('Projected company bonus', projectable ? `<b style="color:var(--bolt-green)">+${fmt(projBonus)} SAR</b>` : '—')}
+    ${row('vs '+prevLabel, prevNet ? `${fmt(Math.round(prevNet))} SAR <b style="color:${deltaPct>=0?'var(--green)':'var(--red)'}">${deltaPct!=null?(deltaPct>=0?'+':'')+deltaPct+'%':''}</b>` : '—')}`;
+
+  const chaseBody = `${big(idleN + slowN, 'drivers need a push')}
+    ${row('Idle · no trips', attn(idleN))}
+    ${row('Working below 4k pace', attn(slowN))}
+    ${row('⚡ Easy tier wins', easy.length ? `<b style="color:var(--bolt-green)">${easy.length} worth +${fmt(easySar)} SAR</b>` : '<span style="color:var(--text-muted)">none right now</span>')}`;
+
+  const bonusBody = `${big(noAmb + natPending, 'attribution gaps')}
+    ${row('Earners with no ambassador', attn(noAmb))}
+    ${row('Nationality unconfirmed', attn(natPending))}
+    ${row('Earners with no cost profile', attn(noProfile))}`;
+
+  const alertsBody = `${big(blockedCount + (reconDue?1:0), 'blockers')}
+    ${row('Blocked on Bolt', blockedCount ? `<b style="color:var(--red)">${blockedCount}</b>` : '<span style="color:var(--text-muted)">0</span>')}
+    ${row(monthLabel(prevKey)+' reconcile', reconDue ? '<b style="color:var(--amber)">due</b>' : '<span style="color:var(--green)">done ✓</span>')}`;
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;padding:14px 4px 12px">
+      <div style="font-size:18px;font-weight:800">🎯 Today — ${dateLine}</div>
+      <div style="font-size:11px;color:var(--text-muted)">${isCurrentMonth ? remTotal + ' day' + (remTotal!==1?'s':'') + ' left in ' + periodLabel + ' incl. today' : periodLabel + ' (latest data)'} · every tile opens its tab</div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:stretch">
+      ${tile('finance','💰','Money', moneyBody, 'P&L, reconcile and payouts live in Finance')}
+      ${tile('analytics','📞','Chase', chaseBody, 'Analytics → 📋 CHASE LIST for the WhatsApp export')}
+      <div class="chart-card" onclick="todayGo('pipeline')" style="cursor:pointer;display:flex;flex-direction:column;gap:6px;min-width:230px;flex:1 1 260px">
+        <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:center"><span>🚦 Onboarding</span><span style="font-size:11px;color:var(--text-muted)">open →</span></div>
+        <div style="flex:1" id="todayOnb"><span style="font-size:12px;color:var(--text-muted)">loading…</span></div>
+        <div style="font-size:11px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:6px">Funnel, bottlenecks and stuck drivers live in Onboarding</div>
+      </div>
+      ${tile('ambassadors','🎖','Bonus health', bonusBody, 'Fix all three in the Ambassadors tab worklists')}
+      ${tile('blocks','⚠','Blockers', alertsBody, 'Blocked drivers live in Blocks; reconcile in Finance')}
+    </div>`;
+  renderTodayOnboarding();
+}
+
+// Fills the Onboarding tile async from the same cached fetches the 🚦 tab uses.
+async function renderTodayOnboarding() {
+  const host = document.getElementById('todayOnb');
+  if (!host) return;
+  if (!supabaseOn()) { host.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">Connect Supabase to see the onboarding funnel.</span>'; return; }
+  try {
+    const [snap, log] = await Promise.all([fetchStageSnapshot(), fetchStageLog()]);
+    if (!(snap.length || log.length)) { host.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">No pipeline data yet.</span>'; return; }
+    const now = Date.now(), DAY = 86400000;
+    const inPipe = snap.filter(r => !PIPELINE_TERMINAL.has(r.current_stage)).length;
+    const stuck  = snap.filter(r => { if (PIPELINE_TERMINAL.has(r.current_stage)) return false;
+      const t = Date.parse(r.entered_at); return !isNaN(t) && (now-t)/DAY > PIPELINE_STUCK_DAYS; }).length;
+    const tracked = log.filter(r => r.from_stage !== '(baseline)');
+    const wk = r => { const t = Date.parse(r.changed_at); return !isNaN(t) && (now - t) < 7*DAY; };
+    const lost7 = new Set(tracked.filter(r => PIPELINE_LOSS.has(r.to_stage) && wk(r)).map(r => r.driver_id||r.name)).size;
+    const act7  = new Set(tracked.filter(r => r.to_stage === 'Active' && wk(r)).map(r => r.driver_id||r.name)).size;
+    const big  = (v,unit) => `<span style="font-size:26px;font-weight:800;font-family:var(--mono)">${v}</span><span style="font-size:12px;color:var(--text-muted)"> ${unit}</span>`;
+    const row  = (label, valHtml) => `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:3px 0;font-size:12px"><span style="color:var(--text-muted)">${label}</span><span>${valHtml}</span></div>`;
+    host.innerHTML = `${big(inPipe,'in the pipeline')}
+      ${row('Stuck > '+PIPELINE_STUCK_DAYS+' days', stuck ? `<b style="color:var(--red)">${stuck}</b>` : '<span style="color:var(--green)">0</span>')}
+      ${row('Activated this week', `<b style="color:var(--green)">${act7}</b>`)}
+      ${row('Lost this week', lost7 ? `<b style="color:var(--red)">${lost7}</b>` : '<span style="color:var(--text-muted)">0</span>')}`;
+  } catch (_) { host.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">Pipeline data unavailable.</span>'; }
 }
 
 // ═══════════════════════════════════════════
@@ -13038,11 +13328,13 @@ document.addEventListener('DOMContentLoaded', () => {
     setSyncStatus('offline', 'open via server for sync');
     autoLoadLatest();
     renderHistory();
+    renderToday();               // Build-156: Today is the landing tab
     if (cloudReady) updateShareUI(binId);
   } else if (cloudReady) {
     fetchFromCloud().then(() => {
       autoLoadLatest();
       renderHistory();
+      renderToday();             // Build-156: Today is the landing tab
       updateShareUI(binId);
       refreshAmbassadorList();   // load the ambassador dropdown from the synced sheet
     });
@@ -13060,12 +13352,14 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchFromCloud().then(() => {
           autoLoadLatest();
           renderHistory();
+          renderToday();             // Build-156: Today is the landing tab
           updateShareUI(getBinId());
           refreshAmbassadorList();   // load the ambassador dropdown from the synced sheet
         });
       } else {
         autoLoadLatest();
         renderHistory();
+        renderToday();               // Build-156: Today is the landing tab
       }
     });
   }
