@@ -7187,7 +7187,7 @@ function clearAllData() {
 // don't see this exact string, your browser is serving a cached old HTML.
 // Force-refresh with Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac).
 // ═══════════════════════════════════════════
-const BUILD_VERSION = 'v5.2 — 2026-07-02 — Builds 156-158: Today landing tab + Executive P&L + chase outcome loop';
+const BUILD_VERSION = 'v5.3 — 2026-07-02 — Builds 161-165: Today attention strip + incentive-dependency + at-risk chase + projected month-end net + named chase tile';
 console.log('%cBolt Dashboard ' + BUILD_VERSION, 'color:#34d186;font-weight:bold');
 
 // ═══════════════════════════════════════════
@@ -9668,6 +9668,41 @@ function renderFinanceExecView() {
   </div>`;
 
   const opCosts = [...new Set(cols.map(c=>c.opCost))];
+
+  // Build-162: Bolt-bonus dependency — how much of company profit rides on Bolt's tier
+  // bonus vs rentals/deals. headMonth = the most recent month with real profit (a fresh
+  // in-progress month can be 0 before any tier is booked — skip it for the headline).
+  const headMonth = [...cols].reverse().find(c => c.companyNet > 0) || null;
+  const depPct = headMonth ? Math.round(headMonth.tierCompany / headMonth.companyNet * 100) : null;
+  const depCallout = depPct != null ? `
+    <div style="flex:1 1 260px;background:rgba(56,190,240,.08);border:1px solid var(--blue,#38a5e0);border-radius:8px;padding:9px 12px;font-size:12px;line-height:1.5">
+      🎣 <b>${depPct}%</b> of ${monthLabel(headMonth.month)} company profit comes from <b>Bolt's tier bonus</b>, not rentals${depPct >= 60 ? ' — sharpens as cost profiles are filled' : ''}.
+    </div>` : '';
+
+  // Build-164: projected month-end company net — in-progress month only. Rentals/deal
+  // income don't move with pace, so only the tier bonus is re-projected: booked deal net
+  // + Σ bonusFor(proj).company across current non-idle drivers (the roster projections).
+  let projCallout = '';
+  if (R.isCurrentMonth) {
+    const curExec = cols.find(c => c.month === curKey);
+    if (curExec) {
+      const nonIdle = R.current.filter(d => !d.idle);
+      const projTierCompany = nonIdle.reduce((s,d) => s + (d.companyBonus || 0), 0);
+      const projNet = curExec.dealNet + projTierCompany;      // dealNet is pace-independent
+      const booked  = curExec.companyNet;
+      const up = projNet - booked;
+      // A day-1/2 read extrapolates one working day over the whole month — honest about it.
+      const note = R.elapsedDays <= 4
+        ? ` <span style="color:var(--text-muted)">(early read — ${R.elapsedDays}d in, firms up over the month)</span>`
+        : (up>0 ? ` <span style="color:var(--text-muted)">(+${fmt(Math.round(up))} as tiers firm up)</span>` : '');
+      projCallout = `
+        <div style="flex:1 1 260px;background:rgba(61,219,174,.08);border:1px solid var(--bolt-green,#3DDBAE);border-radius:8px;padding:9px 12px;font-size:12px;line-height:1.5">
+          📈 ${monthLabel(curKey)} booked so far <b>${fmt(Math.round(booked))} SAR</b> · on pace to close at <b style="color:var(--bolt-green)">~${fmt(Math.round(projNet))} SAR</b>${note}.
+        </div>`;
+    }
+  }
+  const calloutBand = (depCallout || projCallout) ? `<div style="display:flex;flex-wrap:wrap;gap:10px;padding:2px 12px 10px">${projCallout}${depCallout}</div>` : '';
+
   host.innerHTML = `
     <div class="finance-section">
       <div class="finance-section-header">
@@ -9675,6 +9710,7 @@ function renderFinanceExecView() {
         <span style="font-size:11px;color:var(--text-muted)">${momLine || 'Revenue = rentals/deals + Bolt tier bonus. Driver net is the DRIVER&#39;S money — context only.'}</span>
       </div>
       ${trend}
+      ${calloutBand}
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
         <thead><tr><th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-muted)">SAR</th>${cols.map(th).join('')}</tr></thead>
         <tbody>
@@ -9688,6 +9724,7 @@ function renderFinanceExecView() {
           ${rowH('★ COMPANY NET', c=>sig(c.companyNet), {strong:true})}
           ${section('UNIT ECONOMICS & CONTEXT')}
           ${rowH('Net per active driver', c=>sig(c.perDriver))}
+          ${rowH('Bolt-bonus dependency <span style="font-size:10px">(tier bonus ÷ company net)</span>', c=> c.companyNet>0 ? `<span style="color:${(c.tierCompany/c.companyNet)>=0.6?'var(--amber)':'var(--text-muted)'}">${Math.round(c.tierCompany/c.companyNet*100)}%</span>` : '<span style="color:var(--text-muted)">—</span>')}
           ${rowH('Active drivers', c=>String(c.activeN))}
           ${rowH(`Drivers' Bolt net <span style="font-size:10px">(THEIR money — context, never company revenue)</span>`, c=>`<span style="color:var(--text-muted)">${money(c.driversNet)}</span>`)}
           ${rowH('<span style="font-size:10px">Partner B tier share (info)</span>', c=>`<span style="font-size:11px;color:var(--text-muted)">${money(c.tierPartnerB)}</span>`)}
@@ -12686,6 +12723,35 @@ function computeRosterForMonth(monthSel) {
     drivers, current, blockedCount: blockedKeys.size };
 }
 
+// ── Trailing 14d-vs-prior-14d pace windows (Builds 161-165) ──────────────────
+// Per-driver net + active-day counts for the last 14 days vs the 14 before that,
+// anchored on the most recent DATA day (not wall-clock — uploads/syncs can lag).
+// Shared by the Today early-warning strip (pace collapse) and the chase list's
+// AT-RISK group so both read the SAME window math. Cross-month by design: the
+// roster is month-scoped, but a slump that straddles month-end still shows here.
+function computeTrailingWindows() {
+  const DAY = 86400000, hist = getHistory();
+  let anchor = 0;
+  hist.forEach(h => { const t = periodSortKey(h.period); if (!isNaN(t) && t > anchor) anchor = t; });
+  if (!anchor) return { anchor: 0, map: {} };
+  const recStart = anchor - 14 * DAY, priStart = anchor - 28 * DAY;
+  const map = {};
+  hist.forEach(h => {
+    const t = periodSortKey(h.period);
+    if (isNaN(t) || t <= priStart || t > anchor) return;      // only the last 28 days
+    const recent = t > recStart;                               // else it's the prior 14d
+    (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => {
+      if (!d.name) return;
+      const k = driverKey(d.name);
+      const e = map[k] || (map[k] = { recentNet:0, priorNet:0, recentDays:0, priorDays:0 });
+      const net = sN(d.netEarnings), active = d.isActive || sN(d.orders) > 0;
+      if (recent) { e.recentNet += net; if (active) e.recentDays++; }
+      else        { e.priorNet  += net; if (active) e.priorDays++; }
+    });
+  });
+  return { anchor, map };
+}
+
 function renderAnalytics() {
   const el = document.getElementById('analyticsContent');
   if (!el) return;
@@ -13033,9 +13099,31 @@ async function openChaseList() {
   const blockedIdle = c.current.filter(d => d.blocked).length;
   const onTable = push.reduce((s,d) => s + d.unlocks, 0);
 
+  // Build-163: AT RISK — active days in the last 14d fell below HALF the prior 14d,
+  // AND the driver is either idle this month OR carries an acceptance-drop flag. Pure
+  // heuristic (no ML): a formerly-steady captain going quiet. Blocked drivers excluded
+  // (their drop is explained by the block). Ranked by biggest recent earner first.
+  const W = computeTrailingWindows();
+  const atRisk = c.current.filter(d => {
+    if (d.blocked) return false;
+    const w = W.map[d.key];
+    if (!w || w.priorDays < 4) return false;                 // need a real prior baseline
+    if (!(w.recentDays < w.priorDays / 2)) return false;     // activity fell below half
+    return d.idle || !!d.accDrop;                            // + idle OR acceptance drop
+  }).sort((a,b) => { const wb = W.map[b.key], wa = W.map[a.key];
+    return ((wb.recentNet+wb.priorNet) - (wa.recentNet+wa.priorNet)); });
+
   const L = [];
   L.push(`🚗 *FLEET CHASE LIST — ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}*`);
   L.push(`${c.periodLabel}${c.isCurrentMonth ? ' · ' + c.remTotal + ' day' + (c.remTotal!==1?'s':'') + ' left incl. today' : ''}`);
+  if (atRisk.length) {
+    L.push('', `🔻 *AT RISK — was steady, now slipping (${atRisk.length})*`);
+    atRisk.forEach((d,i) => {
+      const w = W.map[d.key];
+      const why = d.idle ? `idle in ${monLabel}` : (d.accDrop ? `acceptance ↘${d.accDrop}pp` : 'slowing');
+      L.push(`${i+1}. ${name(d)} — ${w.priorDays}→${w.recentDays} active days (14d) · ${fmt(Math.round(w.priorNet))}→${fmt(Math.round(w.recentNet))} SAR · ${why}${tel(d)}${chasedNote(d)}`);
+    });
+  }
   if (push.length) {
     L.push('', `⚡ *EASY WINS — small push, real bonus (${push.length})*`);
     push.forEach((d,i) => L.push(`${i+1}. ${name(d)} — on ${fmt(d.proj)} pace, needs *+${fmt(d.pushExtra)}/work-day* → ${d.nextFloor/1000}k tier (bonus +${fmt(d.unlocks)})${tel(d)}${chasedNote(d)}`));
@@ -13065,7 +13153,7 @@ async function openChaseList() {
   if (blockedIdle) L.push(`⛔ ${blockedIdle} blocked driver${blockedIdle!==1?'s':''} excluded — unblocking is a different worklist (Blocks tab).`);
 
   // Build-158: remember who's on this list so "mark all as chased" knows the audience.
-  chaseListedDrivers = [...push, ...slow, ...idleEarners, ...idleNever].map(d => d.name);
+  chaseListedDrivers = [...new Set([...atRisk, ...push, ...slow, ...idleEarners, ...idleNever].map(d => d.name))];
   showChaseModal(L.join('\n'));
 }
 
@@ -13130,6 +13218,64 @@ function todayDrill(drill, ev) {
 function todayGoExec(ev) { if (ev) ev.stopPropagation(); financeViewMode = 'exec'; todayGo('finance'); }
 function todayOpenChase(ev) { if (ev) ev.stopPropagation(); openChaseList(); }
 
+// Build-161: early-warning strip on Today. Folds THREE per-driver signals into one
+// severity-ranked "⚠ needs attention" list:
+//   1. Pace collapse  — last-14d net < half the prior 14d, off a real baseline (new).
+//   2. Tier slip      — banked a 4k/5k/6k tier but now projecting BELOW it (the
+//                       reconcile tier-crossing-drift idea, applied FORWARD to the live
+//                       month where it's still actionable — real company-bonus at risk).
+//   3. Acceptance drop— the existing accDrop signal (buildAlertCache), surfaced here.
+// Ranked: tier slip (direct company money) → pace collapse (SAR/14d lost) → acceptance.
+function buildTodayAttention(R, W) {
+  const { current, projectable, TIERS, monthSel } = R;
+  const tierName = b => b >= 3 ? '6k' : b === 2 ? '5k' : b === 1 ? '4k' : '<4k';
+  const esc = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const flagged = [];
+  current.forEach(d => {
+    if (d.blocked) return;                                  // blockers have their own tile
+    const flags = []; let sev = 0;
+    if (projectable && !d.idle) {                            // 1) forward tier slip
+      const bankBand = netTierBand(d.net);
+      if (bankBand > d.band) {
+        const lost = Math.max(0, bonusFor(TIERS[bankBand-1], monthSel).company - (d.companyBonus || 0));
+        flags.push({ t:'tier', txt:`tier slip ${tierName(bankBand)}→${tierName(d.band)} pace · −${fmt(Math.round(lost))} SAR bonus at risk` });
+        sev += 100000 + lost;
+      }
+    }
+    const w = W.map[d.key];                                  // 2) pace collapse vs own baseline
+    if (w && w.priorDays >= 3 && w.priorNet >= 800 && w.recentNet < w.priorNet * 0.5) {
+      const drop = Math.round(w.priorNet - w.recentNet);
+      flags.push({ t:'pace', txt:`14-day pace collapsed ${fmt(Math.round(w.priorNet))}→${fmt(Math.round(w.recentNet))} SAR (−${fmt(drop)})` });
+      sev += 1000 + drop;
+    }
+    if (d.accDrop) {                                         // 3) acceptance drop
+      flags.push({ t:'acc', txt:`acceptance ↘${d.accDrop}pp vs prior week` });
+      sev += d.accDrop;
+    }
+    if (flags.length) flagged.push({ d, flags, sev });
+  });
+  flagged.sort((a,b) => b.sev - a.sev);
+  if (!flagged.length)
+    return `<div style="font-size:12px;color:var(--text-muted);padding:7px 12px;margin:0 4px 14px;border:1px solid var(--border);border-radius:10px">✓ No pace, tier or acceptance red flags across the fleet right now.</div>`;
+  const top = flagged.slice(0, 8);
+  const nm = d => lookupForeignName(d.name) || d.name;
+  const badge = f => `<span style="font-size:11px;color:${f.t==='tier'?'var(--red)':f.t==='pace'?'var(--amber)':'var(--text-muted)'}">${f.txt}</span>`;
+  const rows = top.map(({ d, flags }) =>
+    `<div class="today-row" onclick="openModal('${esc(d.name)}')" style="cursor:pointer;display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:5px 8px;border-radius:5px;font-size:12px;border-top:1px solid var(--border)">
+      <span style="font-weight:600;white-space:nowrap">${nm(d)}</span>
+      <span style="text-align:right;line-height:1.55">${flags.map(badge).join(' <span style="color:var(--text-muted)">·</span> ')}</span>
+    </div>`).join('');
+  const more = flagged.length > top.length
+    ? `<div style="font-size:11px;color:var(--text-muted);padding:5px 8px">+${flagged.length-top.length} more slipping — full list in 📋 Chase</div>` : '';
+  return `<div style="border:1px solid var(--amber,#f59e0b);border-radius:10px;padding:8px 6px 6px;margin:0 4px 14px;background:rgba(255,170,0,.05)">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:2px 8px 5px">
+      <b style="font-size:13px;color:var(--amber)">⚠ Needs attention — ${flagged.length}</b>
+      <span style="font-size:11px;color:var(--text-muted)">tier slip · pace collapse · acceptance drop</span>
+    </div>
+    ${rows}${more}
+  </div>`;
+}
+
 function renderToday() {
   const el = document.getElementById('todayContent');
   if (!el) return;
@@ -13162,6 +13308,23 @@ function renderToday() {
   const slowN = projectable ? current.filter(d=>!d.idle && !d.blocked && d.band===0).length : 0;
   const easy  = current.filter(d=>d.pushFeasible);
   const easySar = easy.reduce((s,d)=>s+d.unlocks,0);
+  // Build-165: put NAMES on the tile, not just counts — biggest idle earner (by recent
+  // earning), best easy tier win, steepest 14-day drop. W is also reused by the
+  // ⚠ attention strip below, so the window math is computed exactly once.
+  const W = computeTrailingWindows();
+  const recentEarn = k => { const w = W.map[k]; return w ? w.recentNet + w.priorNet : 0; };
+  const idleTop = current.filter(d=>d.idle && !d.blocked).map(d=>({d,v:recentEarn(d.key)}))
+    .filter(x=>x.v>0).sort((a,b)=>b.v-a.v)[0];
+  const easyTop = [...easy].sort((a,b)=> (b.unlocks-a.unlocks) || (a.pushExtra-b.pushExtra))[0];
+  const dropTop = current.filter(d=>!d.blocked && !d.idle).map(d=>{ const w=W.map[d.key];
+      const drop = (w && w.priorDays>=3 && w.priorNet>=800 && w.recentNet < w.priorNet*0.5) ? (w.priorNet-w.recentNet) : 0;
+      return { d, drop }; }).filter(x=>x.drop>0).sort((a,b)=>b.drop-a.drop)[0];
+  const nmt = d => lookupForeignName(d.name) || d.name;
+  const chaseNames = [
+    idleTop ? `💤 Biggest idle earner: <b>${nmt(idleTop.d)}</b> <span style="color:var(--text-muted)">(~${fmt(Math.round(idleTop.v))} SAR last 28d)</span>` : '',
+    easyTop ? `⚡ Best easy win: <b>${nmt(easyTop)}</b> <span style="color:var(--text-muted)">→ ${easyTop.nextFloor/1000}k (+${fmt(easyTop.unlocks)})</span>` : '',
+    dropTop ? `🔻 Steepest drop: <b>${nmt(dropTop.d)}</b> <span style="color:var(--text-muted)">(−${fmt(Math.round(dropTop.drop))} SAR vs prior 14d)</span>` : ''
+  ].filter(Boolean);
 
   // Bonus health
   const profiles = loadCourierProfiles();
@@ -13193,7 +13356,8 @@ function renderToday() {
   const chaseBody = `${big(idleN + slowN, 'drivers need a push')}
     ${row('Idle · no trips', attn(idleN), "todayDrill('idle',event)")}
     ${row('Working below 4k pace', attn(slowN), "todayDrill('slow',event)")}
-    ${row('⚡ Easy tier wins', easy.length ? `<b style="color:var(--bolt-green)">${easy.length} worth +${fmt(easySar)} SAR</b>` : '<span style="color:var(--text-muted)">none right now</span>', "todayOpenChase(event)")}`;
+    ${row('⚡ Easy tier wins', easy.length ? `<b style="color:var(--bolt-green)">${easy.length} worth +${fmt(easySar)} SAR</b>` : '<span style="color:var(--text-muted)">none right now</span>', "todayOpenChase(event)")}
+    ${chaseNames.length ? `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--border);font-size:11px;line-height:1.75">${chaseNames.join('<br>')}</div>` : ''}`;
 
   const bonusBody = `${big(noAmb + natPending, 'attribution gaps')}
     ${row('Earners with no ambassador', attn(noAmb))}
@@ -13212,6 +13376,7 @@ function renderToday() {
         <button class="save-btn" style="padding:5px 14px;font-size:11px" onclick="openChaseList()">📋 CHASE LIST</button>
       </div>
     </div>
+    ${buildTodayAttention(R, W)}
     <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:stretch">
       ${tile("todayGoExec(event)",'💰','Money', moneyBody, '👔 Executive P&L — company money only')}
       ${tile("todayOpenChase(event)",'📞','Chase', chaseBody, 'Opens the WhatsApp-ready chase list · tap a row for that driver list')}
