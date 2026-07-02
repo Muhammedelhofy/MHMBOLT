@@ -13783,6 +13783,93 @@ function buildTodayPulse() {
   </div>`;
 }
 
+// Build-171: three daily-insight blocks for the Today tab.
+// Biggest single-day net jump + drop, latest DATA day vs the day before.
+function computeDailyMovers() {
+  const hist = getHistory();
+  if (hist.length < 2) return null;
+  const sorted = hist.slice().sort((a, b) => periodSortKey(b.period) - periodSortKey(a.period));
+  const latest = sorted[0], prior = sorted[1];
+  const nameByKey = {};
+  [prior, latest].forEach(h => (h.drivers || []).forEach(d => { if (d.name) nameByKey[driverKey(d.name)] = d.name; }));
+  const netOf = (h, k) => { const d = (h.drivers || []).find(x => driverKey(x.name) === k); return d ? sN(d.netEarnings) : 0; };
+  let up = null, down = null;
+  Object.keys(nameByKey).forEach(k => {
+    const delta = netOf(latest, k) - netOf(prior, k);
+    if (!up || delta > up.delta) up = { name: nameByKey[k], delta };
+    if (!down || delta < down.delta) down = { name: nameByKey[k], delta };
+  });
+  return { latest: latest.period, prior: prior.period, up, down };
+}
+// Fleet net per day for the last N data days (oldest→newest).
+function fleetNetSeries(nDays) {
+  const sorted = getHistory().slice().sort((a, b) => periodSortKey(a.period) - periodSortKey(b.period));
+  return sorted.slice(-nDays).map(h => ({ period: h.period, net: (h.drivers || []).reduce((s, d) => s + sN(d.netEarnings), 0) }));
+}
+function buildTodayInsights(R) {
+  if (!R || !R.current || !R.current.length) return '';
+  const nm = d => lookupForeignName(d.name) || d.name;
+
+  // 14-day fleet-net sparkline.
+  let sparkHtml = '';
+  const series = fleetNetSeries(14);
+  if (series.length >= 2) {
+    const vals = series.map(s => s.net), mx = Math.max(...vals), mn = Math.min(...vals), rng = (mx - mn) || 1;
+    const W = 180, H = 32, pad = 3;
+    const xy = i => [pad + i * (W - 2 * pad) / (series.length - 1), H - pad - ((series[i].net - mn) / rng) * (H - 2 * pad)];
+    const pts = series.map((s, i) => xy(i).map(v => v.toFixed(1)).join(',')).join(' ');
+    const [lx, ly] = xy(series.length - 1);
+    sparkHtml = `<div style="display:flex;align-items:center;gap:8px;padding:2px 0">
+      <span style="color:var(--text-muted);font-size:12px">📈 14-day fleet net</span>
+      <svg width="${W}" height="${H}" style="overflow:visible"><polyline points="${pts}" fill="none" stroke="var(--bolt-green)" stroke-width="1.5"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.5" fill="var(--bolt-green)"/></svg>
+      <span style="color:var(--text-muted);font-size:11px">${fmt(Math.round(mn))}–${fmt(Math.round(mx))} SAR/day</span></div>`;
+  }
+
+  // Top mover / decliner, latest data day vs the day before.
+  let moverHtml = '';
+  const mv = computeDailyMovers();
+  if (mv) {
+    const one = (x, arrow, col) => `${arrow} <b>${lookupForeignName(x.name) || x.name}</b> <span style="color:${col}">${x.delta >= 0 ? '+' : ''}${fmt(Math.round(x.delta))}</span>`;
+    const up = (mv.up && mv.up.delta > 0) ? one(mv.up, '🔼', 'var(--green)') : '';
+    const dn = (mv.down && mv.down.delta < 0) ? one(mv.down, '🔽', 'var(--red)') : '';
+    if (up || dn) moverHtml = `<div style="font-size:12px;padding:2px 0"><span style="color:var(--text-muted)">Day-over-day:</span> ${up}${up && dn ? ' · ' : ''}${dn} <span style="color:var(--text-muted);font-size:11px">(${mv.latest} vs ${mv.prior})</span></div>`;
+  }
+
+  // Tier moves — this month's PROJECTED tier vs last month's ACTUAL tier.
+  let tierHtml = '';
+  if (R.projectable) {
+    const [y, mn2] = R.monthSel.split('-').map(Number);
+    const pm0 = mn2 === 1 ? 11 : mn2 - 2, py = mn2 === 1 ? y - 1 : y;
+    const prevLabel = new Date(py, pm0, 1).toLocaleDateString('en-GB', { month: 'short' });
+    const bandOf = R.bandOf, TIERS = R.TIERS;
+    const bandLabel = b => b === 0 ? '<4k' : (TIERS[b - 1] / 1000) + 'k';
+    // Early-month gate: on day 1-4 the run-rate projection (×~15) is too noisy to compare
+    // tiers — same reason the Ambassadors tab gates its pace at day 5. Hold the comparison.
+    if (R.isCurrentMonth && R.elapsedDays < 5) {
+      tierHtml = `<div style="font-size:12px;padding:2px 0;color:var(--text-muted)">🎚 Tier moves vs ${prevLabel} — firms up after day 5 (projection too early at day ${R.elapsedDays})</div>`;
+    } else {
+      const ups = [], downs = [];
+      R.current.forEach(d => {
+        if (d.idle) return;
+        const last = getMonthlyNet(null, d.name, pm0, py);
+        if (last <= 0) return;                        // absent last month → not a "move"
+        const lb = bandOf(last);
+        if (d.band > lb) ups.push({ d, lb, tb: d.band });
+        else if (d.band < lb) downs.push({ d, lb, tb: d.band });
+      });
+      ups.sort((a, b) => (b.tb - b.lb) - (a.tb - a.lb));
+      downs.sort((a, b) => (a.tb - a.lb) - (b.tb - b.lb));
+      const chip = (arr, col, arrow) => arr.length ? `<span style="color:${col}">${arrow}${arr.length}</span> ${arr.slice(0, 2).map(x => `<span style="color:var(--text-muted)">${nm(x.d)} ${bandLabel(x.lb)}→${bandLabel(x.tb)}</span>`).join(', ')}${arr.length > 2 ? ` +${arr.length - 2}` : ''}` : '';
+      tierHtml = (ups.length || downs.length)
+        ? `<div style="font-size:12px;padding:2px 0"><span style="color:var(--text-muted)">🎚 Tier moves vs ${prevLabel} (projected):</span> ${chip(ups, 'var(--green)', '▲')}${ups.length && downs.length ? ' · ' : ''}${chip(downs, 'var(--red)', '▼')}</div>`
+        : `<div style="font-size:12px;padding:2px 0;color:var(--text-muted)">🎚 No projected tier moves vs ${prevLabel} yet</div>`;
+    }
+  }
+
+  if (!sparkHtml && !moverHtml && !tierHtml) return '';
+  return `<div style="margin:0 4px 12px;padding:8px 13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card)">${sparkHtml}${moverHtml}${tierHtml}</div>`;
+}
+
 function renderToday() {
   const el = document.getElementById('todayContent');
   if (!el) return;
@@ -13884,6 +13971,7 @@ function renderToday() {
       </div>
     </div>
     ${buildTodayPulse()}
+    ${buildTodayInsights(R)}
     ${buildTodayAttention(R, W)}
     <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:stretch">
       ${tile("todayGoExec(event)",'💰','Money', moneyBody, '👔 Executive P&L — company money only')}
