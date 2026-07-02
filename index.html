@@ -1583,7 +1583,7 @@ body::before {
   <div class="tab"        data-tab="ambassadors" onclick="showTab('ambassadors',this)">🎖 Ambassadors</div>
   <div class="tab"        data-tab="blocks"     onclick="showTab('blocks',this);renderBlocks()">⛔ Blocks</div>
   <div class="tab"        data-tab="analytics" onclick="showTab('analytics',this);renderAnalytics()">Analytics</div>
-  <div class="tab"        data-tab="pipeline"  onclick="showTab('pipeline',this);renderPipeline()">🚦 Pipeline</div>
+  <div class="tab"        data-tab="pipeline"  onclick="showTab('pipeline',this);renderPipeline()">🚦 Onboarding</div>
   <div class="tab"        data-tab="starmap"   onclick="showTab('starmap',this)">⭐ Star Map</div>
   <div class="tab"        data-tab="settings"  onclick="showTab('settings',this)">Settings</div>
 </div>
@@ -10649,6 +10649,7 @@ function buildFinanceModals() {
 // ═══════════════════════════════════════════
 let ambMonth = '';
 let ambFilter = '';                 // '' = all ambassadors; otherwise the selected ambassador
+let ambRowFilter = '';              // Build-155: '' | 'onpace' | 'owed' — row-level KPI drill
 let ambAutoFilledThisSession = false;
 const AMB_MODELS = {
   A: { label:'LEGACY — Saudi driver → fleet (monthly amount to ambassador when driver nets ≥ 5,000; Saudi also gets 500/mo)', base:200, threshold:5000, color:'#22D3EE' },
@@ -11554,6 +11555,22 @@ function ambTrackStatus(net, proj, paceGated) {
   return { label:'building', color:'var(--text-muted)', push:false };
 }
 function ambSetFilter(name) { ambFilter = (ambFilter === name) ? '' : name; renderAmbassadorsView(); }
+
+// Build-155: KPI-card clicks — scroll to the matching section, or toggle a row-level
+// drill ('onpace'/'owed') that filters every captain table to just those rows.
+function ambKpiClick(kind) {
+  if (kind === 'onpace' || kind === 'owed') {
+    ambRowFilter = (ambRowFilter === kind) ? '' : kind;
+    renderAmbassadorsView();
+    const t = document.getElementById('ambFilterCards');
+    if (t) t.scrollIntoView({ behavior:'smooth', block:'start' });
+    return;
+  }
+  if (kind === 'unassigned') { const w = document.getElementById('ambWorklist'); if (w) w.scrollIntoView({ behavior:'smooth', block:'start' }); return; }
+  if (kind === 'captains')   { ambFilter = ''; ambRowFilter = ''; renderAmbassadorsView(); }
+  const t = document.getElementById('ambFilterCards');
+  if (t) t.scrollIntoView({ behavior:'smooth', block:'start' });
+}
 function setDriverNationality(name, val) {
   const p = getCourierProfile(name);
   p.nationality = val || null;
@@ -11595,6 +11612,10 @@ function renderAmbassadors() {
     refreshAmbassadorList()
       .then(() => ambAutoFillFromSheet())
       .then(r => { if (r && (r.ambSet || r.natSet)) renderAmbassadorsView(); })
+      // Build-155: also prime the stage snapshot so the per-ambassador "sheet: N leads
+      // · N active · N lost" funnel lines can render, then repaint once it's cached.
+      .then(() => fetchStageSnapshot())
+      .then(() => renderAmbassadorsView())
       .catch(()=>{});
   }
 }
@@ -11668,14 +11689,21 @@ function renderAmbassadorsView() {
   const totalOnPace  = assigned.filter(a=>a.net>=5000||a.proj>=5000).length;
   const needsConfirm = assigned.filter(a => !a.nationality || !a.profile.nationalityConfirmed);
 
+  // Build-155: KPI cards are clickable — scroll/drill to what they count.
+  const kcard = (kind, label, valueHtml, active, hint) => `
+    <div class="kpi-card" onclick="ambKpiClick('${kind}')" title="${hint}" style="cursor:pointer;${active?'border-color:var(--bolt-green);box-shadow:inset 0 0 0 1px var(--bolt-green)':''}">
+      <div class="kpi-card-label">${label}</div><div class="kpi-card-value">${valueHtml}</div></div>`;
   let html = toolbar + `
     <div style="display:flex;flex-wrap:wrap;gap:12px;padding:4px 4px 14px">
-      <div class="kpi-card"><div class="kpi-card-label">Ambassadors</div><div class="kpi-card-value">${groupList.length}</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Captains referred</div><div class="kpi-card-value">${assigned.length}</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">On pace ≥5k</div><div class="kpi-card-value" style="color:var(--green)">${totalOnPace}</div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Owed · ${monthLabel(monthKey)}</div><div class="kpi-card-value" style="color:var(--bolt-green)">${fmt(totalOwed)}<span class="kpi-card-unit"> SAR</span></div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Unassigned earners</div><div class="kpi-card-value" style="color:${unassignedEarners.length?'var(--amber)':'var(--text-muted)'}">${unassignedEarners.length}</div></div>
+      ${kcard('ambassadors','Ambassadors', String(groupList.length), false, 'Jump to the ambassador cards')}
+      ${kcard('captains','Captains referred', String(assigned.length), false, 'Show all captains (clears filters)')}
+      ${kcard('onpace','On pace ≥5k', `<span style="color:var(--green)">${totalOnPace}</span>`, ambRowFilter==='onpace', 'Filter tables to on-pace captains only')}
+      ${kcard('owed','Owed · '+monthLabel(monthKey), `<span style="color:var(--bolt-green)">${fmt(totalOwed)}<span class="kpi-card-unit"> SAR</span></span>`, ambRowFilter==='owed', 'Filter tables to captains with a bonus owed')}
+      ${kcard('unassigned','Unassigned earners', `<span style="color:${unassignedEarners.length?'var(--amber)':'var(--text-muted)'}">${unassignedEarners.length}</span>`, false, 'Jump to the unassigned-earners worklist')}
     </div>`;
+  if (ambRowFilter) html += `<div style="margin:0 4px 12px;padding:8px 12px;border:1px solid var(--bolt-green);border-radius:6px;background:rgba(0,255,179,.05);font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <span>Showing only <b>${ambRowFilter==='onpace'?'captains on pace ≥5k':'captains with a bonus owed'}</b> in every table below.</span>
+      <button class="save-btn" style="padding:3px 10px;font-size:11px" onclick="ambKpiClick('${ambRowFilter}')">✕ Clear filter</button></div>`;
   if (unassignedEarners.length) {
     const wrows = unassignedEarners.map(u => {
       const safe = u.name.replace(/'/g, "\\'");
@@ -11694,7 +11722,7 @@ function renderAmbassadorsView() {
         <td style="padding:6px 10px">${sugCell}</td>
       </tr>`;
     }).join('');
-    html += `<div style="margin:0 4px 14px;background:var(--bg-card2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+    html += `<div id="ambWorklist" style="margin:0 4px 14px;background:var(--bg-card2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(255,170,0,.06);flex-wrap:wrap;gap:6px">
         <div style="font-weight:800;font-size:14px">🎯 Unassigned earners — ${unassignedEarners.length}</div>
         <div style="font-size:11px;color:var(--text-muted)">earning in ${monthLabel(monthKey)} with no ambassador · assign to start bonus tracking (biggest earners first)</div>
@@ -11731,25 +11759,64 @@ function renderAmbassadorsView() {
     </div>`;
   }
 
-  // Ambassador filter cards.
-  const card = (label, count, owed, on, active, filterVal) => `
-    <div onclick="ambSetFilter('${String(filterVal).replace(/'/g,"\\'")}')" style="cursor:pointer;min-width:150px;flex:1 1 150px;background:var(--bg-card);border:1px solid ${active?'var(--bolt-green)':'var(--border)'};border-radius:8px;padding:10px 12px;${active?'box-shadow:inset 0 0 0 1px var(--bolt-green)':''}">
+  // Build-155: per-ambassador LEAD FUNNEL from the onboarding sheet — how many leads
+  // each ambassador brought in and where those leads stand now (Active / still in the
+  // pipeline / lost). Reads the two caches other tabs already prime; the sub-line just
+  // stays absent until renderAmbassadors' background fetch fills them.
+  const snapById = {};
+  (stageSnapshotCache || []).forEach(r => { if (r.driver_id) snapById[r.driver_id] = r.current_stage; });
+  const sheetStats = {};                               // ambassador (lowercase) -> funnel counts
+  (Array.isArray(sheetAmbassadorSyncCache) ? sheetAmbassadorSyncCache : []).forEach(s => {
+    if (!s.ambassador) return;
+    const k = s.ambassador.toLowerCase();
+    const o = (sheetStats[k] = sheetStats[k] || { leads:0, active:0, lost:0, pipe:0 });
+    o.leads++;
+    const st = snapById[s.id];
+    if (st === 'Active') o.active++;
+    else if (PIPELINE_LOSS.has(st)) o.lost++;
+    else if (st) o.pipe++;
+  });
+  const funnelLine = name => {
+    const s = sheetStats[String(name).toLowerCase()];
+    if (!s) return '';
+    return `<div style="font-size:10px;color:var(--text-muted);margin-top:3px">sheet: ${s.leads} lead${s.leads!==1?'s':''} · <span style="color:var(--green)">${s.active} active</span>${s.pipe?` · ${s.pipe} in pipeline`:''}${s.lost?` · <span style="color:var(--red)">${s.lost} lost</span>`:''}</div>`;
+  };
+
+  // Ambassador filter cards — ALL canonical ambassadors, including those with zero
+  // captains attributed (muted), so "where is ambassador X" always has an answer.
+  const card = (label, count, owed, on, active, filterVal, sub) => `
+    <div onclick="ambSetFilter('${String(filterVal).replace(/'/g,"\\'")}')" style="cursor:pointer;min-width:150px;flex:1 1 150px;background:var(--bg-card);border:1px solid ${active?'var(--bolt-green)':'var(--border)'};border-radius:8px;padding:10px 12px;${active?'box-shadow:inset 0 0 0 1px var(--bolt-green)':''}${count||active?'':';opacity:.55'}">
       <div style="font-weight:700;font-size:13px;margin-bottom:4px">${label}</div>
-      <div style="font-size:11px;color:var(--text-muted)">${count} captain${count===1?'':'s'} · <span style="color:var(--green)">${on} on pace</span></div>
+      <div style="font-size:11px;color:var(--text-muted)">${count} captain${count===1?'':'s'} · <span style="color:${on?'var(--green)':'var(--text-muted)'}">${on} on pace</span></div>
       <div style="font-size:12px;font-weight:700;color:${owed>0?'var(--bolt-green)':'var(--text-muted)'};margin-top:3px">${owed>0?'owed '+fmt(owed)+' SAR':'—'}</div>
+      ${sub||''}
     </div>`;
-  if (groupList.length) {
-    html += `<div style="display:flex;flex-wrap:wrap;gap:10px;padding:0 4px 14px">`;
+  {
+    html += `<div id="ambFilterCards" style="display:flex;flex-wrap:wrap;gap:10px;padding:0 4px 14px">`;
     html += card('All ambassadors', assigned.length, totalOwed, totalOnPace, ambFilter==='', '');
-    groupList.forEach(g => { html += card('🎖 '+g.name, g.rows.length, owedOf(g), onPaceOf(g), ambFilter.toLowerCase()===g.name.toLowerCase(), g.name); });
+    groupList.forEach(g => { html += card('🎖 '+g.name, g.rows.length, owedOf(g), onPaceOf(g), ambFilter.toLowerCase()===g.name.toLowerCase(), g.name, funnelLine(g.name)); });
+    const attributed = new Set(groupList.map(g => g.name.toLowerCase()));
+    AMBASSADOR_LIST.filter(n => !attributed.has(n.toLowerCase())).forEach(n => {
+      html += card('🎖 '+n, 0, 0, 0, ambFilter.toLowerCase()===n.toLowerCase(), n, funnelLine(n));
+    });
     html += `</div>`;
   }
 
-  // Captains table(s) — filtered to the selected ambassador (or all).
+  // Captains table(s) — filtered to the selected ambassador (or all), then to the
+  // KPI row-drill when one is active (Build-155).
   const shown = ambFilter ? groupList.filter(g=>g.name.toLowerCase()===ambFilter.toLowerCase()) : groupList;
+  if (ambFilter && !shown.length) {
+    const fl = funnelLine(ambFilter);
+    html += `<div style="margin:0 4px 14px;padding:18px;border:1px dashed var(--border);border-radius:10px;text-align:center;color:var(--text-muted);font-size:13px">
+      No captains attributed to <b style="color:var(--text)">${ambFilter}</b> yet${fl ? ' — but the sheet has leads for them:'+fl : '.'}
+      <div style="margin-top:6px;font-size:11px">Attribute drivers in the 🎯 worklist above, or via ⇅ Sync from sheet.</div></div>`;
+  }
+  const rowKeep = r => ambRowFilter==='onpace' ? (r.net>=5000||r.proj>=5000) : ambRowFilter==='owed' ? r.payout.owed>0 : true;
   const mark5k = Math.round(5000/6000*100);
   shown.forEach(g => {
-    const rows = g.rows.sort((a,b)=> b.net-a.net).map(r => {
+    const keptRows = g.rows.filter(rowKeep);
+    if (ambRowFilter && !keptRows.length) return;      // drill hides empty groups entirely
+    const rows = keptRows.sort((a,b)=> b.net-a.net).map(r => {
       const safeName = r.name.replace(/'/g,"\\'");
       const foreign = lookupForeignName(r.name);
       const natSel = `<select onchange="setDriverNationality('${safeName}',this.value)" style="padding:2px 6px;font-size:11px;border:1px solid ${r.nationality?'var(--border)':'var(--amber)'};border-radius:5px;background:var(--bg);color:${r.nationality?'var(--text)':'var(--amber)'}">
@@ -11774,7 +11841,7 @@ function renderAmbassadorsView() {
       <div style="background:var(--bg-card2);border:1px solid var(--border);border-radius:10px;margin:0 4px 14px;overflow:hidden">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(0,255,179,.06)">
           <div style="font-weight:800;font-size:14px">🎖 ${g.name}</div>
-          <div style="font-size:12px;color:var(--text-muted)">${g.rows.length} captain${g.rows.length>1?'s':''} · owed <b style="color:var(--bolt-green)">${fmt(owedOf(g))} SAR</b></div>
+          <div style="font-size:12px;color:var(--text-muted)">${keptRows.length}${ambRowFilter?' of '+g.rows.length:''} captain${g.rows.length>1?'s':''} · owed <b style="color:var(--bolt-green)">${fmt(owedOf(g))} SAR</b></div>
         </div>
         <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em">
