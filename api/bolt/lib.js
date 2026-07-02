@@ -177,6 +177,12 @@ async function fetchAndAggregateFleet(date) {
       if (!dr.name && prof.first_name) dr.name = `${prof.first_name} ${prof.last_name || ""}`.trim();
       dr.boltState            = prof.state || "";
       dr.boltSuspensionReason = prof.suspension_reason || "";
+      // Additive (Build-166): capture Bolt's OWN suspension category + exact start date IF the
+      // Fleet Integration API exposes them (the new portal shows both; the older API we've been
+      // reading only returns state + a generic reason). Harmless when absent → stays "". If a
+      // future sync fills these, the Blocks tab uses them instead of keyword-classify / sync-date.
+      dr.boltSuspensionCategory = prof.suspension_category || prof.block_category || prof.suspension_type || "";
+      dr.boltSuspendedSince     = prof.suspended_since || prof.suspension_started_at || prof.blocked_at || prof.state_changed_at || "";
       dr.hasCashPayment       = prof.has_cash_payment ?? null;
       dr.vehiclePlate         = prof.active_vehicle?.reg_number || "";
     }

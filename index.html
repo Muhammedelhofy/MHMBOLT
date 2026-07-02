@@ -3118,8 +3118,8 @@ function renderModalBody() {
   document.getElementById('modalBody').innerHTML = `
     ${singleDayActive?`<div class="modal-filter-banner">📅 Showing <b>${scopeLbl}</b> only. <span onclick="showModalFullMonth()" style="cursor:pointer;text-decoration:underline">Show full month</span></div>`:filterActive?`<div class="modal-filter-banner">🔎 Filtered to <b>${scopeLbl}</b> — performance, earnings &amp; day-by-day below show this month only. <span onclick="setModalMonth('all')" style="cursor:pointer;text-decoration:underline">Show all months</span></div>`:''}
     ${d.boltState && d.boltState !== 'active' ? `<div style="background:rgba(255,68,102,.08);border:1px solid rgba(255,68,102,.35);border-radius:3px;padding:10px 14px;margin-bottom:12px">
-      <div style="color:var(--red);font-weight:700;letter-spacing:.05em;font-size:12px;margin-bottom:${d.boltSuspensionReason?'5px':'0'}">⛔ DRIVER ${d.boltState.toUpperCase()} ON BOLT PLATFORM</div>
-      ${d.boltSuspensionReason?`<div style="font-size:11px;color:var(--text-muted)">Reason: ${d.boltSuspensionReason}</div>`:''}
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:${d.boltSuspensionReason?'5px':'0'}"><span style="color:var(--red);font-weight:700;letter-spacing:.05em;font-size:12px">⛔ DRIVER ${d.boltState.toUpperCase()} ON BOLT PLATFORM</span>${d.boltSuspensionReason?blockCatChip(d.boltSuspensionCategory||classifyBlockCategory(d.boltSuspensionReason),true):''}</div>
+      ${d.boltSuspensionReason?`<div style="font-size:11px;color:var(--text-muted)">Reason: ${stripHtml(d.boltSuspensionReason)}</div>`:''}
     </div>` : ''}
     <div class="target-section">
       <div class="target-section-title">Monthly Target — ${fmt(targetEffTarget)} SAR${targetEffTarget!==target?`<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">(prorated from ${fmt(target)})</span>`:''}<span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">· ${targetScopeLbl}</span></div>
@@ -3277,7 +3277,7 @@ function renderModalBody() {
         ${blocks.length ? `
         <table class="day-table">
           <thead><tr>
-            <th>Date Blocked</th><th>Date Unblocked</th><th class="td-r">Days</th><th>Status</th><th>Reason</th><th></th>
+            <th>Date Blocked</th><th>Date Unblocked</th><th class="td-r">Days</th><th>Status</th><th>Category</th><th>Reason</th><th></th>
           </tr></thead>
           <tbody>
             ${blocks.map(e => {
@@ -3288,7 +3288,8 @@ function renderModalBody() {
                 <td style="color:${still?'var(--text-muted)':'var(--green)'};white-space:nowrap">${e.dateUnblocked||'—'}</td>
                 <td class="td-r" style="font-family:var(--mono)">${dc}${typeof dc==='number'&&still?'<span style="color:var(--text-muted);font-size:10px"> ongoing</span>':''}</td>
                 <td><span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;letter-spacing:.05em;white-space:nowrap;background:${still?'rgba(255,68,102,.15)':'rgba(0,255,179,.1)'};color:${still?'var(--red)':'var(--green)'}">${still?'BLOCKED':'RESOLVED'}</span>${e.source==='manual'?'<span style="font-size:8px;color:var(--text-muted);margin-left:4px">manual</span>':''}</td>
-                <td style="font-size:11px;color:var(--text-muted);max-width:200px;white-space:normal;line-height:1.4">${e.reason}</td>
+                <td style="white-space:nowrap">${blockCatChip(blockCategoryOf(e), true)}</td>
+                <td style="font-size:11px;color:var(--text-muted);max-width:200px;white-space:normal;line-height:1.4">${stripHtml(e.reason)}</td>
                 <td><span onclick="deleteBlockEvent('${esc(e.id)}')" title="Remove" style="cursor:pointer;color:var(--text-muted);font-size:13px;padding:2px 5px;border-radius:2px;transition:color .15s" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text-muted)'">✕</span></td>
               </tr>`;
             }).join('')}
@@ -7187,7 +7188,7 @@ function clearAllData() {
 // don't see this exact string, your browser is serving a cached old HTML.
 // Force-refresh with Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac).
 // ═══════════════════════════════════════════
-const BUILD_VERSION = 'v5.3 — 2026-07-02 — Builds 161-165: Today attention strip + incentive-dependency + at-risk chase + projected month-end net + named chase tile';
+const BUILD_VERSION = 'v5.4 — 2026-07-02 — Build-166: Bolt-style suspensions — category (auto-classify + override), per-driver duration/since, category breakdown';
 console.log('%cBolt Dashboard ' + BUILD_VERSION, 'color:#34d186;font-weight:bold');
 
 // ═══════════════════════════════════════════
@@ -7464,8 +7465,10 @@ function updateBlockLog(period, newDrivers) {
         ((e.driverId && d.driverId && e.driverId === d.driverId) ||
          driverKey(e.driverName) === driverKey(d.name)));
       if (!hasOpen && !log.some(e => e.id === k + '_' + period)) {
+        const boltCat = normBoltCat(d.boltSuspensionCategory);   // Bolt's own category if the API sends one
         log.push({ id: k + '_' + period, driverId: d.driverId || '', driverName: d.name,
-          dateBlocked: period, dateUnblocked: null, reason: d.boltSuspensionReason || 'No reason provided' });
+          dateBlocked: period, dateUnblocked: null, reason: d.boltSuspensionReason || 'No reason provided',
+          ...(boltCat ? { category: boltCat } : {}) });
       }
     } else if (wasBlocked && !isBlocked) {
       const open = [...log].reverse().find(e =>
@@ -7602,10 +7605,10 @@ function importBoltSuspensionHistory() {
 function exportBlockLogCSV() {
   const log = getBlockLog().sort((a, b) => periodSortKey(b.dateBlocked) - periodSortKey(a.dateBlocked));
   if (!log.length) { toast('No block events recorded yet — sync a few days first'); return; }
-  const rows = [['Driver', 'Date Blocked', 'Date Unblocked', 'Status', 'Reason']];
+  const rows = [['Driver', 'Date Blocked', 'Date Unblocked', 'Days', 'Status', 'Category', 'Reason']];
   for (const e of log) {
-    rows.push([`"${e.driverName}"`, e.dateBlocked, e.dateUnblocked || '—',
-      e.dateUnblocked ? 'Resolved' : 'Still Blocked', `"${e.reason}"`]);
+    rows.push([`"${e.driverName}"`, e.dateBlocked, e.dateUnblocked || '—', blockEventDays(e),
+      e.dateUnblocked ? 'Resolved' : 'Still Blocked', blockCategoryOf(e), `"${stripHtml(e.reason).replace(/"/g,'""')}"`]);
   }
   const csv = rows.map(r => r.join(',')).join('\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
@@ -7623,8 +7626,51 @@ let blocksFilter = 'active'; // 'active' | 'all'
 let blocksSearch = '';
 let blocksExpanded = new Set();
 let blocksDayFilter = 'all'; // 'all' | a dateBlocked string — filter to one block day
+let blocksCatFilter = 'all'; // 'all' | Safety | Fraud | Quality | Compliance | Other
 let _blockTopReasons = [];   // populated each render; chips reference by index (no escaping)
 function blocksFilterReason(i) { const r = _blockTopReasons[i]; if (r !== undefined) { blocksSearch = r; renderBlocks(); } }
+
+// ── Suspension categories (Build-166) — mirrors Bolt's fleet portal: Safety / Fraud /
+// Quality / Compliance. The Bolt API's `suspension_reason` is a generic driver-facing blob
+// (often the same string for a whole compliance wave), so we AUTO-CLASSIFY by keyword and
+// let a manual override (stored as `e.category` on the block-log row) always win. If a future
+// sync carries Bolt's own category (boltSuspensionCategory → captured into `e.category`), that
+// wins over the classifier too. See bolt-dashboard-onboarding-link-plan.
+const BLOCK_CATEGORIES = ['Safety','Fraud','Quality','Compliance','Other'];
+const BLOCK_CAT_COLOR  = { Safety:'#f59e0b', Fraud:'#ef4444', Quality:'#8b5cf6', Compliance:'#38a5e0', Other:'#7b8794' };
+function stripHtml(s){ return String(s||'').replace(/<[^>]+>/g,' ').replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&').replace(/\s+/g,' ').trim(); }
+function classifyBlockCategory(reason){
+  const t = stripHtml(reason).toLowerCase();
+  if (!t || t === 'no reason provided') return 'Other';
+  if (/(safety|accident|dangerous|reckless|assault|weapon|harass|intoxicat|drunk|violence|threat)/.test(t)) return 'Safety';
+  if (/(fraud|fake|spoof|gps manipulat|manipulat|scam|stolen account|illegitimate|suspicious activity|abus)/.test(t)) return 'Fraud';
+  if (/(rating|cancellation|quality|complaint|low accept|poor service|rude|behaviou?r|customer)/.test(t)) return 'Quality';
+  if (/(verification|absher|document|iqama|licen|insurance|periodic|examination|criminal|registration|expir|compliance|not approved|required doc|missing)/.test(t)) return 'Compliance';
+  return 'Other';
+}
+function blockCategoryOf(e){ return (e && e.category) ? e.category : classifyBlockCategory(e && e.reason); }
+// Normalise Bolt's own category value (if the API ever sends one) to our five buckets.
+function normBoltCat(v){ if(!v) return ''; const s = String(v).trim().toLowerCase(); return BLOCK_CATEGORIES.find(c => c.toLowerCase() === s) || ''; }
+function blockCatChip(cat, small){ const c = BLOCK_CAT_COLOR[cat] || BLOCK_CAT_COLOR.Other;
+  return `<span style="font-size:${small?'9px':'10px'};font-weight:700;padding:2px ${small?'6px':'8px'};border-radius:3px;letter-spacing:.04em;background:${c}22;color:${c};border:1px solid ${c}55">${cat}</span>`; }
+// Whole-day span between two "DD Mon YYYY" strings (or a string → today when ongoing).
+function blockDaysBetween(d1, d2){
+  try { const p = s => { const [d,m,y] = String(s).split(' '); const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(m); return new Date(+y, mo, +d); };
+    return Math.max(0, Math.round(Math.abs(p(d2) - p(d1)) / 86400000)); } catch { return 0; }
+}
+const _todayPeriodStr = () => new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+function blockEventDays(e){ return e.dateUnblocked ? blockDaysBetween(e.dateBlocked, e.dateUnblocked) : blockDaysBetween(e.dateBlocked, _todayPeriodStr()); }
+// Manual category override, targeted by the block-log row's stable id (survives re-render +
+// cloud merge, which also dedupes by id). '' reverts the row to the auto-classifier.
+function setBlockCategory(id, category){
+  const log = getBlockLog();
+  const e = log.find(x => x.id === id);
+  if (!e) return;
+  if (category) e.category = category; else delete e.category;
+  saveBlockLog(log);
+  syncToCloud();
+  renderBlocks();
+}
 
 function renderBlocks() {
   const el = document.getElementById('blocksContent');
@@ -7634,6 +7680,12 @@ function renderBlocks() {
     el.innerHTML = `<div class="empty-state"><div class="empty-icon">⛔</div><div class="empty-title">No block data yet</div><div class="empty-sub">Run a Bolt sync or add block events via a driver modal</div></div>`;
     return;
   }
+  // Every row needs a stable id so the category-override dropdown can target it (synced rows
+  // already have one; backfill legacy/manually-added rows once).
+  let _idFix = false;
+  all.forEach(e => { if (!e.id) { e.id = (driverKey(e.driverName)||'blk') + '_' + (e.dateBlocked||'') + '_' + Math.random().toString(36).slice(2,6); _idFix = true; } });
+  if (_idFix) saveBlockLog(all);
+  const he = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
   // Stats
   const currentlyBlocked = all.filter(e => !e.dateUnblocked);
@@ -7653,9 +7705,27 @@ function renderBlocks() {
   const blockMonths = [...new Set(blockDays.map(blockMonthKey).filter(Boolean))].sort().reverse();
   // Top block reasons (first line, deduped) for the clickable breakdown
   const reasonFreq = {};
-  for (const e of all) { const r = ((e.reason||'').split('\n')[0] || '').trim() || 'No reason provided'; reasonFreq[r] = (reasonFreq[r]||0) + 1; }
+  for (const e of all) { const r = (stripHtml(e.reason).split(/[.\n]/)[0] || '').trim() || 'No reason provided'; reasonFreq[r] = (reasonFreq[r]||0) + 1; }
   const topReasons = Object.entries(reasonFreq).sort((a,b) => b[1]-a[1]).slice(0, 8);
   _blockTopReasons = topReasons.map(([r]) => r);
+
+  // Category breakdown (Build-166) — Bolt's four buckets. Aggregates run over a DEDUPED
+  // snapshot (dedupeBlockLog collapses the duplicate open rows a key-drift can leave) so the
+  // day-sums don't double-count; counts are UNIQUE currently-blocked drivers per category.
+  // Pass a copy — dedupeBlockLog mutates its input (merges reasons into the kept row); we only
+  // want the deduped SNAPSHOT for accurate day-sums, not to alter the list the table renders.
+  const cleanLog  = (typeof dedupeBlockLog === 'function') ? dedupeBlockLog(JSON.parse(JSON.stringify(all))).log : all;
+  const cleanOpen = cleanLog.filter(e => !e.dateUnblocked);
+  const catStats = {}; BLOCK_CATEGORIES.forEach(c => catStats[c] = { drivers:new Set(), days:0 });
+  cleanOpen.forEach(e => { const c = blockCategoryOf(e) || 'Other'; if(!catStats[c]) catStats[c]={drivers:new Set(),days:0};
+    catStats[c].drivers.add(driverKey(e.driverName)); catStats[c].days += blockEventDays(e); });
+  // Fleet aggregates. Resolved rows in our log are often same-day sync artifacts (block+unblock
+  // on one period) → we exclude 0-day resolutions from the AVERAGE so it isn't dragged to 0;
+  // shows "—" honestly until a real multi-day resolution exists. Total = live ongoing days +
+  // genuine resolved durations.
+  const resolvedDur = cleanLog.filter(e=>e.dateUnblocked).map(e=>blockDaysBetween(e.dateBlocked, e.dateUnblocked)).filter(d=>d>0);
+  const totalDaysSuspended = cleanOpen.reduce((s,e)=> s + blockEventDays(e), 0) + resolvedDur.reduce((a,b)=>a+b,0);
+  const avgDuration = resolvedDur.length ? Math.round(resolvedDur.reduce((a,b)=>a+b,0)/resolvedDur.length) : null;
 
   // Filter + search. Day/month filter takes precedence over the active/all toggle:
   //   a DAY value  → only blocks dated exactly that day
@@ -7671,7 +7741,8 @@ function renderBlocks() {
   } else {
     filtered = all.filter(e => e.dateBlocked === blocksDayFilter);
   }
-  if (q) filtered = filtered.filter(e => e.driverName.toLowerCase().includes(q) || e.reason.toLowerCase().includes(q));
+  if (q) filtered = filtered.filter(e => e.driverName.toLowerCase().includes(q) || stripHtml(e.reason).toLowerCase().includes(q));
+  if (blocksCatFilter !== 'all') filtered = filtered.filter(e => blockCategoryOf(e) === blocksCatFilter);
 
   // Group by driver for the table
   const byDriver = {};
@@ -7699,18 +7770,27 @@ function renderBlocks() {
     const expanded = blocksExpanded.has(name);
     const latestBlock = events.find(e => !e.dateUnblocked) || events.sort((a,b) => periodSortKey(b.dateBlocked)-periodSortKey(a.dateBlocked))[0];
     const totalEvents = (all.filter(e => e.driverName === name)).length;
+    const driverCat = blockCategoryOf(latestBlock);
+    const sinceDays = isCurrentlyBlocked ? blockEventDays(latestBlock) : 0;
+    const driverTotalDays = events.reduce((s,e)=>s+blockEventDays(e),0);
 
     const eventRows = events
       .sort((a,b) => periodSortKey(b.dateBlocked) - periodSortKey(a.dateBlocked))
       .map(e => {
         const ongoing = !e.dateUnblocked;
-        const days = ongoing ? daysBetween(e.dateBlocked, new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}).replace(/ /g,' ')) : (e.dateUnblocked ? daysBetween(e.dateBlocked, e.dateUnblocked) : '?');
+        const days = blockEventDays(e);
+        const cat = blockCategoryOf(e), catCol = BLOCK_CAT_COLOR[cat] || BLOCK_CAT_COLOR.Other, isOverride = !!e.category;
+        const catSel = `<select onchange="setBlockCategory('${e.id}', this.value)" title="${isOverride?'Manually set':'Auto-classified from the reason'} — change to re-tag" style="font-size:10px;padding:2px 4px;border:1px solid ${catCol}66;border-radius:4px;background:var(--bg-card);color:${catCol};font-weight:700">
+            ${BLOCK_CATEGORIES.map(c=>`<option value="${c}" ${cat===c?'selected':''}>${c}</option>`).join('')}
+            <option value="">↺ auto</option>
+          </select>${!isOverride?'<span style="font-size:8px;color:var(--text-muted);margin-left:4px">auto</span>':''}`;
         return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
           <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);white-space:nowrap">${e.dateBlocked}</td>
           <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);white-space:nowrap">${e.dateUnblocked || '—'}</td>
           <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);text-align:center">${days}${ongoing?'<span style="font-size:9px;color:var(--red)"> ongoing</span>':''}</td>
           <td style="padding:6px 10px"><span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;letter-spacing:.05em;background:${ongoing?'rgba(255,68,102,.15)':'rgba(0,255,179,.1)'};color:${ongoing?'var(--red)':'var(--green)'}">${ongoing?'BLOCKED':'RESOLVED'}</span></td>
-          <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);max-width:340px;white-space:normal;line-height:1.4">${e.reason}</td>
+          <td style="padding:6px 10px;white-space:nowrap">${catSel}</td>
+          <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);max-width:340px;white-space:normal;line-height:1.4">${he(stripHtml(e.reason))}</td>
         </tr>`;
       }).join('');
 
@@ -7720,8 +7800,11 @@ function renderBlocks() {
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span style="font-weight:700;font-size:13px;color:var(--text)">${name}</span>
             ${isCurrentlyBlocked ? `<span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:2px;background:rgba(255,68,102,.15);color:var(--red);letter-spacing:.06em;border:1px solid rgba(255,68,102,.3)">BLOCKED</span>` : ''}
+            ${blockCatChip(driverCat, true)}
           </div>
-          ${isCurrentlyBlocked ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;line-height:1.4">${latestBlock.reason.split('\n')[0]}</div>` : ''}
+          ${isCurrentlyBlocked
+            ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;line-height:1.4"><span style="color:var(--red)">Suspended since ${latestBlock.dateBlocked} · ${sinceDays}d</span> — ${he(stripHtml(latestBlock.reason)).slice(0,90)}</div>`
+            : `<div style="font-size:11px;color:var(--text-muted);margin-top:3px">${totalEvents} past suspension${totalEvents===1?'':'s'} · ${driverTotalDays} day${driverTotalDays===1?'':'s'} total</div>`}
         </div>
         <div style="display:flex;align-items:center;gap:16px;flex-shrink:0">
           <div style="text-align:center">
@@ -7738,6 +7821,7 @@ function renderBlocks() {
             <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:left;letter-spacing:.05em;font-weight:600;white-space:nowrap">DATE UNBLOCKED</th>
             <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:center;letter-spacing:.05em;font-weight:600">DAYS</th>
             <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:left;letter-spacing:.05em;font-weight:600">STATUS</th>
+            <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:left;letter-spacing:.05em;font-weight:600">CATEGORY</th>
             <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:left;letter-spacing:.05em;font-weight:600">REASON</th>
           </tr></thead>
           <tbody>${eventRows}</tbody>
@@ -7746,7 +7830,6 @@ function renderBlocks() {
     </div>`;
   }).join('');
 
-  const he = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const topName = topDriver ? topDriver.name.replace(/'/g,"\\'") : '';
   el.innerHTML = `
     <div style="padding:16px 0 8px">
@@ -7765,10 +7848,34 @@ function renderBlocks() {
           <div style="font-size:28px;font-weight:700;color:var(--text)">${allDriverNames.length}</div>
           <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">DRIVERS AFFECTED</div>
         </div>
-        ${topDriver ? `<div class="blk-stat-card" onclick="blocksFilter='all';blocksDayFilter='all';blocksSearch='${topName}';blocksExpanded.add('${topName}');renderBlocks()" title="Open this driver's block history" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:120px">
+        <div class="blk-stat-card" title="Total suspension-days across all events (ongoing counted to today)" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:100px">
+          <div style="font-size:28px;font-weight:700;color:var(--text)">${totalDaysSuspended}</div>
+          <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">TOTAL DAYS SUSPENDED</div>
+        </div>
+        <div class="blk-stat-card" title="Average length of a resolved suspension" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:100px">
+          <div style="font-size:28px;font-weight:700;color:var(--text)">${avgDuration!=null?avgDuration:'—'}<span style="font-size:12px;color:var(--text-muted)">${avgDuration!=null?' d':''}</span></div>
+          <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">AVG DURATION</div>
+        </div>
+        ${topDriver ? `<div class="blk-stat-card" onclick="blocksFilter='all';blocksDayFilter='all';blocksCatFilter='all';blocksSearch='${topName}';blocksExpanded.add('${topName}');renderBlocks()" title="Open this driver's block history" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:120px">
           <div style="font-size:14px;font-weight:700;color:var(--amber)">${he(topDriver.name)}</div>
           <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">MOST BLOCKED · ${topDriver.count} events</div>
         </div>` : ''}
+      </div>
+
+      <!-- Suspensions by category (Build-166) — click a card to filter, mirrors Bolt's portal -->
+      <div style="margin-bottom:16px">
+        <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:6px">CURRENT SUSPENSIONS BY CATEGORY — click to filter</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${['Safety','Fraud','Quality','Compliance','Other'].filter(c=>c!=='Other'||catStats.Other.drivers.size).map(c=>{
+            const st = catStats[c], n = st.drivers.size, col = BLOCK_CAT_COLOR[c], on = blocksCatFilter===c;
+            return `<div onclick="blocksCatFilter=${on?"'all'":`'${c}'`};blocksFilter='active';renderBlocks()" title="${n} currently-suspended driver${n===1?'':'s'} · ${st.days} day${st.days===1?'':'s'}" style="cursor:pointer;flex:1 1 120px;min-width:110px;background:${on?col+'18':'var(--bg-card)'};border:1px solid ${on?col:'var(--border)'};border-radius:8px;padding:10px 14px">
+              <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${col}"></span><span style="font-size:11px;color:var(--text-muted);font-weight:600">${c}</span></div>
+              <div style="font-size:24px;font-weight:800;color:${n?col:'var(--text-muted)'};margin-top:3px">${n}</div>
+              <div style="font-size:10px;color:var(--text-muted)">${st.days} day${st.days===1?'':'s'}</div>
+            </div>`;
+          }).join('')}
+          ${blocksCatFilter!=='all'?`<div onclick="blocksCatFilter='all';renderBlocks()" style="cursor:pointer;display:flex;align-items:center;padding:0 12px;font-size:11px;color:var(--text-muted)">✕ clear</div>`:''}
+        </div>
       </div>
 
       <!-- Top reasons (click a chip to filter the list) -->
@@ -7832,6 +7939,8 @@ function packDriver(d) {
   putS('cat', d.activeCategories);
   putS('bs', d.boltState);
   putS('bsr', d.boltSuspensionReason);
+  putS('bsc', d.boltSuspensionCategory);
+  putS('bss', d.boltSuspendedSince);
   putS('vp', d.vehiclePlate);
   if (d.hasCashPayment != null) o.hcp = d.hasCashPayment ? 1 : 0;
   if (d.isActive) o.a = 1;
@@ -7855,6 +7964,7 @@ function unpackDriver(o) {
     fleetCut: o.fc ?? null, driverPayout: o.dp ?? null,
     activeCategories: o.cat || '', isActive: !!o.a,
     boltState: o.bs || '', boltSuspensionReason: o.bsr || '',
+    boltSuspensionCategory: o.bsc || '', boltSuspendedSince: o.bss || '',
     vehiclePlate: o.vp || '', hasCashPayment: o.hcp != null ? !!o.hcp : null,
     grossInApp: o.gia || 0, acceptanceTotal: o.act || 0, cashEarnings: o.ce || 0, cancellationFees: o.cf || 0,
     tollFees: o.tf || 0, expenseReimbursements: o.er || 0, bookingFees: o.bf || 0, refundsToRiders: o.rr || 0,
