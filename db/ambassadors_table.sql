@@ -10,8 +10,12 @@ create table if not exists public.ambassadors (
   name       text primary key,          -- canonical name (sheet AMBASSADORS!A)
   aliases    text,                       -- comma-separated aliases incl. Arabic (sheet col B)
   active     boolean not null default true,  -- sheet col C; blank in the sheet is treated as active
+  team       text,                       -- sheet Team col: egypt | saudi (drives the referrer incentive currency)
   updated_at timestamptz not null default now()
 );
+
+-- Added after the initial create for already-provisioned projects (idempotent).
+alter table public.ambassadors add column if not exists team text;
 
 alter table public.ambassadors enable row level security;
 

@@ -192,9 +192,20 @@ module.exports = async function handler(req, res) {
         const ah = ambValues[0].map(x => String(x || "").trim().toLowerCase());
         const find = (needle, fallback) => { const i = ah.findIndex(x => x.indexOf(needle) !== -1); return i >= 0 ? i : fallback; };
         const aName = find("name", 0), aAlias = find("alias", 1), aActive = find("active", 2);
+        // Team column (Egypt|Saudi) drives the referrer-incentive currency: Egypt team pays EGP,
+        // Saudi team pays SAR. Optional — no fixed fallback index (older sheets lack it → blank).
+        const aTeam = find("team", -1);
         // A blank Active cell means active (don't hide an ambassador over an unfilled cell);
         // only an explicit no/false/0/inactive turns it off.
         const isActive = v => { const s = String(v == null ? "" : v).trim().toLowerCase(); return !/^(no|false|0|inactive|n)$/.test(s); };
+        // Normalize the Team cell (EN/AR) to egypt|saudi; anything unrecognized/blank → "".
+        const normTeam = v => {
+          const s = String(v == null ? "" : v).trim().toLowerCase();
+          if (!s) return "";
+          if (s.indexOf("egyp") !== -1 || s.indexOf("مصر") !== -1 || s === "eg") return "egypt";
+          if (s.indexOf("saud") !== -1 || s.indexOf("سعود") !== -1 || s === "ksa" || s === "sa") return "saudi";
+          return "";
+        };
         const now = new Date().toISOString();
         const seen = new Set();
         const ambRows = [];
@@ -208,6 +219,7 @@ module.exports = async function handler(req, res) {
             name,
             aliases:    String(r[aAlias] || "").trim(),
             active:     isActive(r[aActive]),
+            team:       aTeam >= 0 ? normTeam(r[aTeam]) : "",
             updated_at: now,
           });
         });

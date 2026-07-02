@@ -1587,6 +1587,7 @@ body::before {
   <div class="tab"        data-tab="captains"  onclick="showTab('captains',this)">Captains</div>
   <div class="tab"        data-tab="finance"   onclick="showTab('finance',this)">Finance</div>
   <div class="tab"        data-tab="ambassadors" onclick="showTab('ambassadors',this)">🎖 Ambassadors</div>
+  <div class="tab"        data-tab="incentives" onclick="showTab('incentives',this)">💸 Incentives</div>
   <div class="tab"        data-tab="blocks"     onclick="showTab('blocks',this);renderBlocks()">⛔ Blocks</div>
   <div class="tab"        data-tab="analytics" onclick="showTab('analytics',this);renderAnalytics()">Analytics</div>
   <div class="tab"        data-tab="pipeline"  onclick="showTab('pipeline',this);renderPipeline()">🚦 Onboarding</div>
@@ -1717,6 +1718,17 @@ body::before {
   </div>
 </div>
 
+<!-- Referrer Incentives Panel (team-based) -->
+<div id="incentives" class="panel">
+  <div id="incentivesContent">
+    <div class="empty-state">
+      <div class="empty-icon">💸</div>
+      <div class="empty-title">Loading incentives…</div>
+      <div class="empty-sub">Click the Incentives tab to load</div>
+    </div>
+  </div>
+</div>
+
 <!-- Blocks Panel -->
 <div id="blocks" class="panel">
   <div id="blocksContent">
@@ -1777,6 +1789,18 @@ body::before {
       <input type="number" id="opCostChangeVal" placeholder="e.g. 500" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px"> <span class="unit">SAR</span>
       <button class="save-btn" style="margin:0" onclick="addOpCostChange()">+ Add change</button>
     </div>
+  </div>
+  <div class="settings-section">
+    <div class="st-title">💸 Referrer Incentives (sales teams)</div>
+    <div class="st-desc">A driver's referrer (call-list caller OR ambassador) is credited when the driver they brought hits a net threshold. The amount depends on the referrer's <b>team</b> (set in the sheet's AMBASSADORS tab) and the driver's <b>nationality</b>:
+      <br>• <b>Egypt team</b> — Saudi driver ≥5,000 → <b>500 EGP</b>; foreign driver ≥6,000 → <b>500 EGP</b>
+      <br>• <b>Saudi team</b> — Saudi driver ≥5,000 → <b>200 SAR</b>; foreign driver ≥6,000 → <b>500 SAR</b>
+    </div>
+    <div class="st-row"><label>Pay it every qualifying month</label>
+      <input type="checkbox" id="teamBonusRecurring" style="width:18px;height:18px;accent-color:var(--bolt-green);cursor:pointer">
+      <span class="unit">off = one-time (first qualifying month only)</span></div>
+    <div class="st-row"><label>EGP → SAR rate</label><input type="number" id="egpToSar" placeholder="0.077" step="0.001"> <span class="unit">for showing Egypt-team incentives in SAR (P&amp;L only — never changes what's paid)</span></div>
+    <button class="save-btn" onclick="saveSettings()">Save</button>
   </div>
   <div class="settings-section">
     <div class="st-title">Performance Flags</div>
@@ -1954,6 +1978,9 @@ function loadSettings() {
     flagAccRed:    s.flagAccRed    ?? 70,
     flagRatAmber:  s.flagRatAmber  ?? 4.7,
     flagRatRed:    s.flagRatRed    ?? 4.5,
+    // Referrer-incentive (team-based, Build-168) controls:
+    teamBonusRecurring: s.teamBonusRecurring ?? false,   // false = one-time (first qualifying month), true = every qualifying month
+    egpToSar:           s.egpToSar           ?? 0.077,    // EGP→SAR rate for expressing Egypt-team incentives in SAR (P&L); editable
   };
 }
 function saveSettings() {
@@ -1968,14 +1995,20 @@ function saveSettings() {
     flagAccRed:    get('flagAccRed', 70),
     flagRatAmber:  get('flagRatAmber', 4.7),
     flagRatRed:    get('flagRatRed', 4.5),
+    teamBonusRecurring: !!document.getElementById('teamBonusRecurring')?.checked,
+    egpToSar:           get('egpToSar', 0.077),
   };
   localStorage.setItem('khair_settings3', JSON.stringify(s));
   renderCaptains();
+  // Referrer-incentive frequency/rate feed the Incentives tab + P&L — repaint if it's open.
+  if (typeof renderIncentives === 'function' && document.getElementById('incentives')?.classList.contains('active')) renderIncentives();
   toast('Settings saved ✓');
 }
 function initSettingsUI() {
   const s = loadSettings();
   Object.keys(s).forEach(k => { const el = document.getElementById(k); if (el) el.value = s[k]; });
+  // teamBonusRecurring is a checkbox — the generic .value loop above can't set its checked state.
+  const rc = document.getElementById('teamBonusRecurring'); if (rc) rc.checked = !!s.teamBonusRecurring;
   if (typeof renderKeyStatus === 'function') renderKeyStatus();
   if (typeof renderSbStatus === 'function') renderSbStatus();
   renderOpCostSchedule();
@@ -2104,6 +2137,7 @@ function _doShowTab(id, el) {
   if (id === 'captains') renderCaptains();
   if (id === 'finance')  renderFinanceTab();
   if (id === 'ambassadors') renderAmbassadors();
+  if (id === 'incentives') renderIncentivesTab();
   if (id === 'blocks')    renderBlocks();
   if (id === 'starmap')  smSwitchView('home');
   if (id === 'settings') loadSysStatus();
@@ -11078,6 +11112,63 @@ function firstAchieveMonth(name, threshold) {
   return earliest;
 }
 
+// ── Unified referrer incentive (team-based, Build-168) ───────────────────────────
+// From NEW_BONUS_CUTOVER this REPLACES v2's referral bonus (his call 2026-07-02). A driver's
+// referrer — the "Source / Ambassador", whether a call-list caller OR an ambassador — is
+// credited when the driver they brought reaches a net threshold. The amount is keyed on the
+// referrer's TEAM (AMBASSADORS tab) + the driver's NATIONALITY. Egypt team pays EGP, Saudi SAR.
+const TEAM_INCENTIVE_RULES = {
+  egypt: { saudi:     { threshold: 5000, amount: 500, currency: 'EGP' },
+           foreigner: { threshold: 6000, amount: 500, currency: 'EGP' } },
+  saudi: { saudi:     { threshold: 5000, amount: 200, currency: 'SAR' },
+           foreigner: { threshold: 6000, amount: 500, currency: 'SAR' } },
+};
+// EGP→SAR rate (Settings, editable). Only used to EXPRESS Egypt-team incentives in SAR for the
+// P&L / combined totals — it never changes the native EGP amount actually paid.
+function egpToSarRate() { const r = loadSettings().egpToSar; return (typeof r === 'number' && r > 0) ? r : 0.077; }
+function incToSar(amount, currency) { return currency === 'EGP' ? Math.round(amount * egpToSarRate()) : amount; }
+
+// Returns { owed, currency, owedSar, qualifies, reason, team, nationality, threshold, amount }.
+// owed = native amount (EGP for Egypt team, SAR for Saudi team); owedSar = SAR-equivalent for
+// the P&L. One-time (default) locks at the driver's first qualifying month (a pre-cutover
+// qualifier is paid in the cutover month, mirroring v2); the Settings toggle switches it to
+// recurring (paid every month the driver's net clears the threshold).
+function teamIncentiveFor(name, profile, monthKey) {
+  const base = (extra) => Object.assign(
+    { owed: 0, owedSar: 0, currency: 'SAR', qualifies: false, team: '', nationality: '', threshold: 0, amount: 0, reason: '—' }, extra);
+  if (!profile || !profile.ambassador) return base({ reason: 'No referrer tagged' });
+  const team = teamForReferrer(profile.ambassador);
+  if (!team || !TEAM_INCENTIVE_RULES[team]) return base({ reason: `Referrer team not set — ${profile.ambassador}` });
+  const nat = profile.nationality;
+  if (!nat) return base({ team, reason: 'Nationality not set' });
+  const rule = TEAM_INCENTIVE_RULES[team][nat];
+  if (!rule) return base({ team, nationality: nat, reason: '—' });
+
+  const meta = { team, nationality: nat, currency: rule.currency, threshold: rule.threshold, amount: rule.amount };
+  const won  = () => ({ owed: rule.amount, owedSar: incToSar(rule.amount, rule.currency), qualifies: true, ...meta });
+
+  if (loadSettings().teamBonusRecurring) {
+    const [y, m] = monthKey.split('-').map(Number);
+    const net = getMonthlyNet(null, name, m - 1, y);
+    if (net >= rule.threshold)
+      return { ...won(), reason: `Recurring · net ${fmt(net)} ≥ ${fmt(rule.threshold)} (${team} · ${nat})` };
+    return base({ ...meta, reason: `Net ${fmt(net)} < ${fmt(rule.threshold)}` });
+  }
+
+  // One-time.
+  const fm = firstAchieveMonth(name, rule.threshold);
+  if (!fm) {
+    const [y, m] = monthKey.split('-').map(Number);
+    const net = getMonthlyNet(null, name, m - 1, y);
+    return base({ ...meta, reason: `Net ${fmt(net)} < ${fmt(rule.threshold)} (not yet)` });
+  }
+  const payMonth = fm < NEW_BONUS_CUTOVER ? NEW_BONUS_CUTOVER : fm;
+  const pre = fm < NEW_BONUS_CUTOVER ? ` (qualified ${monthLabel(fm)}, pre-cutover)` : '';
+  if (payMonth === monthKey) return { ...won(), reason: `One-time ${rule.amount} ${rule.currency} · first hit ${fmt(rule.threshold)}${pre} (${team} · ${nat})` };
+  if (payMonth <  monthKey)  return base({ ...meta, reason: `Already paid · ${monthLabel(payMonth)}` });
+  return base({ ...meta, reason: `Not yet · first hits ${monthLabel(fm)}` });
+}
+
 // Payout owed to the ambassador for one driver in one month (monthKey 'YYYY-MM').
 function ambPayoutFor(name, profile, monthlyNet, monthKey) {
   const model = profile && profile.ambassadorModel;
@@ -11119,41 +11210,14 @@ function ambPayoutFor(name, profile, monthlyNet, monthKey) {
     return { owed:0, qualifies:false, reason:'—' };
   }
 
-  // From NEW_BONUS_CUTOVER: one-time referral bonus by nationality. Model A/C no longer apply
-  // (legacy labels only) — any driver with an ambassador + nationality tagged qualifies.
-  if (!profile.ambassador) return { owed:0, qualifies:false, reason:'No ambassador tagged' };
-  const nationality = profile.nationality;
-  if (!nationality) return { owed:0, qualifies:false, reason:'Nationality not set' };
-
-  if (nationality === 'foreigner') {
-    // 500 one-time when the foreigner first nets ≥ 5,000. A driver who first hit 5,000
-    // BEFORE the cutover still earns it (his call, 2026-07-01) — paid in the cutover month
-    // (the first month the new referral scheme applies; pre-cutover months stay frozen).
-    const fm = firstAchieveMonth(name, 5000);
-    if (!fm) return { owed:0, qualifies:false, reason:`Net ${fmt(monthlyNet)} < 5,000 (not yet)` };
-    const payMonth = fm < NEW_BONUS_CUTOVER ? NEW_BONUS_CUTOVER : fm;
-    const pre = fm < NEW_BONUS_CUTOVER ? ` (qualified ${monthLabel(fm)}, pre-cutover)` : '';
-    if (payMonth === monthKey) return { owed:500, qualifies:true, reason:`One-time 500 · first hit 5,000${pre} (foreigner referral)` };
-    if (payMonth <  monthKey)  return { owed:0, qualifies:false, reason:`Already paid · ${monthLabel(payMonth)}` };
-    return { owed:0, qualifies:false, reason:`Not yet · first hits ${monthLabel(fm)}` };
-  }
-
-  if (nationality === 'saudi') {
-    // 150 or 200 one-time, locked at the driver's first qualifying month (whichever tier —
-    // 5,000 or 6,000 — that same month already reached). No top-up if 6,000 comes later.
-    // A pre-cutover first-qualifier still earns it — paid in the cutover month.
-    const fm5 = firstAchieveMonth(name, 5000);
-    if (!fm5) return { owed:0, qualifies:false, reason:`Net ${fmt(monthlyNet)} < 5,000 (not yet)` };
-    const fm6 = firstAchieveMonth(name, 6000);
-    const amt = (fm6 === fm5) ? 200 : 150; // fm6 can never be earlier than fm5
-    const payMonth = fm5 < NEW_BONUS_CUTOVER ? NEW_BONUS_CUTOVER : fm5;
-    const pre = fm5 < NEW_BONUS_CUTOVER ? ` (qualified ${monthLabel(fm5)}, pre-cutover)` : '';
-    if (payMonth === monthKey) return { owed:amt, qualifies:true, reason:`One-time ${amt} · first hit ${amt===200?'6,000':'5,000'}${pre} (Saudi referral)` };
-    if (payMonth <  monthKey)  return { owed:0, qualifies:false, reason:`Already paid · ${monthLabel(payMonth)}` };
-    return { owed:0, qualifies:false, reason:`Not yet · first hits ${monthLabel(fm5)}` };
-  }
-
-  return { owed:0, qualifies:false, reason:'—' };
+  // From NEW_BONUS_CUTOVER: the unified team-based referrer incentive REPLACES v2's nationality
+  // referral bonus (his call 2026-07-02). Delegate to teamIncentiveFor and expose its SAR-
+  // equivalent as `owed` so the fleet P&L (computeDriverPnL bonusCost) and the SAR-labelled
+  // Ambassadors tab stay correct in one currency, while carrying the native amount + currency +
+  // team for the Incentives tab (which shows EGP for Egypt-team referrers).
+  const ti = teamIncentiveFor(name, profile, monthKey);
+  return { owed: ti.owedSar, qualifies: ti.qualifies, reason: ti.reason,
+           native: ti.owed, currency: ti.currency, team: ti.team, threshold: ti.threshold };
 }
 
 // Every driver name ever seen in history, plus any profile-only keys.
@@ -11216,14 +11280,34 @@ async function fetchSheetAmbassadorSync(force) {
 // missing `ambassadors` table (before the one-time SQL is run) never toasts or trips the
 // sync-status UI — a null return just keeps the hardcoded fallback list. Active-only.
 let ambassadorListCache = null;
+// Referrer TEAM map (lowercased canonical name → 'egypt' | 'saudi' | ''), mirrored from the
+// AMBASSADORS tab's Team column by api/bolt/sync-sheet.js. Drives the referrer-incentive
+// currency: Egypt team pays EGP, Saudi team pays SAR. Populated by fetchAmbassadorList.
+let AMBASSADOR_TEAM = {};
+function normTeam(v) {
+  const s = String(v == null ? '' : v).trim().toLowerCase();
+  if (!s) return '';
+  if (s.indexOf('egyp') !== -1 || s.indexOf('مصر') !== -1 || s === 'eg') return 'egypt';
+  if (s.indexOf('saud') !== -1 || s.indexOf('سعود') !== -1 || s === 'ksa' || s === 'sa') return 'saudi';
+  return '';
+}
+function teamForReferrer(name) {
+  return name ? (AMBASSADOR_TEAM[String(name).trim().toLowerCase()] || '') : '';
+}
 async function fetchAmbassadorList(force) {
   if (ambassadorListCache && !force) return ambassadorListCache;
   if (!supabaseOn() || IS_FILE_ORIGIN) return null;
   try {
-    const res = await fetch(`${getSbUrl()}/rest/v1/ambassadors?select=name,active&order=name.asc`, { headers: sbHeaders() });
+    // Prefer the team-aware select; fall back to name,active for a project whose `ambassadors`
+    // table predates the team column, so the dropdown never breaks over a missing column.
+    let res = await fetch(`${getSbUrl()}/rest/v1/ambassadors?select=name,active,team&order=name.asc`, { headers: sbHeaders() });
+    if (!res.ok) res = await fetch(`${getSbUrl()}/rest/v1/ambassadors?select=name,active&order=name.asc`, { headers: sbHeaders() });
     if (!res.ok) return null;                       // table missing / error → keep the fallback
     const rows = await res.json();
     if (!Array.isArray(rows)) return null;
+    const tm = {};
+    rows.forEach(r => { if (r && r.name) tm[String(r.name).trim().toLowerCase()] = normTeam(r.team); });
+    AMBASSADOR_TEAM = tm;
     const names = rows.filter(r => r.active !== false && r.name && String(r.name).trim())
                       .map(r => String(r.name).trim());
     ambassadorListCache = names;
@@ -11299,6 +11383,180 @@ function sheetAmbSuggestionCached(name, phone) {
   const amb = row && row.ambassador;
   if (!amb || !AMBASSADOR_LIST.includes(amb)) return null;
   return { ambassador: amb, confidence: match.confidence };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REFERRER INCENTIVES (team-based, Build-168)
+// One unified view for the team-based referrer incentive — covers BOTH call-list callers and
+// ambassadors (referrer = the driver's "Source / Ambassador"). Egypt-team referrers are shown
+// in EGP, Saudi-team in SAR, in SEPARATE panels (his ask: teams don't see each other's numbers),
+// with a "view all in SAR" toggle for the P&L. Reads the same profiles/net the rest of the app
+// uses; the calc lives in teamIncentiveFor(). Blocked until the AMBASSADORS Team column + the
+// DRIVERS Nationality column are filled — the view says so rather than showing wrong numbers.
+// ═══════════════════════════════════════════════════════════════════════════
+let incMonth = '';
+let incView  = 'native';            // 'native' (EGP/SAR per team) | 'sar' (everything in SAR)
+function setIncMonth(v) { incMonth = v; renderIncentives(); }
+function setIncView(v)  { incView = v; renderIncentives(); }
+function toggleTeamRecurring() {
+  const raw = JSON.parse(localStorage.getItem('khair_settings3') || '{}');
+  raw.teamBonusRecurring = !raw.teamBonusRecurring;
+  localStorage.setItem('khair_settings3', JSON.stringify(raw));
+  const rc = document.getElementById('teamBonusRecurring'); if (rc) rc.checked = !!raw.teamBonusRecurring;
+  renderIncentives();
+  toast('Incentive mode: ' + (raw.teamBonusRecurring ? 'recurring — every qualifying month' : 'one-time — first qualifying month'));
+}
+// Tab entry: paint from cache immediately, then make sure the team map is loaded and repaint.
+function renderIncentivesTab() {
+  renderIncentives();
+  refreshAmbassadorList().then(() => renderIncentives()).catch(() => {});
+}
+
+function renderIncentives() {
+  const el = document.getElementById('incentivesContent');
+  if (!el) return;
+  const months  = getAvailableMonths();
+  if (!incMonth) incMonth = defaultMonth();
+  const monthKey = incMonth;
+  const [yy, mm] = monthKey.split('-').map(Number);
+  const monthIdx = mm - 1, year = yy;
+  const recurring = !!loadSettings().teamBonusRecurring;
+  const rate = egpToSarRate();
+  const money = (v, c) => `${fmt(v)} ${c}`;
+
+  // Group every attributed driver who EARNED this month by their referrer.
+  const allNames = getAllDriverNames();
+  const refs = {};                       // key → { name, team, currency, drivers[], owedNative, owedSar, hit, qualifying }
+  let noNat = 0, totalDrivers = 0;
+  allNames.forEach(name => {
+    const p = getCourierProfile(name);
+    if (!p || !p.ambassador) return;
+    const net = getMonthlyNet(null, name, monthIdx, year);
+    if (net <= 0) return;                // only drivers earning this month are relevant to a threshold
+    totalDrivers++;
+    const ref  = p.ambassador.trim();
+    const team = teamForReferrer(ref);
+    const ti   = teamIncentiveFor(name, p, monthKey);
+    const k = ref.toLowerCase();
+    const g = refs[k] = refs[k] || { name: ref, team, currency: team === 'egypt' ? 'EGP' : 'SAR',
+                                     drivers: [], owedNative: 0, owedSar: 0, hit: 0, qualifying: 0 };
+    g.drivers.push({ name, net, nationality: p.nationality || '', ti });
+    g.owedNative += ti.owed; g.owedSar += ti.owedSar;
+    if (ti.qualifies) g.qualifying++;
+    if (ti.threshold && net >= ti.threshold) g.hit++;
+    if (!p.nationality) noNat++;
+  });
+
+  const byOwed = (a, b) => b.owedSar - a.owedSar || a.name.localeCompare(b.name);
+  const egyptRefs  = Object.values(refs).filter(g => g.team === 'egypt').sort(byOwed);
+  const saudiRefs  = Object.values(refs).filter(g => g.team === 'saudi').sort(byOwed);
+  const noTeamRefs = Object.values(refs).filter(g => !g.team)
+                       .sort((a, b) => b.drivers.length - a.drivers.length || a.name.localeCompare(b.name));
+
+  const egyptOwedNative = egyptRefs.reduce((s, g) => s + g.owedNative, 0);   // EGP
+  const egyptOwedSar    = egyptRefs.reduce((s, g) => s + g.owedSar, 0);      // SAR-equiv
+  const saudiOwed       = saudiRefs.reduce((s, g) => s + g.owedNative, 0);   // SAR
+  const grandSar        = egyptOwedSar + saudiOwed;
+  const anyTeamSet      = Object.values(AMBASSADOR_TEAM).some(t => t);
+
+  // ── Toolbar ──
+  const monthOpts = (months.length ? months : [monthKey]).map(m => `<option value="${m}" ${m === monthKey ? 'selected' : ''}>${monthLabel(m)}</option>`).join('');
+  const vbtn = (v, label) => `<button onclick="setIncView('${v}')" style="padding:6px 12px;font-size:12px;border:1px solid ${incView === v ? 'var(--bolt-green)' : 'var(--border)'};background:${incView === v ? 'var(--bolt-green)' : 'var(--bg)'};color:${incView === v ? '#021' : 'var(--text)'};border-radius:6px;cursor:pointer;font-weight:${incView === v ? '700' : '500'}">${label}</button>`;
+  const toolbar = `
+    <div style="padding:16px 4px 8px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">
+      <div><div style="font-size:18px;font-weight:800">💸 Referrer Incentives</div>
+        <div style="font-size:11px;color:var(--text-muted)">Egypt team in EGP · Saudi team in SAR · each referrer credited when a driver they brought hits the net threshold</div></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="incMonthSel" onchange="setIncMonth(this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg)">${monthOpts}</select>
+        <div style="display:flex;gap:4px">${vbtn('native', 'Native EGP/SAR')}${vbtn('sar', 'All SAR')}</div>
+        <button onclick="toggleTeamRecurring()" title="Toggle whether the bonus pays once or every qualifying month" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);border-radius:6px;cursor:pointer">${recurring ? '🔁 Recurring' : '1️⃣ One-time'} · flip</button>
+      </div>
+    </div>`;
+
+  // ── Blockers / data-gap banners ──
+  let banners = '';
+  if (!anyTeamSet) banners += `<div style="margin:0 4px 10px;padding:10px 14px;border:1px solid var(--amber);border-radius:8px;background:rgba(255,170,0,.08);font-size:12px">⚠ <b>No referrer has a Team set yet.</b> Add a <b>Team</b> column (Egypt / Saudi) to the sheet's <b>AMBASSADORS</b> tab and fill it — the nightly sync mirrors it here. Until then everyone falls under "No team set" below and no incentive can be priced.</div>`;
+  if (noNat)       banners += `<div style="margin:0 4px 10px;padding:10px 14px;border:1px solid var(--amber);border-radius:8px;background:rgba(255,170,0,.08);font-size:12px">⚠ <b>${noNat} earning referred driver${noNat === 1 ? '' : 's'} ha${noNat === 1 ? 's' : 've'} no Nationality set.</b> Fill the DRIVERS <b>Nationality</b> column (or set it per-driver on the 🎖 Ambassadors tab) — the amount depends on it, so those rows show 0 until it's set.</div>`;
+
+  if (!totalDrivers) {
+    el.innerHTML = toolbar + banners +
+      `<div class="empty-state"><div class="empty-icon">💸</div><div class="empty-title">No referred earners in ${monthLabel(monthKey)}</div><div class="empty-sub">Drivers need an ambassador/referrer on their profile and net earnings this month. Attribute them on the 🎖 Ambassadors tab.</div></div>`;
+    return;
+  }
+
+  // ── Per-team panels ──
+  const driverTable = g => {
+    const rows = g.drivers.sort((a, b) => b.net - a.net).map(d => {
+      const natTag = d.nationality
+        ? `<span style="color:var(--text-muted)">${d.nationality === 'saudi' ? '🇸🇦 Saudi' : '🌍 Foreign'}</span>`
+        : `<span style="color:var(--amber)">nationality?</span>`;
+      const hit = d.ti.threshold && d.net >= d.ti.threshold;
+      const thrCell = d.ti.threshold ? `${fmt(d.ti.threshold)}` : '—';
+      const status = d.ti.qualifies
+        ? `<span style="color:var(--green);font-weight:700">${incView === 'sar' ? money(d.ti.owedSar, 'SAR') : money(d.ti.owed, d.ti.currency)}</span>`
+        : `<span style="color:var(--text-muted)">${d.ti.reason}</span>`;
+      return `<tr style="border-top:1px solid var(--border)">
+        <td style="padding:5px 10px">${d.name}</td>
+        <td style="padding:5px 10px">${natTag}</td>
+        <td style="padding:5px 10px;text-align:right;font-family:var(--mono)">${fmt(d.net)}</td>
+        <td style="padding:5px 10px;text-align:right;font-family:var(--mono);color:${hit ? 'var(--green)' : 'var(--text-muted)'}">${thrCell}${hit ? ' ✓' : ''}</td>
+        <td style="padding:5px 10px;text-align:right">${status}</td>
+      </tr>`;
+    }).join('');
+    return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em">
+        <th style="padding:5px 10px">Driver</th><th style="padding:5px 10px">Nationality</th>
+        <th style="padding:5px 10px;text-align:right">Net (mo)</th><th style="padding:5px 10px;text-align:right">Threshold</th>
+        <th style="padding:5px 10px;text-align:right">Incentive</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+  };
+
+  const teamPanel = (flag, title, refsArr, subtitleCur, subtotalNative, subtotalSar) => {
+    const subDisp = incView === 'sar' ? money(subtotalSar, 'SAR') : money(subtotalNative, subtitleCur);
+    const cards = refsArr.length ? refsArr.map(g => {
+      const owedDisp = incView === 'sar' ? money(g.owedSar, 'SAR') : money(g.owedNative, g.currency);
+      return `<div style="border:1px solid var(--border);border-radius:8px;margin:8px 0;overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 12px;background:var(--bg-card);flex-wrap:wrap">
+          <div style="font-weight:700">${g.name}</div>
+          <div style="font-size:11px;color:var(--text-muted)">${g.drivers.length} driver${g.drivers.length === 1 ? '' : 's'} · ${g.hit} hit threshold · ${g.qualifying} to pay</div>
+          <div style="font-weight:800;color:${g.owedNative > 0 ? 'var(--bolt-green)' : 'var(--text-muted)'}">${g.owedNative > 0 ? owedDisp : '—'}</div>
+        </div>
+        ${driverTable(g)}
+      </div>`;
+    }).join('') : `<div style="padding:14px;color:var(--text-muted);font-size:12px">No ${title} referrers with earning drivers this month.</div>`;
+    return `<div style="margin:0 4px 16px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg-card2);flex-wrap:wrap;gap:6px">
+        <div style="font-weight:800;font-size:15px">${flag} ${title}</div>
+        <div style="font-size:13px;color:var(--text-muted)">Owed ${monthLabel(monthKey)}: <b style="color:var(--bolt-green)">${subDisp}</b></div>
+      </div>
+      <div style="padding:6px 10px 10px">${cards}</div>
+    </div>`;
+  };
+
+  // ── Grand total strip ──
+  const totalStrip = `
+    <div style="margin:4px 4px 14px;padding:10px 14px;border:1px solid var(--bolt-green);border-radius:8px;background:rgba(0,255,179,.05);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div style="font-size:12px;color:var(--text-muted)">${recurring ? 'Recurring — pays every qualifying month' : 'One-time — first qualifying month only'}${incView === 'sar' ? ` · EGP→SAR @ ${rate}` : ''}</div>
+      <div style="font-size:13px">
+        <span style="color:var(--text-muted)">🇪🇬 ${money(egyptOwedNative, 'EGP')}${incView === 'sar' ? ` (${money(egyptOwedSar, 'SAR')})` : ''}</span>
+        &nbsp;·&nbsp; <span style="color:var(--text-muted)">🇸🇦 ${money(saudiOwed, 'SAR')}</span>
+        &nbsp;·&nbsp; <b>Total ${money(grandSar, 'SAR')}</b>
+      </div>
+    </div>`;
+
+  let html = toolbar + banners + totalStrip;
+  html += teamPanel('🇪🇬', 'Egypt team', egyptRefs, 'EGP', egyptOwedNative, egyptOwedSar);
+  html += teamPanel('🇸🇦', 'Saudi team', saudiRefs, 'SAR', saudiOwed, saudiOwed);
+
+  if (noTeamRefs.length) {
+    const list = noTeamRefs.map(g => `<li style="margin:2px 0"><b>${g.name}</b> — ${g.drivers.length} earning driver${g.drivers.length === 1 ? '' : 's'}</li>`).join('');
+    html += `<div style="margin:0 4px 16px;border:1px solid var(--amber);border-radius:10px;overflow:hidden">
+      <div style="padding:10px 14px;background:rgba(255,170,0,.08);font-weight:800;font-size:14px;color:var(--amber)">⚠ No team set — ${noTeamRefs.length} referrer${noTeamRefs.length === 1 ? '' : 's'}</div>
+      <div style="padding:10px 14px;font-size:12px;color:var(--text-muted)">These referrers have earning drivers but no <b>Team</b> in the AMBASSADORS tab, so their incentive can't be priced (EGP vs SAR is unknown). Set each one's Team to Egypt or Saudi in the sheet.
+        <ul style="margin:8px 0 0 18px">${list}</ul></div></div>`;
+  }
+
+  el.innerHTML = html;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
