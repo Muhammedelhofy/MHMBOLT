@@ -167,6 +167,11 @@ body::after { display:none !important; }
 .sort-btn.active { background:rgba(0,255,179,.09); color:var(--bolt-green); border-color:rgba(0,255,179,.35); box-shadow:0 0 8px rgba(0,255,179,.12); }
 .sort-btn:hover:not(.active) { color:var(--cyan); border-color:rgba(0,212,255,.3); }
 .spacer { flex:1; }
+/* Build-160: smooth tab transition (GPU-cheap opacity/transform only — no layout thrash)
+   + hover affordance for the Today tab's deep-link rows. */
+.panel.active { animation: panelIn .16s ease; }
+@keyframes panelIn { from { opacity:.3; transform:translateY(5px); } to { opacity:1; transform:none; } }
+.today-row:hover { background:rgba(0,212,255,.08); }
 .filter-inactive { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-muted); cursor:pointer; user-select:none; }
 .filter-inactive input { accent-color:var(--bolt-green); }
 /* ── Captain table Filter / Sort control groups ── */
@@ -9590,20 +9595,31 @@ function computeExecMonth(monthKey) {
   const names = getDriversInMonth(monthKey);
   Object.keys(loadCourierProfiles()).forEach(k => { if (!names.some(d => driverKey(d) === k)) names.push(k); });
   const pls = names.map(n => computeDriverPnL(n, monthKey));
-  const S = { month: monthKey, driversNet:0, inflow:0, outflow:0, bonusPaid:0, fleetKeeps:0,
-              tierCompany:0, tierPartnerB:0, activeN:0, noProfile:0 };
+  // ★ HIS INCOME MODEL (Build-159 fix): the driver's Bolt net is the DRIVER'S money —
+  // it is NEVER company revenue. The company earns from (1) rentals/deal income on the
+  // cost profiles and (2) the Bolt tier bonus (gross per tier − op cost, then 50/50
+  // with Partner B). So company net here = deal net (profile fields WITHOUT income)
+  // + tier bonus company share. If some future deal does keep a driver's net, model it
+  // as a Fleet-Cut/Other-IN on that profile — never by re-adding income here.
+  const S = { month: monthKey, driversNet:0, dealIn:0, dealOut:0, bonusPaid:0,
+              tierCompany:0, tierPartnerB:0, tierGross:0, tierCounts:[0,0,0],
+              activeN:0, noProfile:0 };
   pls.forEach(p => {
-    S.driversNet += p.income;
-    S.inflow  += Math.max(0,p.acctRent) + Math.max(0,p.carRent) + Math.max(0,p.other);
-    S.outflow += Math.min(0,p.acctRent) + Math.min(0,p.carRent) + p.salary + p.fleetCut + Math.min(0,p.other);
-    S.bonusPaid  += p.bonusCost;
-    S.fleetKeeps += p.netPnL;
+    S.driversNet += p.income;                          // context line only — their money
+    S.dealIn  += Math.max(0,p.acctRent) + Math.max(0,p.carRent) + Math.max(0,p.other) + Math.max(0,-p.fleetCut);
+    S.dealOut += Math.min(0,p.acctRent) + Math.min(0,p.carRent) + p.salary + Math.min(0,p.other);
+    S.bonusPaid += p.bonusCost;                        // ambassador + Saudi payouts (≤0)
     if (p.income > 0) { S.activeN++; if (!p.hasProfile) S.noProfile++; }
     const b = bonusFor(p.income, monthKey);
-    S.tierCompany += b.company; S.tierPartnerB += b.partnerB;
+    if (b.tierFloor) {
+      S.tierCompany += b.company; S.tierPartnerB += b.partnerB; S.tierGross += b.gross;
+      S.tierCounts[b.tierFloor >= 6000 ? 2 : b.tierFloor >= 5000 ? 1 : 0]++;
+    }
   });
-  S.companyNet = S.fleetKeeps + S.tierCompany;
+  S.dealNet    = S.dealIn + S.dealOut + S.bonusPaid;
+  S.companyNet = S.dealNet + S.tierCompany;
   S.perDriver  = S.activeN ? S.companyNet / S.activeN : 0;
+  S.opCost     = opCostForMonth(monthKey);
   S.reconciled = typeof isMonthReconciled === 'function' && isMonthReconciled(monthKey);
   return S;
 }
@@ -9620,18 +9636,20 @@ function renderFinanceExecView() {
   const curKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   const months = [...R.months].sort().slice(-6);       // oldest → newest, last 6
   const cols = months.map(computeExecMonth);
+  const selKey = months.includes(financeMonth) ? financeMonth : null;   // Month dropdown highlights a column
 
-  const sig = v => v === 0 ? '<span style="color:var(--text-muted)">—</span>'
+  const sig = v => Math.round(v) === 0 ? '<span style="color:var(--text-muted)">—</span>'
     : `<span style="color:${v>0?'var(--green)':'var(--red)'}">${v>0?'+':''}${fmt(Math.round(v))}</span>`;
   const money = v => fmt(Math.round(v));
-  const th = c => `<th style="padding:8px 12px;text-align:right;font-size:11px;white-space:nowrap;color:${c.month===curKey?'var(--cyan)':'var(--text-muted)'}">${monthLabel(c.month)}${c.month===curKey?'<div style="font-size:9px;font-weight:400">in progress</div>':''}</th>`;
-  const rowH = (label, cells, opts) => `<tr style="${opts&&opts.strong?'background:var(--bg-card2);font-weight:700;':''}border-top:1px solid ${opts&&opts.strong?'rgba(0,255,179,.25)':'var(--border)'}">
+  const colBg = c => c.month===selKey ? 'background:rgba(0,212,255,.05);' : '';
+  const th = c => `<th style="padding:8px 12px;text-align:right;font-size:11px;white-space:nowrap;${colBg(c)}color:${c.month===curKey?'var(--cyan)':c.month===selKey?'var(--text)':'var(--text-muted)'}">${monthLabel(c.month)}${c.month===curKey?'<div style="font-size:9px;font-weight:400">in progress</div>':''}</th>`;
+  const rowH = (label, cellsOf, opts) => `<tr style="${opts&&opts.strong?'background:var(--bg-card2);font-weight:700;':''}border-top:1px solid ${opts&&opts.strong?'rgba(0,255,179,.25)':'var(--border)'}">
     <td style="padding:8px 12px;font-size:12px;${opts&&opts.strong?'':'color:var(--text-muted)'};white-space:nowrap">${label}</td>
-    ${cells.map(c=>`<td style="padding:8px 12px;text-align:right;font-family:var(--mono);font-size:12px;white-space:nowrap">${c}</td>`).join('')}
+    ${cols.map(c=>`<td style="padding:8px 12px;text-align:right;font-family:var(--mono);font-size:12px;white-space:nowrap;${colBg(c)}">${cellsOf(c)}</td>`).join('')}
   </tr>`;
+  const section = label => `<tr><td colspan="${cols.length+1}" style="padding:10px 12px 3px;font-size:9px;letter-spacing:.12em;color:var(--text-muted)">${label}</td></tr>`;
 
-  // Month-over-month on company net — compare the two most recent CLOSED months when
-  // possible; if the newest column is the in-progress month, say so explicitly.
+  // Month-over-month on company net — the two most recent CLOSED months.
   const closed = cols.filter(c => c.month !== curKey);
   let momLine = '';
   if (closed.length >= 2) {
@@ -9649,40 +9667,39 @@ function renderFinanceExecView() {
     </div>`).join('')}
   </div>`;
 
-  const dq = cols.map(c => {
-    const bits = [];
-    if (c.noProfile) bits.push(`<span style="color:var(--amber)">${c.noProfile} no-profile</span>`);
-    bits.push(c.reconciled ? '<span style="color:var(--green)">recon ✓</span>' : (c.month===curKey?'<span style="color:var(--text-muted)">open</span>':'<span style="color:var(--amber)">recon due</span>'));
-    return `<div style="font-size:10px">${bits.join('<br>')}</div>`;
-  });
-
+  const opCosts = [...new Set(cols.map(c=>c.opCost))];
   host.innerHTML = `
     <div class="finance-section">
       <div class="finance-section-header">
-        <span class="finance-section-title">👔 Executive P&L — last ${cols.length} month${cols.length>1?'s':''}</span>
-        <span style="font-size:11px;color:var(--text-muted)">${momLine || 'Company net = fleet keeps + Bolt tier bonus (company share, after op cost + Partner B split)'}</span>
+        <span class="finance-section-title">👔 Executive P&L — company money only</span>
+        <span style="font-size:11px;color:var(--text-muted)">${momLine || 'Revenue = rentals/deals + Bolt tier bonus. Driver net is the DRIVER&#39;S money — context only.'}</span>
       </div>
       ${trend}
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
         <thead><tr><th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-muted)">SAR</th>${cols.map(th).join('')}</tr></thead>
         <tbody>
-          ${rowH(`Drivers' Bolt net <span style="font-size:10px">(context — drivers' money)</span>`, cols.map(c=>money(c.driversNet)))}
-          ${rowH('Fleet inflows (rents + cuts in)', cols.map(c=>sig(c.inflow)))}
-          ${rowH('Fleet outflows (salaries, rents out)', cols.map(c=>sig(c.outflow)))}
-          ${rowH('Ambassador + Saudi bonuses', cols.map(c=>sig(c.bonusPaid)))}
-          ${rowH('Fleet keeps (per-captain P&L)', cols.map(c=>sig(c.fleetKeeps)))}
-          ${rowH('Bolt tier bonus — company share', cols.map(c=>sig(c.tierCompany)))}
-          ${rowH('<span style="font-size:10px">Partner B share (info, not company money)</span>', cols.map(c=>`<span style="font-size:11px;color:var(--text-muted)">${money(c.tierPartnerB)}</span>`))}
-          ${rowH('★ COMPANY NET', cols.map(c=>sig(c.companyNet)), {strong:true})}
-          ${rowH('Active drivers', cols.map(c=>String(c.activeN)))}
-          ${rowH('Net per active driver', cols.map(c=>sig(c.perDriver)))}
-          ${rowH('Data quality', dq)}
+          ${section('COMPANY REVENUE')}
+          ${rowH('Rentals & deal income', c=>sig(c.dealIn))}
+          ${rowH(`Bolt tier bonus — company share <span style="font-size:10px">(gross − ${opCosts.map(fmt).join('/')} op cost, ÷2 w/ Partner B)</span>`, c=>sig(c.tierCompany))}
+          ${rowH('<span style="font-size:10px">↳ drivers at 4k / 5k / 6k tier</span>', c=>`<span style="font-size:11px;color:var(--text-muted)">${c.tierCounts[0]} / ${c.tierCounts[1]} / ${c.tierCounts[2]}</span>`)}
+          ${section('COMPANY COSTS')}
+          ${rowH('Salaries & deal payouts', c=>sig(c.dealOut))}
+          ${rowH('Ambassador + Saudi bonuses', c=>sig(c.bonusPaid))}
+          ${rowH('★ COMPANY NET', c=>sig(c.companyNet), {strong:true})}
+          ${section('UNIT ECONOMICS & CONTEXT')}
+          ${rowH('Net per active driver', c=>sig(c.perDriver))}
+          ${rowH('Active drivers', c=>String(c.activeN))}
+          ${rowH(`Drivers' Bolt net <span style="font-size:10px">(THEIR money — context, never company revenue)</span>`, c=>`<span style="color:var(--text-muted)">${money(c.driversNet)}</span>`)}
+          ${rowH('<span style="font-size:10px">Partner B tier share (info)</span>', c=>`<span style="font-size:11px;color:var(--text-muted)">${money(c.tierPartnerB)}</span>`)}
+          ${rowH('Data quality', c=>{ const bits=[]; if(c.noProfile) bits.push(`<span style="color:var(--amber)">${c.noProfile} no-profile</span>`);
+            bits.push(c.reconciled?'<span style="color:var(--green)">recon ✓</span>':(c.month===curKey?'<span style="color:var(--text-muted)">open</span>':'<span style="color:var(--amber)">recon due</span>'));
+            return `<div style="font-size:10px">${bits.join('<br>')}</div>`; })}
         </tbody>
       </table></div>
-      <div style="font-size:10px;color:var(--text-muted);padding:10px 12px">
-        The in-progress month uses month-to-date nets, so its tier bonus is understated until month-end.
-        "No-profile" earners count as raw net in Fleet keeps (no rent/salary applied) — fill their cost profiles to sharpen these numbers.
-        Reconcile each closed month (📋 Reconcile w/ Bolt) to lock the final figures.
+      <div style="font-size:10px;color:var(--text-muted);padding:10px 12px;line-height:1.6">
+        <b>The model:</b> Bolt pays the company 1,500 / 2,000 / 2,500 SAR gross per driver reaching 4k / 5k / 6k net — minus the month's op cost (${opCosts.map(fmt).join(' / ')}), the remainder splits 50/50 with Partner B. Rentals and deal income come from the cost profiles.
+        The in-progress month uses month-to-date nets, so its tier counts grow until month-end. "No-profile" earners contribute NOTHING here until their deal (rent/salary) is set — fill profiles to make revenue real.
+        Pick a month in the Month dropdown above to highlight its column; the tier-bonus detail per driver is in the "Fleet Bolt Tier Bonus" section below.
       </div>
     </div>`;
 }
@@ -12953,8 +12970,15 @@ async function renderRampCohort() {
 let analyticsLastCompute = null;
 
 async function openChaseList() {
-  const c = analyticsLastCompute;
-  if (!c || !c.projectable) { toast('Pick a specific month first (not "All time")'); return; }
+  // Works from ANY tab (Build-160): reuse the Analytics cache when it's a real month,
+  // else compute the latest month directly — same computeRosterForMonth either way.
+  let c = analyticsLastCompute;
+  if (!c || !c.projectable) {
+    const R = computeRosterForMonth('');
+    if (R && R.projectable) c = { current:R.current, projectable:R.projectable, isCurrentMonth:R.isCurrentMonth,
+      remTotal:R.remTotal, remWork:R.remWork, periodLabel:R.periodLabel, monthKey:R.monthSel, TIERS:R.TIERS };
+  }
+  if (!c || !c.projectable) { toast('No monthly data to chase yet'); return; }
   const DAY = 86400000, now = Date.now();
 
   // Context passes over the full history (all months — idle drivers' last trip and
@@ -13096,6 +13120,15 @@ function copyChaseList() {
 // as the tabs they link to (computeRosterForMonth + the pipeline caches), so
 // Today can never disagree with the detail view behind it.
 function todayGo(tab) { const t = document.querySelector(`.tab[data-tab="${tab}"]`); if (t) t.click(); }
+// Build-160: context-aware deep links — land on the EXACT view, not just the tab.
+function todayDrill(drill, ev) {
+  if (ev) ev.stopPropagation();
+  analyticsDrill = drill; analyticsDrillSort = 'net'; analyticsDrillAsc = false;
+  todayGo('analytics');
+  setTimeout(() => { const d = document.getElementById('analyticsDrill'); if (d) d.scrollIntoView({ behavior:'smooth', block:'start' }); }, 150);
+}
+function todayGoExec(ev) { if (ev) ev.stopPropagation(); financeViewMode = 'exec'; todayGo('finance'); }
+function todayOpenChase(ev) { if (ev) ev.stopPropagation(); openChaseList(); }
 
 function renderToday() {
   const el = document.getElementById('todayContent');
@@ -13141,10 +13174,12 @@ function renderToday() {
 
   const dateLine = new Date().toLocaleDateString('en-GB',{weekday:'long', day:'2-digit', month:'long'});
   const big  = (v,unit) => `<span style="font-size:26px;font-weight:800;font-family:var(--mono)">${v}</span>${unit?`<span style="font-size:12px;color:var(--text-muted)"> ${unit}</span>`:''}`;
-  const row  = (label, valHtml) => `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:3px 0;font-size:12px"><span style="color:var(--text-muted)">${label}</span><span>${valHtml}</span></div>`;
+  // Rows can carry their OWN deep link (Build-160) — clicking "Idle" lands on the idle
+  // drill list, not just the Analytics tab. Hover affordance via the todayRow class.
+  const row  = (label, valHtml, click) => `<div ${click?`class="today-row" onclick="${click}"`:''} style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:3px 4px;font-size:12px;border-radius:4px;${click?'cursor:pointer':''}"><span style="color:var(--text-muted)">${label}${click?' ▸':''}</span><span>${valHtml}</span></div>`;
   const attn = n => n ? `<b style="color:var(--amber)">${n}</b>` : `<span style="color:var(--text-muted)">0</span>`;
-  const tile = (target, icon, title, body, footer) => `
-    <div class="chart-card" onclick="todayGo('${target}')" style="cursor:pointer;display:flex;flex-direction:column;gap:6px;min-width:230px;flex:1 1 260px">
+  const tile = (click, icon, title, body, footer) => `
+    <div class="chart-card" onclick="${click}" style="cursor:pointer;display:flex;flex-direction:column;gap:6px;min-width:230px;flex:1 1 260px">
       <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:center"><span>${icon} ${title}</span><span style="font-size:11px;color:var(--text-muted)">open →</span></div>
       <div style="flex:1">${body}</div>
       ${footer ? `<div style="font-size:11px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:6px">${footer}</div>` : ''}
@@ -13152,13 +13187,13 @@ function renderToday() {
 
   const deltaPct = prevNet > 0 ? Math.round((monthNet - prevNet) / prevNet * 100) : null;
   const moneyBody = `${big(fmt(Math.round(monthNet)),'SAR fleet net · '+periodLabel)}
-    ${row('Projected company bonus', projectable ? `<b style="color:var(--bolt-green)">+${fmt(projBonus)} SAR</b>` : '—')}
+    ${row('Projected company bonus', projectable ? `<b style="color:var(--bolt-green)">+${fmt(projBonus)} SAR</b>` : '—', "todayGoExec(event)")}
     ${row('vs '+prevLabel, prevNet ? `${fmt(Math.round(prevNet))} SAR <b style="color:${deltaPct>=0?'var(--green)':'var(--red)'}">${deltaPct!=null?(deltaPct>=0?'+':'')+deltaPct+'%':''}</b>` : '—')}`;
 
   const chaseBody = `${big(idleN + slowN, 'drivers need a push')}
-    ${row('Idle · no trips', attn(idleN))}
-    ${row('Working below 4k pace', attn(slowN))}
-    ${row('⚡ Easy tier wins', easy.length ? `<b style="color:var(--bolt-green)">${easy.length} worth +${fmt(easySar)} SAR</b>` : '<span style="color:var(--text-muted)">none right now</span>')}`;
+    ${row('Idle · no trips', attn(idleN), "todayDrill('idle',event)")}
+    ${row('Working below 4k pace', attn(slowN), "todayDrill('slow',event)")}
+    ${row('⚡ Easy tier wins', easy.length ? `<b style="color:var(--bolt-green)">${easy.length} worth +${fmt(easySar)} SAR</b>` : '<span style="color:var(--text-muted)">none right now</span>', "todayOpenChase(event)")}`;
 
   const bonusBody = `${big(noAmb + natPending, 'attribution gaps')}
     ${row('Earners with no ambassador', attn(noAmb))}
@@ -13167,23 +13202,26 @@ function renderToday() {
 
   const alertsBody = `${big(blockedCount + (reconDue?1:0), 'blockers')}
     ${row('Blocked on Bolt', blockedCount ? `<b style="color:var(--red)">${blockedCount}</b>` : '<span style="color:var(--text-muted)">0</span>')}
-    ${row(monthLabel(prevKey)+' reconcile', reconDue ? '<b style="color:var(--amber)">due</b>' : '<span style="color:var(--green)">done ✓</span>')}`;
+    ${row(monthLabel(prevKey)+' reconcile', reconDue ? '<b style="color:var(--amber)">due</b>' : '<span style="color:var(--green)">done ✓</span>', "todayGoExec(event)")}`;
 
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;padding:14px 4px 12px">
       <div style="font-size:18px;font-weight:800">🎯 Today — ${dateLine}</div>
-      <div style="font-size:11px;color:var(--text-muted)">${isCurrentMonth ? remTotal + ' day' + (remTotal!==1?'s':'') + ' left in ' + periodLabel + ' incl. today' : periodLabel + ' (latest data)'} · every tile opens its tab</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--text-muted)">${isCurrentMonth ? remTotal + ' day' + (remTotal!==1?'s':'') + ' left in ' + periodLabel + ' incl. today' : periodLabel + ' (latest data)'}</span>
+        <button class="save-btn" style="padding:5px 14px;font-size:11px" onclick="openChaseList()">📋 CHASE LIST</button>
+      </div>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:stretch">
-      ${tile('finance','💰','Money', moneyBody, 'P&L, reconcile and payouts live in Finance')}
-      ${tile('analytics','📞','Chase', chaseBody, 'Analytics → 📋 CHASE LIST for the WhatsApp export')}
+      ${tile("todayGoExec(event)",'💰','Money', moneyBody, '👔 Executive P&L — company money only')}
+      ${tile("todayOpenChase(event)",'📞','Chase', chaseBody, 'Opens the WhatsApp-ready chase list · tap a row for that driver list')}
       <div class="chart-card" onclick="todayGo('pipeline')" style="cursor:pointer;display:flex;flex-direction:column;gap:6px;min-width:230px;flex:1 1 260px">
         <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:center"><span>🚦 Onboarding</span><span style="font-size:11px;color:var(--text-muted)">open →</span></div>
         <div style="flex:1" id="todayOnb"><span style="font-size:12px;color:var(--text-muted)">loading…</span></div>
         <div style="font-size:11px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:6px">Funnel, bottlenecks and stuck drivers live in Onboarding</div>
       </div>
-      ${tile('ambassadors','🎖','Bonus health', bonusBody, 'Fix all three in the Ambassadors tab worklists')}
-      ${tile('blocks','⚠','Blockers', alertsBody, 'Blocked drivers live in Blocks; reconcile in Finance')}
+      ${tile("todayGo('ambassadors')",'🎖','Bonus health', bonusBody, 'Fix all three in the Ambassadors tab worklists')}
+      ${tile("todayGo('blocks')",'⚠','Blockers', alertsBody, 'Blocked drivers live in Blocks; reconcile in Finance')}
     </div>`;
   renderTodayOnboarding();
 }
