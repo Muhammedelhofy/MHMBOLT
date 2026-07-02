@@ -52,6 +52,7 @@ function packDriver(d) {
   putN("ce", d.cashEarnings); putN("cf", d.cancellationFees);
   putN("tf", d.tollFees); putN("bf", d.bookingFees);
   putS("bs", d.boltState); putS("bsr", d.boltSuspensionReason);
+  putS("bsc", d.boltSuspensionCategory); putS("bss", d.boltSuspendedSince);  // Build-166: mirror index.html
   putS("vp", d.vehiclePlate);
   if (d.hasCashPayment != null) o.hcp = d.hasCashPayment ? 1 : 0;
   if (d.isActive) o.a = 1;
