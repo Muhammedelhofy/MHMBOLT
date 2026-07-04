@@ -1921,6 +1921,15 @@ create policy "team access" on fleet_data
   </div>
 
   <div class="settings-section">
+    <div class="st-title">🩺 Data Health — Ambassador / Incentive data</div>
+    <div class="st-desc">Flags data-quality issues in the onboarding sheet that affect attribution &amp; bonuses. Reflects the last nightly sheet-sync — your latest sheet edits appear after the next ~00:45 Riyadh sync.</div>
+    <div id="dataHealthBody" style="margin-top:10px;font-size:12px;font-family:var(--mono);line-height:1.9">
+      <span style="color:var(--text-muted)">Checking…</span>
+    </div>
+    <button class="save-btn" style="margin-top:10px" onclick="renderDataHealth(true)">↺ Refresh</button>
+  </div>
+
+  <div class="settings-section">
     <div class="st-title">Diagnostics</div>
     <div class="st-desc" id="buildVersionLine" style="font-family:monospace;font-size:11px;color:var(--text-muted);">Loading version…</div>
     <div class="st-desc" id="storageStatsLine" style="font-family:monospace;font-size:11px;color:var(--text-muted);margin-top:6px;">Loading storage stats…</div>
@@ -2115,6 +2124,76 @@ async function loadSysStatus() {
   }
 }
 
+// ── Data Health card (Settings tab) ────────────────────────────────────────
+// Flags onboarding-sheet data-quality issues that affect ambassador attribution +
+// incentives, computed client-side from the synced mirror tables. Read-only. Mirrors
+// the checks in the match-quality review: duplicate phones, tagged-but-not-on-Bolt,
+// phone/name conflicts, missing nationality/ambassador, ambassadors missing Team, and
+// the Fleet Check - Verify review queue. Reflects the last nightly sheet-sync.
+let _dataHealthLoading = false;
+async function renderDataHealth(force) {
+  const box = document.getElementById('dataHealthBody');
+  if (!box || _dataHealthLoading) return;
+  if (!supabaseOn() || IS_FILE_ORIGIN) {
+    box.innerHTML = '<span style="color:var(--text-muted)">Connect Supabase (auto-configures on the live site) to see data health.</span>';
+    return;
+  }
+  _dataHealthLoading = true;
+  box.innerHTML = '<span style="color:var(--text-muted)">Checking…</span>';
+  try {
+    // Bolt roster (drivers who actually earned) from local history — phone + name maps.
+    const byPhone = {}, byName = {};
+    getHistory().forEach(h => (h.drivers || []).forEach(d => {
+      const p = normPhoneForMatch(d.phone); if (p && !byPhone[p]) byPhone[p] = d;
+      const k = driverKey(d.name);          if (k && !byName[k])  byName[k]  = d;
+    }));
+    // RAW sheet rows (not the phone-deduped cache) so duplicate phones are visible.
+    const sheet = (await jbFetch(`${getSbUrl()}/rest/v1/sheet_ambassador_sync?select=id,name,phone,ambassador,nationality`, { headers: sbHeaders() })) || [];
+    await fetchAmbassadorList(force);        // populate AMBASSADOR_TEAM + ambassadorListCache
+    const snapRows = (await jbFetch(`${getSbUrl()}/rest/v1/sheet_stage_snapshot?select=driver_id,current_stage`, { headers: sbHeaders() })) || [];
+    const stageBy = {}; (Array.isArray(snapRows) ? snapRows : []).forEach(r => { stageBy[r.driver_id] = String(r.current_stage || ''); });
+
+    const has = v => !!String(v || '').trim();
+    const isMatched = r => { const p = normPhoneForMatch(r.phone), k = driverKey(r.name); return (p && byPhone[p]) || (k && byName[k]); };
+    const attributed = (Array.isArray(sheet) ? sheet : []).filter(r => has(r.ambassador));
+
+    const byP = {}; (Array.isArray(sheet) ? sheet : []).forEach(r => { const p = normPhoneForMatch(r.phone); if (p) (byP[p] = byP[p] || []).push(r); });
+    const dupGroups = Object.values(byP).filter(a => a.length > 1);
+    const unmatched = attributed.filter(r => !isMatched(r));
+    const unmatchedActive = unmatched.filter(r => (stageBy[r.id] || '').trim().toLowerCase() === 'active');
+    const conflicts = attributed.filter(r => {
+      const p = normPhoneForMatch(r.phone), k = driverKey(r.name);
+      const ph = p && byPhone[p], nm = k && byName[k];
+      return ph && nm && ph.driverId !== nm.driverId;
+    });
+    const noNat = attributed.filter(r => !has(r.nationality));
+    const noAmb = (Array.isArray(sheet) ? sheet : []).filter(r => !has(r.ambassador));
+    const activeAmb = ambassadorListCache || [];
+    const ambNoTeam = activeAmb.filter(n => !String(AMBASSADOR_TEAM[String(n).trim().toLowerCase()] || '').trim());
+    const fleetVerify = Object.values(stageBy).filter(s => s.trim().toLowerCase() === 'fleet check - verify').length;
+
+    const dot = (n, warnOnly) => n === 0 ? '🟢' : (warnOnly ? '🟡' : '🔴');
+    const row = (label, n, warnOnly, sub) =>
+      `<div style="display:flex;justify-content:space-between;gap:10px;${sub ? 'opacity:.8;padding-left:14px' : ''}">
+         <span>${sub ? '↳ ' : dot(n, warnOnly) + ' '}${label}</span><b>${n}</b></div>`;
+
+    box.innerHTML =
+      row('Duplicate phone numbers', dupGroups.length, false) +
+      row('Tagged drivers not on Bolt', unmatched.length, true) +
+      row('of those, "Active" stage', unmatchedActive.length, false, true) +
+      row('Phone / name conflicts', conflicts.length, false) +
+      row('Attributed missing nationality', noNat.length, true) +
+      row('Drivers with no ambassador', noAmb.length, true) +
+      row('Ambassadors missing Team', ambNoTeam.length, false) +
+      row('Fleet Check - Verify (needs review)', fleetVerify, true) +
+      `<div style="margin-top:8px;color:var(--text-muted);font-size:11px">Based on ${Array.isArray(sheet) ? sheet.length : 0} synced sheet drivers · ${getHistory().length} days of Bolt data.</div>`;
+  } catch (e) {
+    box.innerHTML = `<span style="color:var(--red)">Data-health check failed: ${e.message}</span>`;
+  } finally {
+    _dataHealthLoading = false;
+  }
+}
+
 // ═══════════════════════════════════════════
 // TAB NAV
 // ═══════════════════════════════════════════
@@ -2140,7 +2219,7 @@ function _doShowTab(id, el) {
   if (id === 'incentives') renderIncentivesTab();
   if (id === 'blocks')    renderBlocks();
   if (id === 'starmap')  smSwitchView('home');
-  if (id === 'settings') loadSysStatus();
+  if (id === 'settings') { loadSysStatus(); renderDataHealth(); }
 }
 
 // ═══════════════════════════════════════════
