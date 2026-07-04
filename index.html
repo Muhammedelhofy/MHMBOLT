@@ -3366,42 +3366,10 @@ function getDriverHistoryForMonth(driverId, name, pInfo) {
 // ═══════════════════════════════════════════
 // DAILY VIEW TAB
 // ═══════════════════════════════════════════
-function renderDailyView() {
-  const history = getHistory();
-  if (!history.length) {
-    document.getElementById('dailyContent').innerHTML = `<div class="empty-state"><div class="empty-icon">📅</div><div class="empty-title">No data yet</div><div class="empty-sub">Upload reports to start tracking</div></div>`;
-    return;
-  }
+// [removed 2026-07-04, Spec 2] legacy Daily-view subsystem — it wrote to DOM nodes
+// (#dailyContent / #dailyInner) that no longer exist and was unreachable; superseded
+// by the Captains tab (captainView). The shared compare renderer is KEPT (still live).
 
-  const sorted = [...history].sort((a,b) => periodSortKey(a.period)-periodSortKey(b.period));
-  if (!selectedDate || !sorted.find(h=>h.period===selectedDate)) selectedDate = sorted[sorted.length-1].period;
-
-  document.getElementById('dailyContent').innerHTML = `
-    <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
-      <div class="view-toggle">
-        <button class="view-toggle-btn ${dailyMode==='single'?'active':''}"  onclick="setDailyMode('single')">Single Day</button>
-        <button class="view-toggle-btn ${dailyMode==='compare'?'active':''}" onclick="setDailyMode('compare')">Compare Days</button>
-      </div>
-      ${dailyMode==='compare' ? `
-      <span class="compare-kpi-label">KPI:</span>
-      <select class="kpi-select" onchange="setCompareKPI(this.value)">
-        <option value="netEarnings"  ${compareKPI==='netEarnings' ?'selected':''}>Net Earnings (SAR)</option>
-        <option value="orders"       ${compareKPI==='orders'      ?'selected':''}>Orders</option>
-        <option value="hoursOnline"  ${compareKPI==='hoursOnline' ?'selected':''}>Hours Online</option>
-        <option value="acceptance"   ${compareKPI==='acceptance'  ?'selected':''}>Acceptance %</option>
-        <option value="grossEarnings"${compareKPI==='grossEarnings'?'selected':''}>Gross Earnings (SAR)</option>
-        <option value="rating"       ${compareKPI==='rating'      ?'selected':''}>Driver Rating</option>
-        <option value="distanceTotal"${compareKPI==='distanceTotal'?'selected':''}>Total KM</option>
-      </select>
-      <span class="compare-note">🟢 Best day &nbsp;🟡 Average &nbsp;🔴 Worst day — per driver &nbsp;·&nbsp; Click a day column to sort</span>` : ''}
-    </div>
-    <div id="dailyInner"></div>`;
-
-  if (dailyMode==='single') renderSingleDay(sorted);
-  else renderCompareView(sorted);
-}
-
-function setDailyMode(mode) { dailyMode=mode; renderCaptains(); }
 function setCompareKPI(kpi) { compareKPI=kpi; compareSortDayIndex=null; compareSortAsc=false; comparePinnedNames.clear(); compareSearch=''; renderCaptains(); }
 // Compare Days span controls. 'month' respects the month dropdown; '7'/'14'/'all'
 // take the most recent N days across the WHOLE history, ignoring the month.
@@ -5679,126 +5647,6 @@ function triggerCountUp() {
 }
 
 // ── Single Day ──
-function renderSingleDay(sorted) {
-  const s = loadSettings();
-
-  // Validate month/day state against available data
-  const monthOptions = getMonthOptions(sorted);
-  if (dailySelectedMonth !== 'all' && !monthOptions.includes(dailySelectedMonth))
-    dailySelectedMonth = monthOptions.length ? monthOptions[0] : 'all';
-  const dayOptions = getDayOptions(sorted, dailySelectedMonth);
-  if (dailySelectedDay !== 'all' && !dayOptions.includes(dailySelectedDay))
-    dailySelectedDay = 'all';
-
-  // Summary bar entry (specific day only)
-  const entry  = dailySelectedDay !== 'all' ? sorted.find(h => h.period === dailySelectedDay) : null;
-  const isAgg  = dailySelectedDay === 'all';
-
-  // Get + filter + sort + paginate
-  let display = getDailyDisplayDrivers(sorted);
-  if (!dailyShowInactive2) display = display.filter(d => d.isActive);
-  if (dailySearch2.trim()) {
-    const q = dailySearch2.trim().toLowerCase();
-    display = display.filter(d =>
-      d.name.toLowerCase().includes(q) ||
-      (d.phone && d.phone.toLowerCase().includes(q))
-    );
-  }
-  display = sortDailyDrivers(display);
-  const totalFiltered   = display.length;
-  const totalDailyPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
-  if (dailyPage2 > totalDailyPages) dailyPage2 = Math.max(1, totalDailyPages);
-  const pageDrivers = display.slice((dailyPage2 - 1) * PAGE_SIZE, dailyPage2 * PAGE_SIZE);
-
-  // Build rows separately to avoid deep template nesting
-  const rowsHtml = pageDrivers.map(d => {
-    const accF    = d.acceptance < s.flagAccRed ? 'c-red' : d.acceptance < s.flagAccAmber ? 'c-amber' : 'c-green';
-    const tc      = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Platinum:'tier-platinum',Diamond:'tier-diamond',Active:'tier-active'})[d.tier.englishName] || 'tier-none';
-    const fn      = lookupForeignName(d.name);
-    const clickFn = !isAgg
-      ? `openModalForEntry('${d.driverId||d.name}','${dailySelectedDay}')`
-      : `openModal('${d.driverId||d.name}')`;
-    const isRedFlagged2 = d.isActive && (d.acceptance < s.flagAccRed || (d.rating > 0 && d.rating < s.flagRatRed));
-    return `<tr class="driver-row ${d.isActive?'':'inactive-row'}${isRedFlagged2?' holo-glitch':''}" onclick="${clickFn}">
-      <td><div class="driver-cell">
-        <div class="avatar ${d.isActive?'':'av-inactive'}">${d.name[0].toUpperCase()}</div>
-        <div>
-          <div class="d-name">${d.name}</div>
-          ${fn ? `<div class="d-foreign">${fn}</div>` : ''}
-          <div class="d-meta">${d.phone || '—'}</div>
-        </div>
-      </div></td>
-      <td><span class="tier ${tc}">${d.tier.englishName}</span></td>
-      <td class="td-r kv">${(d.hoursOnline||0).toFixed?((d.hoursOnline||0).toFixed(1)):(d.hoursOnline||0)}h</td>
-      <td class="td-r kv">${d.orders||0}</td>
-      <td class="td-r ${d.isActive ? accF : 'kv-muted'}">${d.isActive ? (d.acceptance||0) + '%' : '—'}</td>
-      <td class="td-r kv">${fmt(d.netEarnings)}</td>
-      <td class="td-r kv-muted">${(d.grossEarnings||0)>0?fmt(d.grossEarnings):'—'}</td>
-      <td class="td-r">${d.rating > 0 ? d.rating.toFixed(2) + '★' : '—'}</td>
-      <td class="td-r kv-muted">${d.distanceTotal > 0 ? fmt(d.distanceTotal) + ' km' : '—'}</td>
-    </tr>`;
-  }).join('');
-
-  document.getElementById('dailyInner').innerHTML = `
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;align-items:flex-end;">
-      <div>
-        <div class="ctrl-label" style="margin-bottom:5px;">Month</div>
-        <select class="kpi-select" onchange="setDailyMonth(this.value)">
-          <option value="all" ${dailySelectedMonth==='all'?'selected':''}>All Months</option>
-          ${monthOptions.map(mk => `<option value="${mk}" ${dailySelectedMonth===mk?'selected':''}>${getMonthLabel(mk)}</option>`).join('')}
-        </select>
-      </div>
-      <div>
-        <div class="ctrl-label" style="margin-bottom:5px;">Day</div>
-        <select class="kpi-select" onchange="setDailyDay(this.value)">
-          <option value="all" ${dailySelectedDay==='all'?'selected':''}>All Days</option>
-          ${dayOptions.map(d => `<option value="${d}" ${dailySelectedDay===d?'selected':''}>${d}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-
-    ${entry ? `
-    <div class="daily-totals" style="margin-bottom:14px;">
-      <div class="dt-card"><div class="dt-label">Active / Total</div><div class="dt-value">${entry.activeCount}/${entry.driverCount}</div><div class="dt-sub">with rides</div></div>
-      <div class="dt-card"><div class="dt-label">Orders</div><div class="dt-value">${entry.totalOrders.toLocaleString()}</div><div class="dt-sub">fleet total</div></div>
-      <div class="dt-card"><div class="dt-label">Gross SAR</div><div class="dt-value">${fmt(entry.totalGross)}</div><div class="dt-sub">fleet total</div></div>
-      <div class="dt-card"><div class="dt-label">Net SAR</div><div class="dt-value">${fmt(entry.totalNet)}</div><div class="dt-sub">fleet total</div></div>
-      <div class="dt-card"><div class="dt-label">Avg Accept</div><div class="dt-value">${entry.avgAcceptance.toFixed(0)}%</div><div class="dt-sub">active drivers</div></div>
-    </div>` : ''}
-
-    <div class="table-controls" style="margin-bottom:12px;">
-      <label class="filter-inactive"><input type="checkbox" ${dailyShowInactive2?'checked':''} onchange="setDailyInactive(this)"> Show inactive</label>
-      <div class="spacer"></div>
-      <input id="dailySearchInput" class="search-input" type="text" dir="ltr" placeholder="🔍 Search driver…" value="${dailySearch2}" oninput="setDailySearch2(this.value)">
-    </div>
-
-    <div class="table-wrap">
-      <table class="driver-table">
-        <thead><tr>
-          <th style="cursor:pointer;user-select:none" onclick="setDailySort('name')">Driver ${sortArrow('name',dailySortCol2,dailySortAsc2)}</th>
-          <th>Tier</th>
-          <th class="td-r" style="cursor:pointer;user-select:none" onclick="setDailySort('hours')">Hours ${sortArrow('hours',dailySortCol2,dailySortAsc2)}</th>
-          <th class="td-r" style="cursor:pointer;user-select:none" onclick="setDailySort('orders')">Orders ${sortArrow('orders',dailySortCol2,dailySortAsc2)}</th>
-          <th class="td-r" style="cursor:pointer;user-select:none" onclick="setDailySort('accept')">Accept % ${sortArrow('accept',dailySortCol2,dailySortAsc2)}</th>
-          <th class="td-r" style="cursor:pointer;user-select:none" onclick="setDailySort('net')">Net SAR ${sortArrow('net',dailySortCol2,dailySortAsc2)}</th>
-          <th class="td-r" style="cursor:pointer;user-select:none" onclick="setDailySort('gross')">Gross SAR ${sortArrow('gross',dailySortCol2,dailySortAsc2)}</th>
-          <th class="td-r" style="cursor:pointer;user-select:none" onclick="setDailySort('rating')">Rating ${sortArrow('rating',dailySortCol2,dailySortAsc2)}</th>
-          <th class="td-r" style="cursor:pointer;user-select:none" onclick="setDailySort('km')">KM ${sortArrow('km',dailySortCol2,dailySortAsc2)}</th>
-        </tr></thead>
-        <tbody>
-          ${rowsHtml}
-          ${totalFiltered === 0 ? `<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-muted)">${dailySearch2 ? 'No drivers match your search' : 'No drivers for selected period'}</td></tr>` : ''}
-        </tbody>
-      </table>
-    </div>
-    ${buildDailyPagination(totalFiltered, dailyPage2)}`;
-
-  if (dailySearch2) {
-    const el = document.getElementById('dailySearchInput');
-    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
-  }
-}
-
 // ── Day-over-Day Compare ──
 function renderCompareView(sorted) {
   // All unique driver names across all history entries
@@ -5954,7 +5802,7 @@ function renderCompareView(sorted) {
     </div>`;
 }
 
-function selectDate(period) { selectedDate=period; renderDailyView(); }
+
 
 // ── Daily view helpers ──
 function getMonthKey(period) {
@@ -5979,85 +5827,6 @@ function getDayOptions(history, monthKey) {
     : history.filter(h => getMonthKey(h.period) === monthKey).map(h => h.period);
   return days.sort((a, b) => periodSortKey(b) - periodSortKey(a));
 }
-function getDailyDisplayDrivers(sorted) {
-  if (dailySelectedDay !== 'all') {
-    const entry = sorted.find(h => h.period === dailySelectedDay);
-    return entry ? entry.drivers : [];
-  }
-  const entries = dailySelectedMonth !== 'all'
-    ? sorted.filter(h => getMonthKey(h.period) === dailySelectedMonth)
-    : sorted;
-  return buildAggregatedDrivers(entries);
-}
-function sortDailyDrivers(drivers) {
-  return [...drivers].sort((a, b) => {
-    if (dailySortCol2 === 'name') return dailySortAsc2 ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
-    const map = { orders:'orders', hours:'hoursOnline', accept:'acceptance', net:'netEarnings', gross:'grossEarnings', rating:'rating', km:'distanceTotal' };
-    const k = map[dailySortCol2] || 'netEarnings';
-    return dailySortAsc2 ? (a[k]||0) - (b[k]||0) : (b[k]||0) - (a[k]||0);
-  });
-}
-function setDailyMonth(val) {
-  dailySelectedMonth = val;
-  dailySelectedDay   = 'all'; // reset day when month changes
-  dailyPage2         = 1;
-  renderDailyView();
-}
-function setDailyDay(val) {
-  dailySelectedDay = val;
-  dailyPage2       = 1;
-  renderDailyView();
-}
-function setDailySort(col) {
-  if (dailySortCol2 === col) dailySortAsc2 = !dailySortAsc2;
-  else { dailySortCol2 = col; dailySortAsc2 = false; }
-  dailyPage2 = 1;
-  renderDailyView();
-}
-function setDailySearch2(q) {
-  // Keep raw value so spaces / multi-word names can be typed (see setCaptainSearch). Matching trims.
-  dailySearch2 = (q || '');
-  dailyPage2   = 1;
-  renderDailyView();
-  const el = document.getElementById('dailySearchInput');
-  if (el) { el.value = dailySearch2; el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
-}
-function setDailyInactive(el) {
-  dailyShowInactive2 = el.checked;
-  dailyPage2         = 1;
-  renderDailyView();
-}
-function goToDailyPage(p) {
-  dailyPage2 = p;
-  renderDailyView();
-}
-function buildDailyPagination(total, current) {
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  if (pages <= 1) {
-    return total > 0 ? `<div class="pg-count">${total} driver${total !== 1 ? 's' : ''}</div>` : '';
-  }
-  const from = (current - 1) * PAGE_SIZE + 1;
-  const to   = Math.min(current * PAGE_SIZE, total);
-  const range = [1];
-  if (current > 3) range.push('…');
-  for (let p = Math.max(2, current - 1); p <= Math.min(pages - 1, current + 1); p++) range.push(p);
-  if (current < pages - 2) range.push('…');
-  if (pages > 1) range.push(pages);
-  const deduped = range.filter((v, i, a) => a.indexOf(v) === i);
-  const btnHtml = deduped.map(p =>
-    p === '…'
-      ? `<span style="color:var(--text-dim);font-size:12px;padding:0 2px">…</span>`
-      : `<button class="pg-btn${p === current ? ' active' : ''}" onclick="goToDailyPage(${p})">${p}</button>`
-  ).join('');
-  return `
-    <div class="pagination">
-      <span class="pg-count">${from}–${to} of ${total} drivers</span>
-      <button class="pg-btn" ${current === 1 ? 'disabled' : ''} onclick="goToDailyPage(${current - 1})">← Prev</button>
-      ${btnHtml}
-      <button class="pg-btn" ${current === pages ? 'disabled' : ''} onclick="goToDailyPage(${current + 1})">Next →</button>
-    </div>`;
-}
-
 function openModalForEntry(id, period) {
   const h = getHistory().find(h=>h.period===period);
   if (!h) return;

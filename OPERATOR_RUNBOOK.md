@@ -1,7 +1,7 @@
 # MOHM Fleet Dashboard — Operator Runbook
 
-**Last updated:** 2026-06-20  
-**Version:** v5.0  
+**Last updated:** 2026-07-04  
+**Version:** v5.1  
 **Dashboard URL:** your Vercel production URL (mhmbolt.vercel.app or custom domain)
 
 ---
@@ -19,10 +19,16 @@
 
 | Time (Riyadh) | What happens |
 |---|---|
-| Midnight | Auto-sync pulls today's data from Bolt → saves to Supabase |
+| ~Midnight (00:00) | Auto-sync pulls yesterday's data from Bolt → saves to Supabase |
+| ~00:30 | Onboarding stage-log sync (only does something once the sheet's STAGE LOG tabs exist) |
+| ~00:45 | Onboarding sync — pulls the DRIVERS + AMBASSADORS tabs into the dashboard |
 | Any time | Open the dashboard — data loads automatically |
 
 You do not need to do anything daily. The system runs itself.
+
+> **Timing note:** these run on Vercel's free plan, which can start a scheduled job **up to
+> about an hour late**. So if the midnight sync shows as running at, say, 00:40, that's normal —
+> not a fault.
 
 ---
 
@@ -82,6 +88,18 @@ The next midnight run will resume automatically — you only need to manually sy
 ### Data looks wrong / corrupted
 **Cause:** A bad sync overwrote good data.  
 **Fix:** Contact your technical person to restore from the daily backup (table: `fleet_data_backup` in Supabase, one row per day). Recovery takes 5 minutes.
+
+---
+
+### The 💸 Incentives tab says it's "blocked" / shows no numbers
+**Cause:** This is **not a bug** — it's waiting on two columns in the onboarding Google Sheet.
+The dashboard deliberately shows "blocked" instead of guessing wrong bonus figures.
+**Fix (data entry, in the sheet — no developer needed):**
+1. **DRIVERS** tab → fill the **`Nationality`** column (`Saudi` or `Foreigner`) for each driver.
+2. **AMBASSADORS** tab → fill the **`Team`** column (`Egypt` or `Saudi`) for each ambassador.
+
+The next nightly sheet-sync (~00:45 Riyadh) mirrors the columns in, and the Incentives tab
+populates automatically. Blank cells are treated as "not set" and simply stay excluded.
 
 ---
 

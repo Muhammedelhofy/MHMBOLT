@@ -15,11 +15,14 @@
  */
 
 const { fetchAndAggregateFleet } = require("./lib");
+// c1 driver codec is single-sourced in ./codec (shared with the parity-tested inline
+// copy in index.html). packEntry stays local — it derives each day's aggregates the
+// cron computes itself, whereas the browser's packEntry reads precomputed ones.
+const { packDriver, _r2, CLOUD_FMT } = require("./codec");
 
 const SB_ROW_ID = "fleet";
 
-// ── c1 pack helpers (mirrors index.html packDriver/packEntry) ─────────────────
-const _r2 = v => Math.round((v || 0) * 100) / 100;
+// ── c1 entry helper (packDriver imported above) ───────────────────────────────
 
 const _MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const _MONTH_MAP = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
@@ -36,29 +39,6 @@ function periodSortKey(p) {
   const m = String(p || "").match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
   if (!m) return 0;
   return new Date(Number(m[3]), _MONTH_MAP[m[2]] ?? 0, Number(m[1])).getTime();
-}
-
-function packDriver(d) {
-  const o = {};
-  const putS = (k, v) => { if (v) o[k] = v; };
-  const putN = (k, v) => { const r = _r2(v); if (r) o[k] = r; };
-  putS("n", d.name); putS("i", d.driverId); putS("ph", d.phone);
-  putN("o", d.orders); putN("h", d.hoursOnline);
-  putN("ne", d.netEarnings); putN("ge", d.grossEarnings);
-  putN("ra", d.rating); putN("sc", d.score);
-  putN("dt", d.distanceTotal); putN("da", d.distanceAvg);
-  putN("tp", d.tips); putN("co", d.commission);
-  putN("ut", d.utilization); putN("fr", d.finishRate);
-  putN("ce", d.cashEarnings); putN("cf", d.cancellationFees);
-  putN("tf", d.tollFees); putN("bf", d.bookingFees);
-  putS("bs", d.boltState); putS("bsr", d.boltSuspensionReason);
-  putS("bsc", d.boltSuspensionCategory); putS("bss", d.boltSuspendedSince);  // Build-166: mirror index.html
-  putS("cat", d.activeCategories);                                            // Build-167: was missing here
-  putS("vs", d.vehicleState); putS("vsr", d.vehicleSuspensionReason); putS("ic", d.inactiveCategories);
-  putS("vp", d.vehiclePlate);
-  if (d.hasCashPayment != null) o.hcp = d.hasCashPayment ? 1 : 0;
-  if (d.isActive) o.a = 1;
-  return o;
 }
 
 function packEntry(h) {
@@ -158,7 +138,7 @@ module.exports = async function handler(req, res) {
     history.sort((a, b) => periodSortKey(b.p) - periodSortKey(a.p));
 
     // Supabase has no 100KB cap → keep the full history, same as the dashboard does.
-    await writeFleetData({ ...existing, khair_fmt: "c1", khair_history: history });
+    await writeFleetData({ ...existing, khair_fmt: CLOUD_FMT, khair_history: history });
     await writeCronLog({ ts: now.toISOString(), ok: true, period, drivers: drivers.length, orders: allOrders.length });
 
     return res.status(200).json({

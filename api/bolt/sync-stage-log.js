@@ -2,23 +2,22 @@
 /**
  * GET /api/bolt/sync-stage-log  — Build-133 (Phase 2, onboarding stage-delay analytics)
  *
- * ⚠️ NOT YET LIVE / UNTESTED. This mirrors the proven api/bolt/sync-sheet.js almost
- * exactly (same Google service-account JWT auth, same Supabase upsert pattern), but
- * points at the onboarding sheet's "STAGE LOG" + "STAGE SNAPSHOT" tabs and the two new
- * Supabase tables sheet_stage_log / sheet_stage_snapshot. It is:
- *   - HARMLESS until called: auth-gated (CRON_SECRET) and NOT wired into vercel.json,
- *     so nothing invokes it automatically.
- *   - A NO-OP until the Apps Script stage-log module is pasted into the sheet (the two
- *     tabs won't exist, so each read is caught and skipped — it syncs nothing, no error).
+ * STATUS (2026-07-04): LIVE cron, but a safe NO-OP until the sheet is ready. It mirrors
+ * the proven api/bolt/sync-sheet.js almost exactly (same Google service-account JWT auth,
+ * same Supabase upsert pattern), but points at the onboarding sheet's "STAGE LOG" +
+ * "STAGE SNAPSHOT" tabs and the two Supabase tables sheet_stage_log / sheet_stage_snapshot.
+ *   - SCHEDULED: wired into vercel.json (cron "30 21 * * *" = 00:30 Riyadh), so Vercel
+ *     invokes it nightly. Auth-gated (CRON_SECRET).
+ *   - NO-OP until the Apps Script stage-log module is pasted into the sheet: the two tabs
+ *     won't exist, each read returns 400 → caught and treated as no data → syncs nothing,
+ *     no error, no rows written. Harmless while the sheet side is being built.
  *
- * TO ACTIVATE (do this only after the sheet's STAGE LOG tab exists and has data):
- *   1. Deploy this file (it's in the mhmbolt repo).
- *   2. Live-test it: curl -H "Authorization: Bearer $CRON_SECRET" \
+ * TO FULLY ACTIVATE (the cron already runs — this just gives it data to sync):
+ *   1. Paste the Apps Script stage-log module into the sheet so the "STAGE LOG" +
+ *      "STAGE SNAPSHOT" tabs exist and are populated.
+ *   2. Create the sheet_stage_log / sheet_stage_snapshot Supabase tables if not present.
+ *   3. Verify: curl -H "Authorization: Bearer $CRON_SECRET" \
  *        https://mhmbolt.vercel.app/api/bolt/sync-stage-log   → expect {ok:true, log:N, snapshot:M}
- *   3. Schedule it. Either add a cron to vercel.json:
- *        { "path": "/api/bolt/sync-stage-log", "schedule": "0 21 * * *" }
- *      (Vercel Hobby allows a limited number of crons — if you're at the limit, instead
- *      call this endpoint at the end of api/bolt/sync-sheet.js so both sync on one trigger.)
  *
  * Reads STAGE LOG / STAGE SNAPSHOT with UNFORMATTED_VALUE + SERIAL_NUMBER so datetime
  * cells arrive as sheet serials; serialToISO() converts them (sheet TZ = Riyadh, UTC+3,
