@@ -20,7 +20,7 @@
 | Time (Riyadh) | What happens |
 |---|---|
 | ~Midnight (00:00) | Auto-sync pulls yesterday's data from Bolt → saves to Supabase |
-| ~00:30 | Onboarding stage-log sync (only does something once the sheet's STAGE LOG tabs exist) |
+| ~00:30 | Onboarding stage-log sync — records where each driver is in the pipeline (LIVE) |
 | ~00:45 | Onboarding sync — pulls the DRIVERS + AMBASSADORS tabs into the dashboard |
 | Any time | Open the dashboard — data loads automatically |
 

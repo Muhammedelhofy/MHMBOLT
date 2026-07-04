@@ -2,22 +2,20 @@
 /**
  * GET /api/bolt/sync-stage-log  — Build-133 (Phase 2, onboarding stage-delay analytics)
  *
- * STATUS (2026-07-04): LIVE cron, but a safe NO-OP until the sheet is ready. It mirrors
- * the proven api/bolt/sync-sheet.js almost exactly (same Google service-account JWT auth,
- * same Supabase upsert pattern), but points at the onboarding sheet's "STAGE LOG" +
- * "STAGE SNAPSHOT" tabs and the two Supabase tables sheet_stage_log / sheet_stage_snapshot.
- *   - SCHEDULED: wired into vercel.json (cron "30 21 * * *" = 00:30 Riyadh), so Vercel
- *     invokes it nightly. Auth-gated (CRON_SECRET).
- *   - NO-OP until the Apps Script stage-log module is pasted into the sheet: the two tabs
- *     won't exist, each read returns 400 → caught and treated as no data → syncs nothing,
- *     no error, no rows written. Harmless while the sheet side is being built.
+ * STATUS (verified live 2026-07-04): LIVE and syncing nightly. It mirrors the proven
+ * api/bolt/sync-sheet.js almost exactly (same Google service-account JWT auth, same
+ * Supabase upsert pattern), pointing at the onboarding sheet's "STAGE LOG" + "STAGE
+ * SNAPSHOT" tabs and the tables sheet_stage_log / sheet_stage_snapshot.
+ *   - SCHEDULED: wired into vercel.json (cron "30 21 * * *" = 00:30 Riyadh). Auth-gated.
+ *   - LIVE: the sheet-side tabs exist and are maintained by STAGE_LOG_MODULE.gs (an
+ *     onEdit catcher + a 10-min reconcile catcher sharing a STAGE SNAPSHOT). Confirmed
+ *     against prod: ~186 stage-log rows + ~121 snapshot rows syncing each night.
+ *   - SELF-HEALING NO-OP: if a tab is ever missing, that read returns 400 → caught and
+ *     treated as no data (no error, no rows wiped) — so it degrades safely, never crashes.
  *
- * TO FULLY ACTIVATE (the cron already runs — this just gives it data to sync):
- *   1. Paste the Apps Script stage-log module into the sheet so the "STAGE LOG" +
- *      "STAGE SNAPSHOT" tabs exist and are populated.
- *   2. Create the sheet_stage_log / sheet_stage_snapshot Supabase tables if not present.
- *   3. Verify: curl -H "Authorization: Bearer $CRON_SECRET" \
- *        https://mhmbolt.vercel.app/api/bolt/sync-stage-log   → expect {ok:true, log:N, snapshot:M}
+ * DIAGNOSE:
+ *   curl -H "Authorization: Bearer $CRON_SECRET" \
+ *     https://mhmbolt.vercel.app/api/bolt/sync-stage-log   → expect {ok:true, log:N, snapshot:M}
  *
  * Reads STAGE LOG / STAGE SNAPSHOT with UNFORMATTED_VALUE + SERIAL_NUMBER so datetime
  * cells arrive as sheet serials; serialToISO() converts them (sheet TZ = Riyadh, UTC+3,

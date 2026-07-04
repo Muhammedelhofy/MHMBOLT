@@ -29,7 +29,7 @@ in the header pulls a specific day on demand.
 | Schedule | Riyadh | Endpoint | Purpose |
 |---|---|---|---|
 | `0 21 * * *`  | 00:00 | `api/bolt/cron-sync`      | Pull yesterday's fleet data from Bolt → `fleet_data` |
-| `30 21 * * *` | 00:30 | `api/bolt/sync-stage-log`| Mirror onboarding STAGE LOG/SNAPSHOT (no-op until those sheet tabs exist) |
+| `30 21 * * *` | 00:30 | `api/bolt/sync-stage-log`| Mirror onboarding STAGE LOG/SNAPSHOT (LIVE — ~186 log + ~121 snapshot rows) |
 | `45 21 * * *` | 00:45 | `api/bolt/sync-sheet`    | Mirror DRIVERS + AMBASSADORS tabs |
 
 ## Serverless functions

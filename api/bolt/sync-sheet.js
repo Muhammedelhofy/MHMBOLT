@@ -25,10 +25,13 @@ const crypto = require("crypto");
 const SPREADSHEET_ID = "17-GCTaqEiCvCrcCrDvBm9DcCtljPcAJ3RpJTBkAJs0s";
 const SHEET_RANGE     = "DRIVERS!A1:Z2000";
 // Build-148 follow-up: the AMBASSADORS tab is the single source of truth for the canonical
-// ambassador names (A = Canonical Name, B = Aliases, C = Active). Mirroring it into a small
-// `ambassadors` table lets the dashboard's dropdown auto-follow the sheet — add an ambassador
-// in ONE place instead of also editing index.html's AMBASSADOR_LIST.
-const AMBASSADORS_RANGE = "AMBASSADORS!A1:C500";
+// ambassador names (A = Canonical Name, B = Aliases, C = Active, D = Team). Mirroring it into
+// a small `ambassadors` table lets the dashboard's dropdown auto-follow the sheet — add an
+// ambassador in ONE place instead of also editing index.html's AMBASSADOR_LIST.
+// NB: range MUST extend to at least column D — the Team column (Egypt|Saudi) lives there and
+// drives the referrer-incentive currency. It was "A1:C500" (Build-172 fix widened it), which
+// silently excluded Team so it never synced despite being filled in the sheet.
+const AMBASSADORS_RANGE = "AMBASSADORS!A1:F500";
 
 // ── Google service-account auth (JWT Bearer grant) ─────────────────────────────
 let cachedGoogleToken = null;
