@@ -6545,11 +6545,56 @@ function splitAfterOpCost(gross, monthKey) {
   const afterCost = Math.max(0, gross - opCost);
   return { company: afterCost / 2, partnerB: afterCost / 2 };
 }
-function bonusFor(net, monthKey) {
+// Bolt pays the tier's `gross` on the driver's ACTUAL banked net. But the monthly Bolt
+// INVOICE also rewards pace: a driver whose daily rate PROJECTS into a higher tier is paid
+// that tier prorated by the days he actually drove (÷30) — and if he genuinely banked past a
+// floor he keeps that tier in full. boltTier reproduces the real invoice exactly (verified
+// against June 2026, all 21 bonus rows to the cent):
+//   payout gross = MAX( tierGross(actual_net) , tierGross(perDay×30) × min(days,30)/30 )
+// Callers that only know net (projections, drift checks) keep the flat step via bonusFor(net).
+function boltTier(net, perDay, days) {
+  const pick = v => BOLT_BONUS_TIERS.find(t => (v || 0) >= t.floor) || null;   // tiers are hi→lo
+  const full = pick(net);
+  const pace = pick((perDay || 0) * 30);                                        // invoice projects on 30
+  const fullGross = full ? full.gross : 0;
+  const paceGross = pace ? pace.gross * Math.min(Math.max(days || 0, 0), 30) / 30 : 0;
+  return fullGross >= paceGross
+    ? { gross: fullGross, tierFloor: full ? full.floor : null }
+    : { gross: paceGross, tierFloor: pace ? pace.floor : null };
+}
+function bonusFor(net, monthKey, opts) {
+  // Prorated invoice-matching path: caller supplies the driver's pace + worked days.
+  if (opts && (opts.perDay != null || opts.days != null)) {
+    const { gross, tierFloor } = boltTier(net, opts.perDay, opts.days);
+    if (gross > 0) return { gross, ...splitAfterOpCost(gross, monthKey), tierFloor };
+    return { gross: 0, company: 0, partnerB: 0, tierFloor: null };
+  }
   for (const t of BOLT_BONUS_TIERS) {
     if ((net||0) >= t.floor) { const s = splitAfterOpCost(t.gross, monthKey); return { ...t, ...s, tierFloor: t.floor }; }
   }
   return { gross: 0, company: 0, partnerB: 0, tierFloor: null };
+}
+// Worked days in a month = distinct daily-upload periods where the driver banked net > 0 —
+// the numerator behind boltTier's ÷30 proration. NOTE: for a reconciled month the NET comes
+// from Bolt's monthly report but this day count still comes from the daily uploads, so the
+// proration is exact only when the dailies for that month are complete.
+function daysWorkedForMonth(driverName, month, year, driverId) {
+  const nk = driverKey(driverName); const seen = new Set(); let days = 0;
+  for (const h of getHistory()) {
+    if (!entryInMonth(h, month, year) || seen.has(h.period)) continue;
+    seen.add(h.period);
+    const d = (Array.isArray(h.drivers) ? h.drivers : []).find(x => (driverId && x.driverId === driverId) || driverKey(x.name) === nk);
+    if (d && sN(d.netEarnings) > 0) days++;
+  }
+  return days;
+}
+// Invoice-matching Bolt bonus for a driver in a month: resolves worked-days + daily pace,
+// then prorates via bonusFor(...opts). Use wherever we report what Bolt ACTUALLY paid the fleet.
+function bonusForDriver(name, income, monthKey, driverId) {
+  const [y, m] = monthKey.split('-').map(Number);
+  const days = daysWorkedForMonth(name, m - 1, y, driverId);
+  const perDay = days > 0 ? (income || 0) / days : 0;
+  return bonusFor(income, monthKey, { perDay, days });
 }
 function bonusGapFor(net, monthKey) {
   for (let i = BOLT_BONUS_TIERS.length - 1; i >= 0; i--) {
@@ -9680,7 +9725,7 @@ function computeExecMonth(monthKey) {
     S.dealOut += Math.min(0,p.acctRent) + Math.min(0,p.carRent) + p.salary + Math.min(0,p.other);
     S.bonusPaid += p.bonusCost;                        // ambassador + Saudi payouts (≤0)
     if (p.income > 0) { S.activeN++; if (!p.hasProfile) S.noProfile++; }
-    const b = bonusFor(p.income, monthKey);
+    const b = bonusForDriver(p.name, p.income, monthKey);   // prorated to match Bolt's invoice
     if (b.tierFloor) {
       S.tierCompany += b.company; S.tierPartnerB += b.partnerB; S.tierGross += b.gross;
       S.tierCounts[b.tierFloor >= 6000 ? 2 : b.tierFloor >= 5000 ? 1 : 0]++;
@@ -10563,9 +10608,10 @@ function renderFleetBoltBonus() {
   // Fleet's share of the Bolt tier bonus per driver — the canonical opCost-adjusted company
   // split (bonusFor().company), so this section matches the Analytics tab + the P&L cards.
   // The old hardcoded 750/1000/1250 was the pre-opCost 50% and OVERSTATED the fleet's take.
-  const fleetBonusFor = net => bonusFor(net, monthKey).company;
-  const tierLabel     = net => net >= t3 ? `${fmt(t3)} tier` : net >= t2 ? `${fmt(t2)} tier` : net >= t1 ? `${fmt(t1)} tier` : 'below tier';
-  const tierClass     = net => net >= t3 ? 'tier-txt-3' : net >= t2 ? 'tier-txt-2' : net >= t1 ? 'tier-txt-1' : 'tier-txt-0';
+  // Label the tier by where the bonus ACTUALLY landed (floor), not raw net — a paced
+  // partial-month driver can earn a tier his banked net alone wouldn't show (see boltTier).
+  const tierLabel     = f => f ? `${fmt(f)} tier` : 'below tier';
+  const tierClass     = f => f >= 6000 ? 'tier-txt-3' : f >= 5000 ? 'tier-txt-2' : f >= 4000 ? 'tier-txt-1' : 'tier-txt-0';
 
   const drivers = getDriversInMonth(monthKey);
   if (!drivers.length) {
@@ -10573,7 +10619,7 @@ function renderFleetBoltBonus() {
     return;
   }
   const rows = drivers
-    .map(name => { const pl = computeDriverPnL(name, monthKey); return { name, net: pl.income, bonus: fleetBonusFor(pl.income) }; })
+    .map(name => { const pl = computeDriverPnL(name, monthKey); const b = bonusForDriver(name, pl.income, monthKey); return { name, net: pl.income, bonus: b.company, floor: b.tierFloor }; })
     .sort((a, b) => b.net - a.net);
 
   const totalBonus = rows.reduce((s, r) => s + r.bonus, 0);
@@ -10598,7 +10644,7 @@ function renderFleetBoltBonus() {
         ${rows.map(r => `<tr>
           <td>${r.name}</td>
           <td style="text-align:right;font-family:var(--mono)">${fmt(r.net)}</td>
-          <td style="text-align:right" class="${tierClass(r.net)}">${tierLabel(r.net)}</td>
+          <td style="text-align:right" class="${tierClass(r.floor)}">${tierLabel(r.floor)}</td>
           <td style="text-align:right;font-family:var(--mono);font-weight:600;color:${r.bonus>0?'var(--green)':'var(--text-muted)'}">${r.bonus>0?'+'+fmt(r.bonus):'—'}</td>
         </tr>`).join('')}
         <tr style="background:var(--bg-card2);font-weight:700">
