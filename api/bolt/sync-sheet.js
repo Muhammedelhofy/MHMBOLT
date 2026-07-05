@@ -173,10 +173,10 @@ module.exports = async function handler(req, res) {
       const s = String(v || "").trim().toLowerCase();
       if (!s) return "";
       if (s.indexOf("saud") !== -1 || s.indexOf("سعود") !== -1) return "saudi";
-      if (s.indexOf("foreign") !== -1 || s.indexOf("expat") !== -1 || s.indexOf("resident") !== -1 ||
-          s.indexOf("non") !== -1 || s.indexOf("مقيم") !== -1 || s.indexOf("اجنب") !== -1 ||
-          s.indexOf("أجنب") !== -1 || s.indexOf("وافد") !== -1) return "foreigner";
-      return "";
+      // Any other non-empty value is a non-Saudi = foreigner. The sheet records REAL
+      // nationalities (Egyptian, Yemeni, Sudanese, وافد, …), not the literal word "Foreigner",
+      // so treat everything that isn't Saudi as foreigner instead of dropping it to blank.
+      return "foreigner";
     };
 
     const rows = values.slice(1)
