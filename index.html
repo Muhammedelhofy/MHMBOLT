@@ -9802,7 +9802,9 @@ function computeExecMonth(monthKey) {
   // as a Fleet-Cut/Other-IN on that profile — never by re-adding income here.
   const S = { month: monthKey, driversNet:0, dealIn:0, dealOut:0, bonusPaid:0,
               tierCompany:0, tierPartnerB:0, tierGross:0, tierCounts:[0,0,0],
-              activeN:0, noProfile:0 };
+              activeN:0, noProfile:0,
+              refPaid:0, saudiPaid:0, salaryOut:0, opCostPool:0 };   // Build 2: actual-spend tracking
+  const opC = opCostForMonth(monthKey);
   // Bolt bonus source: a CLOSED month with an uploaded invoice uses Bolt's EXACT per-driver
   // gross ("Max Value"); a month without one (in-progress) falls back to the pace estimate.
   const imported = boltBonusMonth(monthKey);
@@ -9812,11 +9814,15 @@ function computeExecMonth(monthKey) {
     S.dealIn  += Math.max(0,p.acctRent) + Math.max(0,p.carRent) + Math.max(0,p.other) + Math.max(0,-p.fleetCut);
     S.dealOut += Math.min(0,p.acctRent) + Math.min(0,p.carRent) + p.salary + Math.min(0,p.other);
     S.bonusPaid += p.bonusCost;                        // referrers + Saudi bonuses — tracked for the spend view; folded into op cost, NOT re-subtracted (Option A)
+    S.refPaid   += (p.ambOwed || 0);                   // actual ambassador referral owed this month
+    S.saudiPaid += (p.saudiA || 0);                    // actual Saudi driver bonus (400/800)
+    S.salaryOut += Math.max(0, -(p.salary || 0));      // actual salary paid from the profile
     if (p.income > 0) { S.activeN++; if (!p.hasProfile) S.noProfile++; }
     if (!imported) {
       const b = bonusForDriver(p.name, p.income, monthKey);   // estimate (pace) for the in-progress month
       if (b.tierFloor) {
         S.tierCompany += b.company; S.tierPartnerB += b.partnerB; S.tierGross += b.gross;
+        S.opCostPool += Math.min(b.gross, opC);
         S.tierCounts[b.tierFloor >= 6000 ? 2 : b.tierFloor >= 5000 ? 1 : 0]++;
       }
     }
@@ -9826,6 +9832,7 @@ function computeExecMonth(monthKey) {
       const gross = +d.gross || 0; if (gross <= 0) return;
       const s = splitAfterOpCost(gross, monthKey);
       S.tierGross += gross; S.tierCompany += s.company; S.tierPartnerB += s.partnerB;
+      S.opCostPool += Math.min(gross, opC);
       const net = +d.net || 0;
       S.tierCounts[net >= 6000 ? 2 : net >= 5000 ? 1 : 0]++;
     });
@@ -9852,109 +9859,86 @@ function renderFinanceExecView() {
   const now = new Date();
   const curKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   const months = [...R.months].sort().slice(-6);       // oldest → newest, last 6
-  const cols = months.map(computeExecMonth);
-  const selKey = months.includes(financeMonth) ? financeMonth : null;   // Month dropdown highlights a column
-
-  const sig = v => Math.round(v) === 0 ? '<span style="color:var(--text-muted)">—</span>'
-    : `<span style="color:${v>0?'var(--green)':'var(--red)'}">${v>0?'+':''}${fmt(Math.round(v))}</span>`;
+  const sel = months.includes(financeMonth) ? financeMonth : months[months.length-1];
+  const S = computeExecMonth(sel);
   const money = v => fmt(Math.round(v));
-  const colBg = c => c.month===selKey ? 'background:rgba(0,212,255,.05);' : '';
-  const th = c => `<th style="padding:8px 12px;text-align:right;font-size:11px;white-space:nowrap;${colBg(c)}color:${c.month===curKey?'var(--cyan)':c.month===selKey?'var(--text)':'var(--text-muted)'}">${monthLabel(c.month)}${c.month===curKey?'<div style="font-size:9px;font-weight:400">in progress</div>':''}</th>`;
-  const rowH = (label, cellsOf, opts) => `<tr style="${opts&&opts.strong?'background:var(--bg-card2);font-weight:700;':''}border-top:1px solid ${opts&&opts.strong?'rgba(0,255,179,.25)':'var(--border)'}">
-    <td style="padding:8px 12px;font-size:12px;${opts&&opts.strong?'':'color:var(--text-muted)'};white-space:nowrap">${label}</td>
-    ${cols.map(c=>`<td style="padding:8px 12px;text-align:right;font-family:var(--mono);font-size:12px;white-space:nowrap;${colBg(c)}">${cellsOf(c)}</td>`).join('')}
-  </tr>`;
-  const section = label => `<tr><td colspan="${cols.length+1}" style="padding:10px 12px 3px;font-size:9px;letter-spacing:.12em;color:var(--text-muted)">${label}</td></tr>`;
+  const signed = v => Math.round(v)===0 ? '<span style="color:var(--text-muted)">—</span>'
+    : `<span style="color:${v>0?'var(--bolt-green)':'var(--red)'}">${v>0?'+':''}${money(v)}</span>`;
 
-  // Month-over-month on company net — the two most recent CLOSED months.
-  const closed = cols.filter(c => c.month !== curKey);
-  let momLine = '';
-  if (closed.length >= 2) {
-    const a = closed[closed.length-2], b = closed[closed.length-1];
-    const d = b.companyNet - a.companyNet, pct = a.companyNet ? Math.round(d/Math.abs(a.companyNet)*100) : null;
-    momLine = `Company net ${monthLabel(b.month)} vs ${monthLabel(a.month)}: <b style="color:${d>=0?'var(--green)':'var(--red)'}">${d>=0?'+':''}${fmt(Math.round(d))} SAR${pct!=null?` (${d>=0?'+':''}${pct}%)`:''}</b>`;
-  }
-
-  const maxNet = Math.max(1, ...cols.map(c => Math.abs(c.companyNet)));
-  const trend = `<div style="display:flex;gap:10px;align-items:flex-end;padding:4px 12px 10px">
-    ${cols.map(c => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
-      <div style="font-size:10px;font-family:var(--mono);color:${c.companyNet>=0?'var(--bolt-green)':'var(--red)'}">${fmt(Math.round(c.companyNet))}</div>
-      <div title="${monthLabel(c.month)} company net" style="width:70%;max-width:64px;border-radius:3px 3px 0 0;background:${c.companyNet>=0?'var(--bolt-green)':'var(--red)'};opacity:${c.month===curKey?.45:.85};height:${Math.max(4, Math.round(Math.abs(c.companyNet)/maxNet*72))}px"></div>
-      <div style="font-size:9px;color:var(--text-muted);white-space:nowrap">${monthLabel(c.month).replace(' 20',' ')}${c.month===curKey?' ⏳':''}</div>
-    </div>`).join('')}
+  // Clickable month strip — each card is a mini P&L; click to open its statement.
+  const strip = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;padding:2px 12px 14px">
+    ${months.map(m => { const c = computeExecMonth(m); const on = m===sel; const isCur = m===curKey;
+      const tag = isCur ? 'in progress' : (c.bonusSource==='actual' ? 'actual' : 'est');
+      return `<div onclick="setFinanceMonth('${m}')" title="Open ${monthLabel(m)}" style="cursor:pointer;background:${on?'rgba(0,212,255,.08)':'var(--bg-card)'};border:1px solid ${on?'var(--cyan)':'var(--border)'};border-radius:8px;padding:9px 12px">
+        <div style="font-size:11px;color:${on?'var(--cyan)':'var(--text-muted)'};white-space:nowrap">${monthLabel(m).replace(' 20',' ')} · ${tag}</div>
+        <div style="font-size:17px;font-weight:700;font-family:var(--mono);color:${c.companyNet>=0?'var(--bolt-green)':'var(--red)'}">${money(c.companyNet)}</div>
+      </div>`; }).join('')}
   </div>`;
 
-  const opCosts = [...new Set(cols.map(c=>c.opCost))];
+  const row = (label, val, o) => `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:${o&&o.strong?'12px':'7px'} 0;border-top:1px solid ${o&&o.strong?'rgba(0,255,179,.3)':'var(--border)'};${o&&o.strong?'font-weight:700;':''}">
+    <span style="font-size:${o&&o.strong?'15':'13'}px;color:${o&&o.dim?'var(--text-muted)':'var(--text)'}">${label}</span>
+    <span style="font-family:var(--mono);font-size:${o&&o.strong?'18':'13'}px;white-space:nowrap">${val}</span></div>`;
+  const subhdr = t => `<div style="font-size:10px;letter-spacing:.12em;color:var(--text-muted);padding:12px 0 0">${t}</div>`;
+  const badge = S.bonusSource==='actual'
+    ? `<span style="background:rgba(61,219,174,.15);color:var(--bolt-green);font-size:11px;padding:3px 10px;border-radius:6px;white-space:nowrap">✓ actual · Bolt invoice</span>`
+    : `<span style="background:rgba(247,185,85,.15);color:var(--amber);font-size:11px;padding:3px 10px;border-radius:6px;white-space:nowrap">~ estimate · pace</span>`;
 
-  // Build-162: Bolt-bonus dependency — how much of company profit rides on Bolt's tier
-  // bonus vs rentals/deals. headMonth = the most recent month with real profit (a fresh
-  // in-progress month can be 0 before any tier is booked — skip it for the headline).
-  const headMonth = [...cols].reverse().find(c => c.companyNet > 0) || null;
-  const depPct = headMonth ? Math.round(headMonth.tierCompany / headMonth.companyNet * 100) : null;
-  const depCallout = depPct != null ? `
-    <div style="flex:1 1 260px;background:rgba(56,190,240,.08);border:1px solid var(--blue,#38a5e0);border-radius:8px;padding:9px 12px;font-size:12px;line-height:1.5">
-      🎣 <b>${depPct}%</b> of ${monthLabel(headMonth.month)} company profit comes from <b>Bolt's tier bonus</b>, not rentals${depPct >= 60 ? ' — sharpens as cost profiles are filled' : ''}.
-    </div>` : '';
+  const statement = `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px 20px;margin:0 12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <span style="font-size:15px;font-weight:700">Company profit — ${monthLabel(sel)}</span>${badge}
+    </div>
+    ${subhdr('MONEY IN')}
+    ${row(`Bolt bonus — your share <span style="font-size:11px;color:var(--text-muted)">(Bolt paid ${money(S.tierGross)} gross)</span>`, signed(S.tierCompany))}
+    ${row('Car rentals & deal income', S.dealIn>0 ? signed(S.dealIn) : '<span style="color:var(--text-muted)">— fill cost profiles</span>')}
+    ${subhdr('MONEY OUT')}
+    ${row('Salaries & deal payouts', Math.round(S.dealOut)<0 ? signed(S.dealOut) : '<span style="color:var(--text-muted)">—</span>')}
+    ${row('★ Company profit', `<span style="color:${S.companyNet>=0?'var(--bolt-green)':'var(--red)'}">${money(S.companyNet)} SAR</span>`, {strong:true})}
+  </div>`;
 
-  // Build-164: projected month-end company net — in-progress month only. Rentals/deal
-  // income don't move with pace, so only the tier bonus is re-projected: booked deal net
-  // + Σ bonusFor(proj).company across current non-idle drivers (the roster projections).
+  // Build 2: actual spend vs the flat op-cost assumption (informational — never touches profit).
+  const actualSpend = S.refPaid + S.saudiPaid + S.salaryOut;
+  const variance = actualSpend - S.opCostPool;
+  const spend = `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px 20px;margin:14px 12px 0">
+    <div style="font-size:14px;font-weight:700">Cost check — did the ${money(S.opCost)} assumption hold?</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:2px">The op cost bundles referrals + Saudi bonuses + salaries. This compares what you ACTUALLY spent vs that pool — for tuning the ${money(S.opCost)}. It does not change the profit above.</div>
+    ${row(`Op-cost pool charged <span style="font-size:11px;color:var(--text-muted)">(${money(S.opCost)}/driver)</span>`, money(S.opCostPool), {dim:true})}
+    ${row('↳ actual referrals paid', money(S.refPaid), {dim:true})}
+    ${row('↳ actual Saudi bonuses (400/800)', money(S.saudiPaid), {dim:true})}
+    ${row('↳ actual salaries (profiles)', money(S.salaryOut), {dim:true})}
+    ${row('Actual spend total', money(actualSpend))}
+    ${row('Variance', `<span style="color:${variance>0?'var(--amber)':'var(--bolt-green)'}">${variance>0?'+':''}${money(variance)}${Math.round(variance)===0?'':(variance>0?' — costs exceed the pool':' — pool has room')}</span>`)}
+  </div>`;
+
+  // Projection — current in-progress month only (keeps the "before Bolt sends it" number).
   let projCallout = '';
-  if (R.isCurrentMonth) {
-    const curExec = cols.find(c => c.month === curKey);
-    if (curExec) {
-      const nonIdle = R.current.filter(d => !d.idle);
-      const projTierCompany = nonIdle.reduce((s,d) => s + (d.companyBonus || 0), 0);
-      const projNet = curExec.dealNet + projTierCompany;      // dealNet is pace-independent
-      const booked  = curExec.companyNet;
-      const up = projNet - booked;
-      // A day-1/2 read extrapolates one working day over the whole month — honest about it.
-      const note = R.elapsedDays <= 4
-        ? ` <span style="color:var(--text-muted)">(early read — ${R.elapsedDays}d in, firms up over the month)</span>`
-        : (up>0 ? ` <span style="color:var(--text-muted)">(+${fmt(Math.round(up))} as tiers firm up)</span>` : '');
-      projCallout = `
-        <div style="flex:1 1 260px;background:rgba(61,219,174,.08);border:1px solid var(--bolt-green,#3DDBAE);border-radius:8px;padding:9px 12px;font-size:12px;line-height:1.5">
-          📈 ${monthLabel(curKey)} booked so far <b>${fmt(Math.round(booked))} SAR</b> · on pace to close at <b style="color:var(--bolt-green)">~${fmt(Math.round(projNet))} SAR</b>${note}.
-        </div>`;
-    }
+  if (R.isCurrentMonth && sel === curKey) {
+    const nonIdle = R.current.filter(d => !d.idle);
+    const projTierCompany = nonIdle.reduce((s,d) => s + (d.companyBonus || 0), 0);
+    const projNet = S.dealNet + projTierCompany;
+    const up = projNet - S.companyNet;
+    const note = R.elapsedDays <= 4 ? ` (early read — ${R.elapsedDays}d in)` : (up>0 ? ` (+${money(up)} as tiers firm up)` : '');
+    projCallout = `<div style="margin:0 12px 12px;background:rgba(61,219,174,.08);border:1px solid var(--bolt-green,#3DDBAE);border-radius:8px;padding:9px 12px;font-size:12px">📈 ${monthLabel(curKey)} booked so far <b>${money(S.companyNet)} SAR</b> · on pace to close at <b style="color:var(--bolt-green)">~${money(projNet)} SAR</b>${note}.</div>`;
   }
-  const calloutBand = (depCallout || projCallout) ? `<div style="display:flex;flex-wrap:wrap;gap:10px;padding:2px 12px 10px">${projCallout}${depCallout}</div>` : '';
 
   host.innerHTML = `
     <div class="finance-section">
-      <div class="finance-section-header">
-        <span class="finance-section-title">👔 Executive P&L — company money only</span>
-        <span style="font-size:11px;color:var(--text-muted)">${momLine || 'Revenue = rentals/deals + Bolt tier bonus. Driver net is the DRIVER&#39;S money — context only.'}</span>
-      </div>
-      ${trend}
-      ${calloutBand}
-      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
-        <thead><tr><th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-muted)">SAR</th>${cols.map(th).join('')}</tr></thead>
-        <tbody>
-          ${section('COMPANY REVENUE')}
-          ${rowH('Rentals & deal income', c=>sig(c.dealIn))}
-          ${rowH(`Bolt tier bonus — company share <span style="font-size:10px">(gross − ${opCosts.map(fmt).join('/')} op cost, ÷2 w/ Partner B)</span>`, c=>`${sig(c.tierCompany)} ${c.bonusSource==='actual'?'<span style="font-size:9px;color:var(--bolt-green)">actual</span>':'<span style="font-size:9px;color:var(--amber)">est</span>'}`)}
-          ${rowH('<span style="font-size:10px">↳ drivers at 4k / 5k / 6k tier</span>', c=>`<span style="font-size:11px;color:var(--text-muted)">${c.tierCounts[0]} / ${c.tierCounts[1]} / ${c.tierCounts[2]}</span>`)}
-          ${section('COMPANY COSTS')}
-          ${rowH('Salaries & deal payouts', c=>sig(c.dealOut))}
-          ${rowH('★ COMPANY NET', c=>sig(c.companyNet), {strong:true})}
-          ${section('UNIT ECONOMICS & CONTEXT')}
-          ${rowH('Net per active driver', c=>sig(c.perDriver))}
-          ${rowH('Bolt-bonus dependency <span style="font-size:10px">(tier bonus ÷ company net)</span>', c=> c.companyNet>0 ? `<span style="color:${(c.tierCompany/c.companyNet)>=0.6?'var(--amber)':'var(--text-muted)'}">${Math.round(c.tierCompany/c.companyNet*100)}%</span>` : '<span style="color:var(--text-muted)">—</span>')}
-          ${rowH('Active drivers', c=>String(c.activeN))}
-          ${rowH(`Drivers' Bolt net <span style="font-size:10px">(THEIR money — context, never company revenue)</span>`, c=>`<span style="color:var(--text-muted)">${money(c.driversNet)}</span>`)}
-          ${rowH('<span style="font-size:10px">Partner B tier share (info)</span>', c=>`<span style="font-size:11px;color:var(--text-muted)">${money(c.tierPartnerB)}</span>`)}
-          ${rowH('<span style="font-size:10px">Referrals + Saudi bonuses (inside op cost — not re-deducted)</span>', c=>`<span style="font-size:11px;color:var(--text-muted)">${money(-c.bonusPaid)}</span>`)}
-          ${rowH('Data quality', c=>{ const bits=[]; if(c.noProfile) bits.push(`<span style="color:var(--amber)">${c.noProfile} no-profile</span>`);
-            bits.push(c.reconciled?'<span style="color:var(--green)">recon ✓</span>':(c.month===curKey?'<span style="color:var(--text-muted)">open</span>':'<span style="color:var(--amber)">recon due</span>'));
-            return `<div style="font-size:10px">${bits.join('<br>')}</div>`; })}
-        </tbody>
-      </table></div>
-      <div style="font-size:10px;color:var(--text-muted);padding:10px 12px;line-height:1.6">
-        <b>The model:</b> Bolt pays the company 1,500 / 2,000 / 2,500 SAR gross per driver reaching 4k / 5k / 6k net — minus the month's op cost (${opCosts.map(fmt).join(' / ')}), the remainder splits 50/50 with Partner B. Rentals and deal income come from the cost profiles.
-        The in-progress month uses month-to-date nets, so its tier counts grow until month-end. "No-profile" earners contribute NOTHING here until their deal (rent/salary) is set — fill profiles to make revenue real.
-        Pick a month in the Month dropdown above to highlight its column; the tier-bonus detail per driver is in the "Fleet Bolt Tier Bonus" section below.
-      </div>
+      <div class="finance-section-header"><span class="finance-section-title">👔 Executive P&L — company money only</span>
+        <span style="font-size:11px;color:var(--text-muted)">Your company's monthly profit. Driver net is THEIR money — context only.</span></div>
+      ${strip}
+      ${projCallout}
+      ${statement}
+      ${spend}
+      <details style="margin:14px 12px 0"><summary style="cursor:pointer;font-size:12px;color:var(--cyan)">Details &amp; context for ${monthLabel(sel)}</summary>
+        <div style="padding:8px 0">
+          ${row('Drivers at 4k / 5k / 6k tier', `<span style="color:var(--text-muted)">${S.tierCounts[0]} / ${S.tierCounts[1]} / ${S.tierCounts[2]}</span>`, {dim:true})}
+          ${row('Active drivers', String(S.activeN), {dim:true})}
+          ${row('Net per active driver', signed(S.perDriver), {dim:true})}
+          ${row('Partner B tier share', money(S.tierPartnerB), {dim:true})}
+          ${row("Drivers' Bolt net (their money — context only)", money(S.driversNet), {dim:true})}
+          ${row('Data quality', (S.reconciled?'<span style="color:var(--bolt-green)">reconciled ✓</span>':(sel===curKey?'<span style="color:var(--text-muted)">open (in progress)</span>':'<span style="color:var(--amber)">reconcile due</span>'))+(S.noProfile?` · <span style="color:var(--amber)">${S.noProfile} no-profile</span>`:''), {dim:true})}
+          <div style="font-size:11px;color:var(--text-muted);padding:10px 0 0;line-height:1.7">Bolt pays 1,500 / 2,000 / 2,500 per driver at 4k / 5k / 6k net. Closed months use Bolt's uploaded invoice (Settings → Bolt Bonus Split); the current month estimates from pace. Op cost (${money(S.opCost)}/driver) covers referrals + Saudi bonuses + salaries, then the remainder splits 50/50 with Partner B.</div>
+        </div>
+      </details>
     </div>`;
 }
 
