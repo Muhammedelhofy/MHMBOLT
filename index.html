@@ -1789,6 +1789,13 @@ body::before {
       <input type="number" id="opCostChangeVal" placeholder="e.g. 500" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px"> <span class="unit">SAR</span>
       <button class="save-btn" style="margin:0" onclick="addOpCostChange()">+ Add change</button>
     </div>
+    <div class="st-desc" style="margin-top:16px">Upload Bolt's monthly bonus sheet (the invoice with the <b>Max Value</b> column) so a closed month shows Bolt's <b>exact</b> numbers instead of the pace estimate. Pick the month, then choose the file.</div>
+    <div class="st-row" style="gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="month" id="boltBonusMonth" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px">
+      <input type="file" id="boltBonusFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleBoltBonusFile(this.files[0], document.getElementById('boltBonusMonth').value); this.value='';">
+      <button class="save-btn" style="margin:0" onclick="if(!document.getElementById('boltBonusMonth').value){toast('Pick the month first');}else{document.getElementById('boltBonusFile').click();}">⬆ Upload Bolt bonus</button>
+    </div>
+    <div id="boltBonusStatus" style="margin:8px 0;font-size:12px;color:var(--text-muted)"></div>
   </div>
   <div class="settings-section">
     <div class="st-title">💸 Referrer Incentives (sales teams)</div>
@@ -2021,6 +2028,7 @@ function initSettingsUI() {
   if (typeof renderKeyStatus === 'function') renderKeyStatus();
   if (typeof renderSbStatus === 'function') renderSbStatus();
   renderOpCostSchedule();
+  renderBoltBonusStatus();
 }
 // ── Effective-dated op-cost schedule editor (Settings → Bolt Bonus Split) ──
 function renderOpCostSchedule() {
@@ -2065,6 +2073,32 @@ function removeOpCostChange(monthKey) {
   toast(`Removed op-cost change for ${monthLabel(monthKey)}`);
   if (document.getElementById('finance')?.classList.contains('active')) renderFinanceTab();
   if (document.getElementById('analytics')?.classList.contains('active')) renderAnalytics();
+}
+// ── Uploaded Bolt-bonus months (Settings → Bolt Bonus Split) ──
+function renderBoltBonusStatus() {
+  const box = document.getElementById('boltBonusStatus');
+  if (!box) return;
+  const all = loadBoltBonus();
+  const keys = Object.keys(all).filter(k => /^\d{4}-\d{2}$/.test(k) && all[k] && Object.keys(all[k]).length).sort();
+  if (!keys.length) { box.innerHTML = 'No Bolt bonus sheets uploaded — closed months use the pace estimate until you add one.'; return; }
+  box.innerHTML = 'Imported (Bolt actuals): ' + keys.map(k => {
+    const rows = all[k];
+    const drivers = Object.keys(rows).length;
+    const gross = Object.values(rows).reduce((s, d) => s + (+d.gross || 0), 0);
+    return `<span style="display:inline-flex;align-items:center;gap:6px;margin:3px 6px 3px 0;padding:3px 8px;background:var(--bg-card2,#1c232d);border:1px solid var(--border);border-radius:6px">
+      <b style="font-family:var(--mono)">${monthLabel(k)}</b> · ${drivers} drivers · ${fmt(Math.round(gross))} gross
+      <button onclick="removeBoltBonusMonth('${k}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:11px;text-decoration:underline">remove</button>
+    </span>`;
+  }).join('');
+}
+function removeBoltBonusMonth(monthKey) {
+  const all = loadBoltBonus();
+  delete all[monthKey];
+  saveBoltBonus(all);
+  renderBoltBonusStatus();
+  syncToCloud();
+  toast(`Removed Bolt bonus import for ${monthLabel(monthKey)} — back to estimate`);
+  if (document.getElementById('finance')?.classList.contains('active')) renderFinanceTab();
 }
 
 // ── Auto-configure Supabase from server on first load ──────────────────────
@@ -6596,6 +6630,52 @@ function bonusForDriver(name, income, monthKey, driverId) {
   const perDay = days > 0 ? (income || 0) / days : 0;
   return bonusFor(income, monthKey, { perDay, days });
 }
+
+// ── Imported Bolt bonus — the monthly invoice's ACTUAL "Max Value" per driver ─────────
+// For a CLOSED month, Bolt's invoice is the source of truth. Storing the exact gross bonus
+// per driver lets the Executive P&L show real numbers instead of estimating from net÷days
+// (which overshoots when the daily uploads are incomplete → phantom qualifiers). Keyed by
+// month → phone(9) → { gross, net }. A month with no import falls back to the pace estimate.
+const BOLT_BONUS_KEY = 'khair_bolt_bonus';
+function loadBoltBonus() { try { return JSON.parse(localStorage.getItem(BOLT_BONUS_KEY) || '{}'); } catch (e) { return {}; } }
+function saveBoltBonus(o) { localStorage.setItem(BOLT_BONUS_KEY, JSON.stringify(o)); }
+function boltBonusMonth(monthKey) { const m = loadBoltBonus()[monthKey]; return (m && Object.keys(m).length) ? m : null; }
+// Parse an uploaded Bolt invoice (same columns as the May/June "Muhimm Fleet - Invoice"
+// sheets: Driver, Phone, Net earnings, …, Max Value). Matches drivers by phone (last 9).
+function handleBoltBonusFile(file, monthKey) {
+  if (!file) return;
+  if (!/^\d{4}-\d{2}$/.test(monthKey || '')) { toast('Pick the month first, then upload'); return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false });
+      let hi = rows.findIndex(r => Array.isArray(r) && r.some(c => /max\s*value/i.test(String(c || ''))));
+      if (hi < 0) hi = 0;
+      const header = (rows[hi] || []).map(c => String(c || '').toLowerCase());
+      const findCol = re => header.findIndex(h => re.test(h));
+      const cMax = findCol(/max\s*value/), cPhone = findCol(/phone/), cNet = findCol(/net earnings/);
+      if (cMax < 0 || cPhone < 0) { toast('Could not find "Phone" + "Max Value" columns'); return; }
+      const np = v => String(v == null ? '' : v).replace(/\D/g, '').slice(-9);
+      const num = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[^\d.\-]/g, '')); return isNaN(n) ? 0 : n; };
+      const out = {}; let n = 0;
+      rows.slice(hi + 1).forEach(r => {
+        if (!Array.isArray(r)) return;
+        const ph = np(r[cPhone]); if (!ph) return;
+        out[ph] = { gross: num(r[cMax]), net: cNet >= 0 ? num(r[cNet]) : 0 }; n++;
+      });
+      if (!n) { toast('No driver rows found in the sheet'); return; }
+      const all = loadBoltBonus(); all[monthKey] = out; saveBoltBonus(all);
+      const totalGross = Object.values(out).reduce((s, d) => s + (+d.gross || 0), 0);
+      syncToCloud();
+      if (typeof renderBoltBonusStatus === 'function') renderBoltBonusStatus();
+      if (typeof renderFinance === 'function') renderFinance();
+      toast(`Imported ${n} drivers for ${monthLabel(monthKey)} · Bolt paid ${fmt(Math.round(totalGross))} gross`);
+    } catch (err) { console.error(err); toast('Could not read the sheet — check it matches the invoice format'); }
+  };
+  reader.readAsArrayBuffer(file);
+}
 function bonusGapFor(net, monthKey) {
   for (let i = BOLT_BONUS_TIERS.length - 1; i >= 0; i--) {
     const t = BOLT_BONUS_TIERS[i];
@@ -8049,6 +8129,7 @@ async function syncToCloud() {
     khair_transfer_log:     JSON.parse(localStorage.getItem(TRANSFER_LOG_KEY)      || '{}'),
     khair_reconcile:        loadReconcile(),
     khair_opcost_schedule:  loadOpCostSchedule(),
+    khair_bolt_bonus:       loadBoltBonus(),
     khair_cycle_anchor:     localStorage.getItem(CYCLE_ANCHOR_KEY) || '',
     khair_block_log:        getBlockLog(),
     version: 2
@@ -8141,6 +8222,9 @@ async function fetchFromCloud() {
   }
   if ('khair_opcost_schedule' in r) {
     saveOpCostSchedule({ ...r.khair_opcost_schedule, ...loadOpCostSchedule() });   // per-month; local wins on conflict
+  }
+  if ('khair_bolt_bonus' in r) {
+    saveBoltBonus({ ...r.khair_bolt_bonus, ...loadBoltBonus() });                  // per-month; local wins on conflict
   }
   // Cycle anchor: cloud always wins — it is shared fleet config
   if (r.khair_cycle_anchor) {
@@ -9719,19 +9803,37 @@ function computeExecMonth(monthKey) {
   const S = { month: monthKey, driversNet:0, dealIn:0, dealOut:0, bonusPaid:0,
               tierCompany:0, tierPartnerB:0, tierGross:0, tierCounts:[0,0,0],
               activeN:0, noProfile:0 };
+  // Bolt bonus source: a CLOSED month with an uploaded invoice uses Bolt's EXACT per-driver
+  // gross ("Max Value"); a month without one (in-progress) falls back to the pace estimate.
+  const imported = boltBonusMonth(monthKey);
+  S.bonusSource = imported ? 'actual' : 'estimate';
   pls.forEach(p => {
     S.driversNet += p.income;                          // context line only — their money
     S.dealIn  += Math.max(0,p.acctRent) + Math.max(0,p.carRent) + Math.max(0,p.other) + Math.max(0,-p.fleetCut);
     S.dealOut += Math.min(0,p.acctRent) + Math.min(0,p.carRent) + p.salary + Math.min(0,p.other);
-    S.bonusPaid += p.bonusCost;                        // ambassador + Saudi payouts (≤0)
+    S.bonusPaid += p.bonusCost;                        // referrers + Saudi bonuses — tracked for the spend view; folded into op cost, NOT re-subtracted (Option A)
     if (p.income > 0) { S.activeN++; if (!p.hasProfile) S.noProfile++; }
-    const b = bonusForDriver(p.name, p.income, monthKey);   // prorated to match Bolt's invoice
-    if (b.tierFloor) {
-      S.tierCompany += b.company; S.tierPartnerB += b.partnerB; S.tierGross += b.gross;
-      S.tierCounts[b.tierFloor >= 6000 ? 2 : b.tierFloor >= 5000 ? 1 : 0]++;
+    if (!imported) {
+      const b = bonusForDriver(p.name, p.income, monthKey);   // estimate (pace) for the in-progress month
+      if (b.tierFloor) {
+        S.tierCompany += b.company; S.tierPartnerB += b.partnerB; S.tierGross += b.gross;
+        S.tierCounts[b.tierFloor >= 6000 ? 2 : b.tierFloor >= 5000 ? 1 : 0]++;
+      }
     }
   });
-  S.dealNet    = S.dealIn + S.dealOut + S.bonusPaid;
+  if (imported) {                                       // exact — Bolt's invoice is the truth
+    Object.values(imported).forEach(d => {
+      const gross = +d.gross || 0; if (gross <= 0) return;
+      const s = splitAfterOpCost(gross, monthKey);
+      S.tierGross += gross; S.tierCompany += s.company; S.tierPartnerB += s.partnerB;
+      const net = +d.net || 0;
+      S.tierCounts[net >= 6000 ? 2 : net >= 5000 ? 1 : 0]++;
+    });
+  }
+  // Company net (Option A): rentals/deal income + Bolt-bonus company share. The op cost (850)
+  // ALREADY covers referrers + Saudi bonuses, so bonusPaid is NOT re-subtracted here — that
+  // would double-count. It stays on S for the context/actual-spend view.
+  S.dealNet    = S.dealIn + S.dealOut;
   S.companyNet = S.dealNet + S.tierCompany;
   S.perDriver  = S.activeN ? S.companyNet / S.activeN : 0;
   S.opCost     = opCostForMonth(monthKey);
@@ -9831,11 +9933,10 @@ function renderFinanceExecView() {
         <tbody>
           ${section('COMPANY REVENUE')}
           ${rowH('Rentals & deal income', c=>sig(c.dealIn))}
-          ${rowH(`Bolt tier bonus — company share <span style="font-size:10px">(gross − ${opCosts.map(fmt).join('/')} op cost, ÷2 w/ Partner B)</span>`, c=>sig(c.tierCompany))}
+          ${rowH(`Bolt tier bonus — company share <span style="font-size:10px">(gross − ${opCosts.map(fmt).join('/')} op cost, ÷2 w/ Partner B)</span>`, c=>`${sig(c.tierCompany)} ${c.bonusSource==='actual'?'<span style="font-size:9px;color:var(--bolt-green)">actual</span>':'<span style="font-size:9px;color:var(--amber)">est</span>'}`)}
           ${rowH('<span style="font-size:10px">↳ drivers at 4k / 5k / 6k tier</span>', c=>`<span style="font-size:11px;color:var(--text-muted)">${c.tierCounts[0]} / ${c.tierCounts[1]} / ${c.tierCounts[2]}</span>`)}
           ${section('COMPANY COSTS')}
           ${rowH('Salaries & deal payouts', c=>sig(c.dealOut))}
-          ${rowH('Ambassador + Saudi bonuses', c=>sig(c.bonusPaid))}
           ${rowH('★ COMPANY NET', c=>sig(c.companyNet), {strong:true})}
           ${section('UNIT ECONOMICS & CONTEXT')}
           ${rowH('Net per active driver', c=>sig(c.perDriver))}
@@ -9843,6 +9944,7 @@ function renderFinanceExecView() {
           ${rowH('Active drivers', c=>String(c.activeN))}
           ${rowH(`Drivers' Bolt net <span style="font-size:10px">(THEIR money — context, never company revenue)</span>`, c=>`<span style="color:var(--text-muted)">${money(c.driversNet)}</span>`)}
           ${rowH('<span style="font-size:10px">Partner B tier share (info)</span>', c=>`<span style="font-size:11px;color:var(--text-muted)">${money(c.tierPartnerB)}</span>`)}
+          ${rowH('<span style="font-size:10px">Referrals + Saudi bonuses (inside op cost — not re-deducted)</span>', c=>`<span style="font-size:11px;color:var(--text-muted)">${money(-c.bonusPaid)}</span>`)}
           ${rowH('Data quality', c=>{ const bits=[]; if(c.noProfile) bits.push(`<span style="color:var(--amber)">${c.noProfile} no-profile</span>`);
             bits.push(c.reconciled?'<span style="color:var(--green)">recon ✓</span>':(c.month===curKey?'<span style="color:var(--text-muted)">open</span>':'<span style="color:var(--amber)">recon due</span>'));
             return `<div style="font-size:10px">${bits.join('<br>')}</div>`; })}
