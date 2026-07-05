@@ -1779,15 +1779,15 @@ body::before {
   </div>
   <div class="settings-section">
     <div class="st-title">Bolt Bonus Split</div>
-    <div class="st-desc">Bolt pays the company 1,500/2,000/2,500 SAR per driver at the 4k/5k/6k net tiers. After deducting operation cost, the remainder splits 50% Company / 50% Partner B.</div>
-    <div class="st-row"><label>Base operation cost</label><input type="number" id="opCost" placeholder="850"> <span class="unit">SAR / driver</span></div>
+    <div class="st-desc">Bolt pays the company 1,500/2,000/2,500 SAR per driver at the 4k/5k/6k net tiers. That bonus is split between you and Partner B — set your share below (the rest goes to Partner B).</div>
+    <div class="st-row"><label>Your share of the bonus</label><input type="number" id="bonusSplitPct" placeholder="50" min="0" max="100"> <span class="unit">% (rest → Partner B)</span></div>
     <button class="save-btn" onclick="saveSettings()">Save</button>
-    <div class="st-desc" style="margin-top:16px">Op cost changed a given month? Add a <b>dated change</b> — it applies from that month <b>forward only</b>, so already-closed months keep their own op cost (nothing gets silently rewritten). The base above covers every month before your first dated change.</div>
-    <div id="opCostScheduleBox" style="margin:8px 0"></div>
+    <div class="st-desc" style="margin-top:16px">Split changed a given month? Add a <b>dated change</b> — it applies from that month <b>forward only</b>, so already-closed months keep their own split. The base above covers every month before your first dated change. (Per-driver override: set a driver's split % in their profile.)</div>
+    <div id="bonusSplitSchedBox" style="margin:8px 0"></div>
     <div class="st-row" style="gap:8px;align-items:center;flex-wrap:wrap">
-      <input type="month" id="opCostChangeMonth" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px">
-      <input type="number" id="opCostChangeVal" placeholder="e.g. 500" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px"> <span class="unit">SAR</span>
-      <button class="save-btn" style="margin:0" onclick="addOpCostChange()">+ Add change</button>
+      <input type="month" id="bonusSplitChangeMonth" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px">
+      <input type="number" id="bonusSplitChangeVal" placeholder="e.g. 60" min="0" max="100" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px"> <span class="unit">%</span>
+      <button class="save-btn" style="margin:0" onclick="addBonusSplitChange()">+ Add change</button>
     </div>
     <div class="st-desc" style="margin-top:16px">Upload Bolt's monthly bonus sheet (the invoice with the <b>Max Value</b> column) so a closed month shows Bolt's <b>exact</b> numbers instead of the pace estimate. Pick the month, then choose the file.</div>
     <div class="st-row" style="gap:8px;align-items:center;flex-wrap:wrap">
@@ -1990,6 +1990,7 @@ function loadSettings() {
     cutSilver:     s.cutSilver     ?? 1500,
     cutGold:       s.cutGold       ?? 2000,
     opCost:        s.opCost        ?? 850,
+    bonusSplitPct: s.bonusSplitPct ?? 50,   // company's % of the Bolt bonus (rest → Partner B)
     flagAccAmber:  s.flagAccAmber  ?? 80,
     flagAccRed:    s.flagAccRed    ?? 70,
     flagRatAmber:  s.flagRatAmber  ?? 4.7,
@@ -2007,6 +2008,7 @@ function saveSettings() {
     cutSilver:     get('cutSilver', 1500),
     cutGold:       get('cutGold', 2000),
     opCost:        get('opCost', 850),
+    bonusSplitPct: get('bonusSplitPct', 50),
     flagAccAmber:  get('flagAccAmber', 80),
     flagAccRed:    get('flagAccRed', 70),
     flagRatAmber:  get('flagRatAmber', 4.7),
@@ -2027,7 +2029,7 @@ function initSettingsUI() {
   const rc = document.getElementById('teamBonusRecurring'); if (rc) rc.checked = !!s.teamBonusRecurring;
   if (typeof renderKeyStatus === 'function') renderKeyStatus();
   if (typeof renderSbStatus === 'function') renderSbStatus();
-  renderOpCostSchedule();
+  renderBonusSplitSchedule();
   renderBoltBonusStatus();
 }
 // ── Effective-dated op-cost schedule editor (Settings → Bolt Bonus Split) ──
@@ -2068,11 +2070,51 @@ function removeOpCostChange(monthKey) {
   const sched = loadOpCostSchedule();
   delete sched[monthKey];
   saveOpCostSchedule(sched);
-  renderOpCostSchedule();
   syncToCloud();
   toast(`Removed op-cost change for ${monthLabel(monthKey)}`);
   if (document.getElementById('finance')?.classList.contains('active')) renderFinanceTab();
-  if (document.getElementById('analytics')?.classList.contains('active')) renderAnalytics();
+}
+// ── Effective-dated bonus-split-% schedule (Settings → Bolt Bonus Split) ──
+function renderBonusSplitSchedule() {
+  const box = document.getElementById('bonusSplitSchedBox');
+  if (!box) return;
+  const sched = loadBonusSplitSched();
+  const keys = Object.keys(sched).filter(k => /^\d{4}-\d{2}$/.test(k)).sort();
+  if (!keys.length) { box.innerHTML = `<div style="font-size:12px;color:var(--text-muted)">No dated changes — every month uses the base split above.</div>`; return; }
+  box.innerHTML = keys.map(k => {
+    const v = Number(sched[k]);
+    return `<div style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 0">
+      <span style="font-family:var(--mono);min-width:90px">${monthLabel(k)}</span>
+      <span style="color:var(--text-muted)">→</span>
+      <b style="font-family:var(--mono)">${isNaN(v)?'?':v}% you</b>
+      <span style="font-size:11px;color:var(--text-muted)">from this month forward</span>
+      <button onclick="removeBonusSplitChange('${k}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;text-decoration:underline">remove</button>
+    </div>`;
+  }).join('');
+}
+function addBonusSplitChange() {
+  const m = document.getElementById('bonusSplitChangeMonth')?.value;
+  const vEl = document.getElementById('bonusSplitChangeVal');
+  const v = parseFloat(vEl?.value);
+  if (!m || !/^\d{4}-\d{2}$/.test(m)) { toast('Pick a month for the change'); return; }
+  if (isNaN(v) || v < 0 || v > 100) { toast('Enter a valid split % (0–100)'); return; }
+  const sched = loadBonusSplitSched();
+  sched[m] = v;
+  saveBonusSplitSched(sched);
+  if (vEl) vEl.value = '';
+  renderBonusSplitSchedule();
+  syncToCloud();
+  toast(`Your share ${v}% from ${monthLabel(m)} forward ✓`);
+  if (document.getElementById('finance')?.classList.contains('active')) renderFinanceTab();
+}
+function removeBonusSplitChange(monthKey) {
+  const sched = loadBonusSplitSched();
+  delete sched[monthKey];
+  saveBonusSplitSched(sched);
+  renderBonusSplitSchedule();
+  syncToCloud();
+  toast(`Removed split change for ${monthLabel(monthKey)}`);
+  if (document.getElementById('finance')?.classList.contains('active')) renderFinanceTab();
 }
 // ── Uploaded Bolt-bonus months (Settings → Bolt Bonus Split) ──
 function renderBoltBonusStatus() {
@@ -6585,10 +6627,30 @@ function opCostForMonth(monthKey) {
 // Settings, plus dated changes — resolved per month via opCostForMonth) is deducted first,
 // then the remainder splits 50/50 between the company and Partner B. Pass the month so each
 // month uses ITS op cost; omit it (legacy) to use the base. See bolt-dashboard-onboarding-link-plan.
-function splitAfterOpCost(gross, monthKey) {
-  const opCost = opCostForMonth(monthKey);
-  const afterCost = Math.max(0, gross - opCost);
-  return { company: afterCost / 2, partnerB: afterCost / 2 };
+// Company's share of a driver's Bolt bonus, as a %. Resolves in priority order:
+// per-driver override (profile.bonusSplitPct) → per-month dated change → global default (50).
+// The flat 850 op-cost model was dropped (2026-07-05): it over-charged lower tiers and
+// partial-month drivers. A plain editable % is cleaner and can vary by month and by driver.
+const BONUS_SPLIT_SCHED_KEY = 'khair_bonus_split_sched';
+function loadBonusSplitSched() { try { return JSON.parse(localStorage.getItem(BONUS_SPLIT_SCHED_KEY) || '{}'); } catch (e) { return {}; } }
+function saveBonusSplitSched(o) { localStorage.setItem(BONUS_SPLIT_SCHED_KEY, JSON.stringify(o)); }
+function companySplitPct(monthKey, driverName) {
+  if (driverName) {
+    const p = loadCourierProfiles()[driverKey(driverName)];
+    const v = p && p.bonusSplitPct;
+    if (v != null && v !== '' && !isNaN(+v)) return +v;
+  }
+  const sched = loadBonusSplitSched();
+  const keys = Object.keys(sched).filter(k => /^\d{4}-\d{2}$/.test(k) && (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey) || k <= monthKey)).sort();
+  if (keys.length) { const v = +sched[keys[keys.length - 1]]; if (!isNaN(v)) return v; }
+  const g = +(loadSettings().bonusSplitPct);
+  return isNaN(g) ? 50 : g;
+}
+// Split a driver's Bolt bonus gross between the company and Partner B by the resolved %.
+function splitAfterOpCost(gross, monthKey, driverName) {
+  const pct = companySplitPct(monthKey, driverName);
+  const company = (gross || 0) * pct / 100;
+  return { company, partnerB: (gross || 0) - company, pct };
 }
 // Bolt pays the tier's `gross` on the driver's ACTUAL banked net. But the monthly Bolt
 // INVOICE also rewards pace: a driver whose daily rate PROJECTS into a higher tier is paid
@@ -6608,14 +6670,15 @@ function boltTier(net, perDay, days) {
     : { gross: paceGross, tierFloor: pace ? pace.floor : null };
 }
 function bonusFor(net, monthKey, opts) {
+  const nm = opts && opts.name;
   // Prorated invoice-matching path: caller supplies the driver's pace + worked days.
   if (opts && (opts.perDay != null || opts.days != null)) {
     const { gross, tierFloor } = boltTier(net, opts.perDay, opts.days);
-    if (gross > 0) return { gross, ...splitAfterOpCost(gross, monthKey), tierFloor };
+    if (gross > 0) return { gross, ...splitAfterOpCost(gross, monthKey, nm), tierFloor };
     return { gross: 0, company: 0, partnerB: 0, tierFloor: null };
   }
   for (const t of BOLT_BONUS_TIERS) {
-    if ((net||0) >= t.floor) { const s = splitAfterOpCost(t.gross, monthKey); return { ...t, ...s, tierFloor: t.floor }; }
+    if ((net||0) >= t.floor) { const s = splitAfterOpCost(t.gross, monthKey, nm); return { ...t, ...s, tierFloor: t.floor }; }
   }
   return { gross: 0, company: 0, partnerB: 0, tierFloor: null };
 }
@@ -6639,7 +6702,7 @@ function bonusForDriver(name, income, monthKey, driverId) {
   const [y, m] = monthKey.split('-').map(Number);
   const days = daysWorkedForMonth(name, m - 1, y, driverId);
   const perDay = days > 0 ? (income || 0) / days : 0;
-  return bonusFor(income, monthKey, { perDay, days });
+  return bonusFor(income, monthKey, { perDay, days, name });
 }
 
 // ── Imported Bolt bonus — the monthly invoice's ACTUAL "Max Value" per driver ─────────
@@ -6666,7 +6729,7 @@ function handleBoltBonusFile(file, monthKey) {
       if (hi < 0) hi = 0;
       const header = (rows[hi] || []).map(c => String(c || '').toLowerCase());
       const findCol = re => header.findIndex(h => re.test(h));
-      const cMax = findCol(/max\s*value/), cPhone = findCol(/phone/), cNet = findCol(/net earnings/);
+      const cMax = findCol(/max\s*value/), cPhone = findCol(/phone/), cNet = findCol(/net earnings/), cName = findCol(/driver|full name|name/);
       if (cMax < 0 || cPhone < 0) { toast('Could not find "Phone" + "Max Value" columns'); return; }
       const np = v => String(v == null ? '' : v).replace(/\D/g, '').slice(-9);
       const num = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[^\d.\-]/g, '')); return isNaN(n) ? 0 : n; };
@@ -6674,7 +6737,7 @@ function handleBoltBonusFile(file, monthKey) {
       rows.slice(hi + 1).forEach(r => {
         if (!Array.isArray(r)) return;
         const ph = np(r[cPhone]); if (!ph) return;
-        out[ph] = { gross: num(r[cMax]), net: cNet >= 0 ? num(r[cNet]) : 0 }; n++;
+        out[ph] = { gross: num(r[cMax]), net: cNet >= 0 ? num(r[cNet]) : 0, name: cName >= 0 ? String(r[cName] || '').trim() : '' }; n++;
       });
       if (!n) { toast('No driver rows found in the sheet'); return; }
       const all = loadBoltBonus(); all[monthKey] = out; saveBoltBonus(all);
@@ -8141,6 +8204,7 @@ async function syncToCloud() {
     khair_transfer_log:     JSON.parse(localStorage.getItem(TRANSFER_LOG_KEY)      || '{}'),
     khair_reconcile:        loadReconcile(),
     khair_opcost_schedule:  loadOpCostSchedule(),
+    khair_bonus_split_sched: loadBonusSplitSched(),
     khair_bolt_bonus:       loadBoltBonus(),
     khair_cycle_anchor:     localStorage.getItem(CYCLE_ANCHOR_KEY) || '',
     khair_block_log:        getBlockLog(),
@@ -8237,6 +8301,9 @@ async function fetchFromCloud() {
   }
   if ('khair_bolt_bonus' in r) {
     saveBoltBonus({ ...r.khair_bolt_bonus, ...loadBoltBonus() });                  // per-month; local wins on conflict
+  }
+  if ('khair_bonus_split_sched' in r) {
+    saveBonusSplitSched({ ...r.khair_bonus_split_sched, ...loadBonusSplitSched() });  // per-month; local wins on conflict
   }
   // Cycle anchor: cloud always wins — it is shared fleet config
   if (r.khair_cycle_anchor) {
@@ -9578,7 +9645,7 @@ function renderFinanceTab() {
     <div class="finance-section" style="margin-top:18px">
       <div class="finance-section-header">
         <span class="finance-section-title">Fleet Bolt Tier Bonus</span>
-        <span style="font-size:11px;color:var(--text-muted)">Fleet's share after op cost + Partner B split: ${[...BOLT_BONUS_TIERS].sort((a,b)=>a.floor-b.floor).map(t=>fmt(splitAfterOpCost(t.gross, financeMonth).company)).join(' / ')} SAR at the 4k / 5k / 6k net tiers</span>
+        <span style="font-size:11px;color:var(--text-muted)">Your share (${Math.round(companySplitPct(financeMonth))}% split): ${[...BOLT_BONUS_TIERS].sort((a,b)=>a.floor-b.floor).map(t=>fmt(splitAfterOpCost(t.gross, financeMonth).company)).join(' / ')} SAR at the 4k / 5k / 6k net tiers</span>
       </div>
       <div id="finFleetBonusContent"></div>
     </div>` : ''}
@@ -9815,8 +9882,7 @@ function computeExecMonth(monthKey) {
   const S = { month: monthKey, driversNet:0, dealIn:0, dealOut:0, bonusPaid:0,
               tierCompany:0, tierPartnerB:0, tierGross:0, tierCounts:[0,0,0],
               activeN:0, noProfile:0,
-              refPaid:0, saudiPaid:0, salaryOut:0, opCostPool:0 };   // Build 2: actual-spend tracking
-  const opC = opCostForMonth(monthKey);
+              refPaid:0, saudiPaid:0, salaryOut:0 };   // Build 2: actual-spend tracking
   // Bolt bonus source: a CLOSED month with an uploaded invoice uses Bolt's EXACT per-driver
   // gross ("Max Value"); a month without one (in-progress) falls back to the pace estimate.
   const imported = boltBonusMonth(monthKey);
@@ -9825,7 +9891,7 @@ function computeExecMonth(monthKey) {
     S.driversNet += p.income;                          // context line only — their money
     S.dealIn  += Math.max(0,p.acctRent) + Math.max(0,p.carRent) + Math.max(0,p.other) + Math.max(0,-p.fleetCut);
     S.dealOut += Math.min(0,p.acctRent) + Math.min(0,p.carRent) + p.salary + Math.min(0,p.other);
-    S.bonusPaid += p.bonusCost;                        // referrers + Saudi bonuses — tracked for the spend view; folded into op cost, NOT re-subtracted (Option A)
+    S.bonusPaid += p.bonusCost;                        // referrers + Saudi bonuses — REAL costs (≤0)
     S.refPaid   += (p.ambOwed || 0);                   // actual ambassador referral owed this month
     S.saudiPaid += (p.saudiA || 0);                    // actual Saudi driver bonus (400/800)
     S.salaryOut += Math.max(0, -(p.salary || 0));      // actual salary paid from the profile
@@ -9834,7 +9900,6 @@ function computeExecMonth(monthKey) {
       const b = bonusForDriver(p.name, p.income, monthKey);   // estimate (pace) for the in-progress month
       if (b.tierFloor) {
         S.tierCompany += b.company; S.tierPartnerB += b.partnerB; S.tierGross += b.gross;
-        S.opCostPool += Math.min(b.gross, opC);
         S.tierCounts[b.tierFloor >= 6000 ? 2 : b.tierFloor >= 5000 ? 1 : 0]++;
       }
     }
@@ -9842,20 +9907,18 @@ function computeExecMonth(monthKey) {
   if (imported) {                                       // exact — Bolt's invoice is the truth
     Object.values(imported).forEach(d => {
       const gross = +d.gross || 0; if (gross <= 0) return;
-      const s = splitAfterOpCost(gross, monthKey);
+      const s = splitAfterOpCost(gross, monthKey, d.name);   // per-driver split % when set
       S.tierGross += gross; S.tierCompany += s.company; S.tierPartnerB += s.partnerB;
-      S.opCostPool += Math.min(gross, opC);
       const net = +d.net || 0;
       S.tierCounts[net >= 6000 ? 2 : net >= 5000 ? 1 : 0]++;
     });
   }
-  // Company net (Option A): rentals/deal income + Bolt-bonus company share. The op cost (850)
-  // ALREADY covers referrers + Saudi bonuses, so bonusPaid is NOT re-subtracted here — that
-  // would double-count. It stays on S for the context/actual-spend view.
-  S.dealNet    = S.dealIn + S.dealOut;
+  // Company net = rentals/deal income + Bolt-bonus company share (company % of gross) − REAL
+  // costs (referrals + Saudi bonuses, bonusPaid ≤0; salaries are inside dealOut).
+  S.dealNet    = S.dealIn + S.dealOut + S.bonusPaid;
   S.companyNet = S.dealNet + S.tierCompany;
   S.perDriver  = S.activeN ? S.companyNet / S.activeN : 0;
-  S.opCost     = opCostForMonth(monthKey);
+  S.splitPct   = companySplitPct(monthKey);
   S.reconciled = typeof isMonthReconciled === 'function' && isMonthReconciled(monthKey);
   return S;
 }
@@ -9900,25 +9963,26 @@ function renderFinanceExecView() {
       <span style="font-size:15px;font-weight:700">Company profit — ${monthLabel(sel)}</span>${badge}
     </div>
     ${subhdr('MONEY IN')}
-    ${row(`Bolt bonus — your share <span style="font-size:11px;color:var(--text-muted)">(Bolt paid ${money(S.tierGross)} gross)</span>`, signed(S.tierCompany))}
+    ${row(`Bolt bonus — your share <span style="font-size:11px;color:var(--text-muted)">(${money(S.tierGross)} gross · your ${Math.round(S.splitPct)}%)</span>`, signed(S.tierCompany))}
     ${row('Car rentals & deal income', S.dealIn>0 ? signed(S.dealIn) : '<span style="color:var(--text-muted)">— fill cost profiles</span>')}
     ${subhdr('MONEY OUT')}
     ${row('Salaries & deal payouts', Math.round(S.dealOut)<0 ? signed(S.dealOut) : '<span style="color:var(--text-muted)">—</span>')}
+    ${row('Referrals + Saudi bonuses <span style="font-size:11px;color:var(--text-muted)">(actual paid)</span>', Math.round(S.bonusPaid)<0 ? signed(S.bonusPaid) : '<span style="color:var(--text-muted)">—</span>')}
     ${row('★ Company profit', `<span style="color:${S.companyNet>=0?'var(--bolt-green)':'var(--red)'}">${money(S.companyNet)} SAR</span>`, {strong:true})}
   </div>`;
 
-  // Build 2: actual spend vs the flat op-cost assumption (informational — never touches profit).
-  const actualSpend = S.refPaid + S.saudiPaid + S.salaryOut;
-  const variance = actualSpend - S.opCostPool;
+  // Build 2: how the bonus split lands + what you actually paid (informational).
+  const actualCosts = S.refPaid + S.saudiPaid + S.salaryOut;
   const spend = `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px 20px;margin:14px 12px 0">
-    <div style="font-size:14px;font-weight:700">Cost check — did the ${money(S.opCost)} assumption hold?</div>
-    <div style="font-size:11px;color:var(--text-muted);margin-top:2px">The op cost bundles referrals + Saudi bonuses + salaries. This compares what you ACTUALLY spent vs that pool — for tuning the ${money(S.opCost)}. It does not change the profit above.</div>
-    ${row(`Op-cost pool charged <span style="font-size:11px;color:var(--text-muted)">(${money(S.opCost)}/driver)</span>`, money(S.opCostPool), {dim:true})}
-    ${row('↳ actual referrals paid', money(S.refPaid), {dim:true})}
-    ${row('↳ actual Saudi bonuses (400/800)', money(S.saudiPaid), {dim:true})}
-    ${row('↳ actual salaries (profiles)', money(S.salaryOut), {dim:true})}
-    ${row('Actual spend total', money(actualSpend))}
-    ${row('Variance', `<span style="color:${variance>0?'var(--amber)':'var(--bolt-green)'}">${variance>0?'+':''}${money(variance)}${Math.round(variance)===0?'':(variance>0?' — costs exceed the pool':' — pool has room')}</span>`)}
+    <div style="font-size:14px;font-weight:700">Bonus split &amp; actual costs — ${monthLabel(sel)}</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Bolt bonus splits <b>${Math.round(S.splitPct)}% you / ${Math.round(100-S.splitPct)}% Partner B</b> — editable in Settings → Bolt Bonus Split (per month, or per driver in a profile). Referrals + Saudi bonuses + salaries are your real costs.</div>
+    ${row('Bolt bonus gross', money(S.tierGross), {dim:true})}
+    ${row(`↳ your share (${Math.round(S.splitPct)}%)`, money(S.tierCompany), {dim:true})}
+    ${row(`↳ Partner B (${Math.round(100-S.splitPct)}%)`, money(S.tierPartnerB), {dim:true})}
+    ${row('Actual referrals paid', money(S.refPaid), {dim:true})}
+    ${row('Actual Saudi bonuses (400/800)', money(S.saudiPaid), {dim:true})}
+    ${row('Actual salaries (profiles)', money(S.salaryOut), {dim:true})}
+    ${row('Total real costs', money(actualCosts))}
   </div>`;
 
   // Projection — current in-progress month only (keeps the "before Bolt sends it" number).
@@ -9948,7 +10012,7 @@ function renderFinanceExecView() {
           ${row('Partner B tier share', money(S.tierPartnerB), {dim:true})}
           ${row("Drivers' Bolt net (their money — context only)", money(S.driversNet), {dim:true})}
           ${row('Data quality', (S.reconciled?'<span style="color:var(--bolt-green)">reconciled ✓</span>':(sel===curKey?'<span style="color:var(--text-muted)">open (in progress)</span>':'<span style="color:var(--amber)">reconcile due</span>'))+(S.noProfile?` · <span style="color:var(--amber)">${S.noProfile} no-profile</span>`:''), {dim:true})}
-          <div style="font-size:11px;color:var(--text-muted);padding:10px 0 0;line-height:1.7">Bolt pays 1,500 / 2,000 / 2,500 per driver at 4k / 5k / 6k net. Closed months use Bolt's uploaded invoice (Settings → Bolt Bonus Split); the current month estimates from pace. Op cost (${money(S.opCost)}/driver) covers referrals + Saudi bonuses + salaries, then the remainder splits 50/50 with Partner B.</div>
+          <div style="font-size:11px;color:var(--text-muted);padding:10px 0 0;line-height:1.7">Bolt pays 1,500 / 2,000 / 2,500 per driver at 4k / 5k / 6k net. Closed months use Bolt's uploaded invoice (Settings → Bolt Bonus Split); the current month estimates from pace. The bonus splits <b>${Math.round(S.splitPct)}% you / ${Math.round(100-S.splitPct)}% Partner B</b> (editable per month or per driver). Referrals + Saudi bonuses + salaries are your real costs, subtracted separately.</div>
         </div>
       </details>
     </div>`;
@@ -10726,7 +10790,7 @@ function renderFleetBoltBonus() {
         const gross = d ? (+d.gross || 0) : 0;
         const net = d ? (+d.net || 0) : pl.income;
         const floor = gross > 0 ? (net >= 6000 ? 6000 : net >= 5000 ? 5000 : 4000) : null;
-        return { name, net: pl.income, bonus: gross > 0 ? splitAfterOpCost(gross, monthKey).company : 0, floor };
+        return { name, net: pl.income, bonus: gross > 0 ? splitAfterOpCost(gross, monthKey, name).company : 0, floor };
       }
       const b = bonusForDriver(name, pl.income, monthKey);
       return { name, net: pl.income, bonus: b.company, floor: b.tierFloor };
@@ -13365,7 +13429,7 @@ function renderAnalytics() {
     ${projectable ? `<div class="chart-card" style="margin-bottom:16px">
       <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
         <span>Bonus-Tier Pipeline — ${periodLabel} <span style="font-size:11px;color:var(--text-muted);font-weight:400">· projected month-end · click a band</span></span>
-        <span style="font-size:12px;color:var(--bolt-green);font-weight:700">≈ ${fmt(totalCompanyBonus)} SAR company bonus projected <span style="color:var(--text-muted);font-weight:400">(+ ${fmt(totalPartnerBBonus)} Partner B, after op cost)</span></span>
+        <span style="font-size:12px;color:var(--bolt-green);font-weight:700">≈ ${fmt(totalCompanyBonus)} SAR company bonus projected <span style="color:var(--text-muted);font-weight:400">(+ ${fmt(totalPartnerBBonus)} Partner B)</span></span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);letter-spacing:.05em;margin:9px 2px 2px"><span>TIER</span><span>DRIVERS · PROJECTED NET</span><span>COMPANY BONUS</span></div>
       <div style="display:flex;flex-direction:column;gap:7px">
