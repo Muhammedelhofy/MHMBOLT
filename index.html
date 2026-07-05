@@ -2637,14 +2637,25 @@ function entryInMonth(h, month, year) {
 // (computeDriverNetForPeriod), so the two can never disagree. Robust by design:
 // driver match is case/trim-insensitive (driverKey) or by driverId; entries are
 // de-duped by period; sums are NaN-safe (sN); no periodInfo dependency.
+// Per-driver-month net is read O(drivers × months) times per finance render (computeDriverPnL,
+// ambPayoutFor, firstAchieveMonth, teamIncentiveFor all call it), each iterating history — the
+// main source of Finance-tab lag. Memoize the result; the cache is cleared whenever the two
+// inputs change (saveHistory / saveReconcile), so it can never go stale.
+let _netCache = new Map();
+function invalidateNetCache() { _netCache.clear(); }
 function sumDriverNetForMonth(driverName, month, year, driverId) {
   // Month-end reconcile: once a month is LOCKED against Bolt's monthly "Earnings per
   // driver" report, Bolt's finalised net is authoritative for that month/driver — it
   // captures late-posted campaign bonuses + adjustments the daily uploads can't have
   // (they're snapshots taken before Bolt settles). Un-reconciled months / unmatched
   // drivers fall back to the daily-sum. This is the single point every bonus reads.
+  const key = driverKey(driverName) + '|' + month + '|' + year + '|' + (driverId || '');
+  const hit = _netCache.get(key);
+  if (hit !== undefined) return hit;
   const rec = getReconciledNet(year + '-' + String(month + 1).padStart(2, '0'), driverName);
-  return (rec != null) ? rec : rawDailyNetForMonth(driverName, month, year, driverId);
+  const v = (rec != null) ? rec : rawDailyNetForMonth(driverName, month, year, driverId);
+  _netCache.set(key, v);
+  return v;
 }
 function rawDailyNetForMonth(driverName, month, year, driverId) {
   const nk = driverKey(driverName);
@@ -2662,7 +2673,7 @@ function rawDailyNetForMonth(driverName, month, year, driverId) {
 // { 'YYYY-MM': { byKey: { driverKey: finalisedNet }, at, drivers } }. Synced to cloud.
 const RECONCILE_KEY = 'khair_reconcile';
 function loadReconcile() { try { return JSON.parse(localStorage.getItem(RECONCILE_KEY) || '{}'); } catch (e) { return {}; } }
-function saveReconcile(o) { localStorage.setItem(RECONCILE_KEY, JSON.stringify(o)); }
+function saveReconcile(o) { invalidateNetCache(); localStorage.setItem(RECONCILE_KEY, JSON.stringify(o)); }
 function getReconciledNet(monthKey, driverName) {
   const m = loadReconcile()[monthKey];
   if (!m || !m.byKey) return null;
@@ -7040,6 +7051,7 @@ function getHistory() {
 // (QuotaExceededError), drops the oldest days and retries instead of throwing
 // (which would silently lose the whole upload). Returns the day count kept.
 function saveHistory(arr) {
+  invalidateNetCache();
   let days = Math.min(arr.length, LOCAL_MAX_DAYS);
   while (days > 0) {
     try {
@@ -10704,8 +10716,21 @@ function renderFleetBoltBonus() {
     el.innerHTML = `<div class="finance-empty">No driver data for ${monthLabel(monthKey)}</div>`;
     return;
   }
+  const imported = boltBonusMonth(monthKey);   // closed month: match the Executive tab (Bolt's real invoice)
   const rows = drivers
-    .map(name => { const pl = computeDriverPnL(name, monthKey); const b = bonusForDriver(name, pl.income, monthKey); return { name, net: pl.income, bonus: b.company, floor: b.tierFloor }; })
+    .map(name => {
+      const pl = computeDriverPnL(name, monthKey);
+      if (imported) {
+        const ph = String(getKnownDriverPhone(name) || '').replace(/\D/g, '').slice(-9);
+        const d = ph && imported[ph];
+        const gross = d ? (+d.gross || 0) : 0;
+        const net = d ? (+d.net || 0) : pl.income;
+        const floor = gross > 0 ? (net >= 6000 ? 6000 : net >= 5000 ? 5000 : 4000) : null;
+        return { name, net: pl.income, bonus: gross > 0 ? splitAfterOpCost(gross, monthKey).company : 0, floor };
+      }
+      const b = bonusForDriver(name, pl.income, monthKey);
+      return { name, net: pl.income, bonus: b.company, floor: b.tierFloor };
+    })
     .sort((a, b) => b.net - a.net);
 
   const totalBonus = rows.reduce((s, r) => s + r.bonus, 0);
