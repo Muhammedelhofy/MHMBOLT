@@ -11050,6 +11050,10 @@ function teamIncentiveFor(name, profile, monthKey) {
   const meta = { team, nationality: nat, currency: rule.currency, threshold: rule.threshold, amount: rule.amount };
   const won  = () => ({ owed: rule.amount, owedSar: incToSar(rule.amount, rule.currency), qualifies: true, ...meta });
 
+  // The team incentive only runs FROM the cutover — no month before it ever pays (his call
+  // 2026-07-05: no bonus for June; start calculating July onward).
+  if (monthKey < NEW_BONUS_CUTOVER) return base({ ...meta, reason: `Before ${monthLabel(NEW_BONUS_CUTOVER)} — team incentive not active` });
+
   if (loadSettings().teamBonusRecurring) {
     const [y, m] = monthKey.split('-').map(Number);
     const net = getMonthlyNet(null, name, m - 1, y);
@@ -11065,10 +11069,11 @@ function teamIncentiveFor(name, profile, monthKey) {
     const net = getMonthlyNet(null, name, m - 1, y);
     return base({ ...meta, reason: `Net ${fmt(net)} < ${fmt(rule.threshold)} (not yet)` });
   }
-  const payMonth = fm < NEW_BONUS_CUTOVER ? NEW_BONUS_CUTOVER : fm;
-  const pre = fm < NEW_BONUS_CUTOVER ? ` (qualified ${monthLabel(fm)}, pre-cutover)` : '';
-  if (payMonth === monthKey) return { ...won(), reason: `One-time ${rule.amount} ${rule.currency} · first hit ${fmt(rule.threshold)}${pre} (${team} · ${nat})` };
-  if (payMonth <  monthKey)  return base({ ...meta, reason: `Already paid · ${monthLabel(payMonth)}` });
+  // No back-pay: a driver who first qualified BEFORE the cutover earns the referrer nothing —
+  // only a fresh first-qualification from the cutover month onward pays (his call 2026-07-05).
+  if (fm < NEW_BONUS_CUTOVER) return base({ ...meta, reason: `No back-pay · first hit ${fmt(rule.threshold)} in ${monthLabel(fm)} (before ${monthLabel(NEW_BONUS_CUTOVER)})` });
+  if (fm === monthKey) return { ...won(), reason: `One-time ${rule.amount} ${rule.currency} · first hit ${fmt(rule.threshold)} (${team} · ${nat})` };
+  if (fm <  monthKey)  return base({ ...meta, reason: `Already paid · ${monthLabel(fm)}` });
   return base({ ...meta, reason: `Not yet · first hits ${monthLabel(fm)}` });
 }
 
