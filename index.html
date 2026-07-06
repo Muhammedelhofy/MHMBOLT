@@ -1426,11 +1426,180 @@ body::before {
   /* M8 panel: full width */
   #m8Panel { width:calc(100vw - 16px) !important; left:8px !important; right:8px !important; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DECK DESIGN SYSTEM — see BOLT_DESIGN_SYSTEM.md
+   Namespaced: tokens are --dk-*, classes are .dk-*. Legacy tabs keep rendering
+   with the old classes; each tab drops them as it converts to DECK. The TODAY
+   tab is the exemplar. Rules enforced here: data=mono/tabular, chrome=sans,
+   colour=signal-only, ONE looping animation (the heartbeat dot), no glow,
+   logical properties throughout so [dir=rtl] is free.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --dk-bg: #0F1318; --dk-s1: #161C23; --dk-s2: #1D252E; --dk-s3: #242E39;
+  --dk-line: rgba(148,163,184,.10); --dk-line2: rgba(148,163,184,.20);
+  --dk-hi: #E9EEF3; --dk-text: #C4CCD5; --dk-mut: #8B95A1; --dk-dim: #5D6772;
+  --dk-brand: #3DDBAE; --dk-danger: #FF5C7A; --dk-warn: #FFB020; --dk-info: #58A6FF;
+  --dk-t6: #FFCF5C; --dk-t5: #A78BFF; --dk-t4: #6FA8FF; --dk-t0: #5D6772;
+  --dk-brand-tint: rgba(61,219,174,.09); --dk-danger-tint: rgba(255,92,122,.09); --dk-warn-tint: rgba(255,176,32,.09);
+  --dk-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --dk-mono: 'IBM Plex Mono', ui-monospace, 'Courier New', monospace;
+  --dk-tf: 120ms; --dk-t: 180ms; --dk-ease: cubic-bezier(.2,.7,.3,1);
+}
+.dk[lang="ar"], .dk [lang="ar"] { --dk-sans: 'IBM Plex Sans Arabic', 'IBM Plex Sans', system-ui, sans-serif; }
+
+.dk { font-family: var(--dk-sans); color: var(--dk-text); font-size: 13px; line-height: 1.45;
+      font-variant-numeric: tabular-nums; }
+.dk-shell { display: flex; flex-direction: column; gap: 14px; padding-block: 12px 20px; }
+
+/* ── deck header ── */
+.dk-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.dk-title { font-size: 20px; font-weight: 700; color: var(--dk-hi); letter-spacing: 0; }
+.dk-context { font-size: 12px; color: var(--dk-mut); margin-block-start: 2px; }
+.dk-headside { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dk-status { font-family: var(--dk-mono); font-size: 11px; color: var(--dk-mut); display: flex;
+             align-items: center; gap: 7px; border: 1px solid var(--dk-line); border-radius: 999px;
+             padding: 4px 11px; background: var(--dk-s1); white-space: nowrap; direction: ltr; unicode-bidi: isolate; }
+.dk-status.warn { color: var(--dk-warn); border-color: rgba(255,176,32,.35); }
+.dk-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dk-brand); flex: none;
+          animation: dk-beat 2.4s ease-in-out infinite; } /* THE one looping animation */
+.dk-status.warn .dk-dot { background: var(--dk-warn); }
+@keyframes dk-beat { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* ── language chip ── */
+.dk-lang { font-family: var(--dk-mono); font-size: 11px; border: 1px solid var(--dk-line);
+           border-radius: 999px; background: var(--dk-s1); padding: 4px 4px; display: inline-flex; gap: 2px; }
+.dk-lang button { all: unset; cursor: pointer; padding: 2px 9px; border-radius: 999px; color: var(--dk-mut);
+                  transition: background var(--dk-tf), color var(--dk-tf); }
+.dk-lang button.on { background: var(--dk-s3); color: var(--dk-hi); }
+.dk-lang button:hover:not(.on) { color: var(--dk-text); }
+
+/* ── buttons ── */
+.dk-btn { all: unset; box-sizing: border-box; cursor: pointer; font-family: var(--dk-sans); font-size: 12px;
+          font-weight: 600; height: 30px; padding-inline: 13px; border-radius: 7px; display: inline-flex;
+          align-items: center; gap: 6px; border: 1px solid var(--dk-line2); color: var(--dk-text);
+          background: transparent; transition: border-color var(--dk-tf), background var(--dk-tf), transform var(--dk-tf); }
+.dk-btn:hover { border-color: var(--dk-mut); background: var(--dk-s2); }
+.dk-btn:active { transform: scale(.985); }
+.dk-btn:focus-visible { box-shadow: 0 0 0 2px rgba(88,166,255,.45); }
+.dk-btn.pri { background: var(--dk-brand); border-color: var(--dk-brand); color: #06231B; }
+.dk-btn.pri:hover { filter: brightness(1.07); }
+.dk-btn.sm { height: 26px; padding-inline: 10px; font-size: 11px; }
+
+/* ── alert rail ── */
+.dk-rail { display: flex; flex-direction: column; gap: 6px; }
+.dk-alert { display: flex; align-items: center; gap: 10px; border: 1px solid var(--dk-line);
+            border-inline-start: 3px solid var(--dk-mut); border-radius: 8px; background: var(--dk-s1);
+            padding: 8px 12px; font-size: 12px; cursor: pointer;
+            transition: border-color var(--dk-tf), background var(--dk-tf); }
+.dk-alert:hover { background: var(--dk-s2); }
+.dk-alert .n { font-family: var(--dk-mono); font-weight: 700; font-size: 13px; }
+.dk-alert .go { margin-inline-start: auto; color: var(--dk-mut); font-size: 11px; white-space: nowrap; }
+.dk-alert.danger { border-inline-start-color: var(--dk-danger); background: var(--dk-danger-tint); }
+.dk-alert.danger .n { color: var(--dk-danger); }
+.dk-alert.warn { border-inline-start-color: var(--dk-warn); background: var(--dk-warn-tint); }
+.dk-alert.warn .n { color: var(--dk-warn); }
+
+/* ── stat strip ── */
+.dk-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px;
+            background: var(--dk-line); border: 1px solid var(--dk-line); border-radius: 10px; overflow: hidden; }
+.dk-stat { background: var(--dk-s1); padding: 10px 14px 11px; min-width: 0; }
+.dk-stat .l { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+              color: var(--dk-mut); margin-block-end: 5px; white-space: nowrap; }
+.dk-stat .v { font-family: var(--dk-mono); font-size: 19px; font-weight: 600; color: var(--dk-hi);
+              line-height: 1.1; white-space: nowrap; direction: ltr; unicode-bidi: isolate; }
+.dk-stat .v small { font-size: 11px; font-weight: 400; color: var(--dk-mut); }
+.dk-stat .d { font-family: var(--dk-mono); font-size: 11px; margin-block-start: 3px; color: var(--dk-mut); }
+.dk-stat .d.up { color: var(--dk-brand); } .dk-stat .d.down { color: var(--dk-danger); }
+.dk-stat.warn .v { color: var(--dk-warn); } .dk-stat.danger .v { color: var(--dk-danger); }
+.dk-stat.brand .v { color: var(--dk-brand); }
+
+/* ── tier pills (the 4k/5k/6k ladder — same component everywhere) ── */
+.dk-tier { font-family: var(--dk-mono); font-size: 11px; font-weight: 600; border-radius: 999px;
+           padding: 2px 8px; border: 1px solid; display: inline-flex; align-items: center; gap: 5px;
+           direction: ltr; unicode-bidi: isolate; }
+.dk-tier b { font-weight: 700; }
+.dk-tier.t6 { color: var(--dk-t6); border-color: rgba(255,207,92,.35); background: rgba(255,207,92,.13); }
+.dk-tier.t5 { color: var(--dk-t5); border-color: rgba(167,139,255,.35); background: rgba(167,139,255,.13); }
+.dk-tier.t4 { color: var(--dk-t4); border-color: rgba(111,168,255,.35); background: rgba(111,168,255,.13); }
+.dk-tier.t0 { color: var(--dk-dim); border-color: rgba(93,103,114,.4); background: rgba(93,103,114,.12); }
+.dk-tier.hollow { background: transparent; } /* projected, not banked */
+
+/* ── bulkhead section label:  LABEL ───────── [chip] ── */
+.dk-bulk { display: flex; align-items: center; gap: 10px; margin-block: 4px -4px; }
+.dk-bulk .t { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--dk-mut); white-space: nowrap; }
+.dk-bulk::after { content: ''; flex: 1; height: 1px; background: var(--dk-line); }
+.dk-bulk .c { order: 3; font-family: var(--dk-mono); font-size: 11px; color: var(--dk-dim); }
+
+/* ── action queue (the cockpit hero) ── */
+.dk-queue { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
+.dk-action { position: relative; background: var(--dk-s1); border: 1px solid var(--dk-line); border-radius: 10px;
+             padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
+             transition: border-color var(--dk-tf), transform var(--dk-tf); }
+.dk-action:hover { border-color: var(--dk-line2); transform: translateY(-1px); }
+.dk-action .rank { font-family: var(--dk-mono); font-size: 11px; color: var(--dk-dim); }
+.dk-action .who { font-size: 14px; font-weight: 600; color: var(--dk-hi); }
+.dk-action .why { font-size: 12px; color: var(--dk-mut); line-height: 1.5; }
+.dk-action .worth { font-family: var(--dk-mono); font-size: 15px; font-weight: 700; color: var(--dk-brand);
+                    direction: ltr; unicode-bidi: isolate; }
+.dk-action .worth.risk { color: var(--dk-warn); }
+.dk-action .acts { display: flex; gap: 7px; margin-block-start: auto; padding-block-start: 4px; }
+/* corner ticks — the ONE HUD flourish, on the #1 action only */
+.dk-action.first::before, .dk-action.first::after { content: ''; position: absolute; width: 9px; height: 9px; pointer-events: none; }
+.dk-action.first::before { inset-block-start: -1px; inset-inline-start: -1px; border-block-start: 1px solid var(--dk-brand); border-inline-start: 1px solid var(--dk-brand); border-start-start-radius: 10px; }
+.dk-action.first::after { inset-block-end: -1px; inset-inline-end: -1px; border-block-end: 1px solid var(--dk-brand); border-inline-end: 1px solid var(--dk-brand); border-end-end-radius: 10px; }
+
+/* ── deck cards + grid ── */
+.dk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; align-items: stretch; }
+.dk-card { background: var(--dk-s1); border: 1px solid var(--dk-line); border-radius: 10px; padding: 13px 14px;
+           display: flex; flex-direction: column; gap: 7px; min-width: 0;
+           transition: border-color var(--dk-tf), transform var(--dk-tf); }
+.dk-card.click { cursor: pointer; }
+.dk-card.click:hover { border-color: var(--dk-line2); transform: translateY(-1px); }
+.dk-card-t { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dk-card-t .t { font-size: 13px; font-weight: 600; color: var(--dk-hi); }
+.dk-card-t .go { font-size: 11px; color: var(--dk-dim); white-space: nowrap; }
+.dk-card.click:hover .dk-card-t .go { color: var(--dk-mut); }
+.dk-card .dk-big { font-family: var(--dk-mono); font-size: 25px; font-weight: 700; color: var(--dk-hi);
+                   line-height: 1.15; direction: ltr; unicode-bidi: isolate; }
+.dk-card .dk-big small { font-size: 11px; font-weight: 400; color: var(--dk-mut); font-family: var(--dk-sans); }
+.dk-foot { font-size: 11px; color: var(--dk-mut); border-block-start: 1px solid var(--dk-line);
+           padding-block-start: 7px; margin-block-start: auto; }
+
+/* ── kv rows inside cards + slip list rows ── */
+.dk-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+          padding: 3px 4px; font-size: 12px; border-radius: 5px; }
+.dk-row .k { color: var(--dk-mut); }
+.dk-row .v { font-family: var(--dk-mono); direction: ltr; unicode-bidi: isolate; }
+.dk-row.click { cursor: pointer; }
+.dk-row.click:hover { background: var(--dk-s2); }
+.dk-num { font-family: var(--dk-mono); direction: ltr; unicode-bidi: isolate; }
+.dk-warn-n { color: var(--dk-warn); font-weight: 700; } .dk-danger-n { color: var(--dk-danger); font-weight: 700; }
+.dk-ok-n { color: var(--dk-brand); font-weight: 700; }
+
+/* ── collapsible slip list ── */
+.dk-slip { border: 1px solid var(--dk-line); border-radius: 10px; background: var(--dk-s1); padding: 6px 8px; }
+.dk-slip .dk-row { border-block-start: 1px solid var(--dk-line); border-radius: 0; padding-block: 6px; }
+.dk-slip .dk-row:first-child { border-block-start: none; }
+
+/* ── entrance: one breath, then still ── */
+@keyframes dk-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.dk-shell > * { animation: dk-in var(--dk-t) var(--dk-ease) backwards; }
+.dk-shell > *:nth-child(1) { animation-delay: 0ms; } .dk-shell > *:nth-child(2) { animation-delay: 25ms; }
+.dk-shell > *:nth-child(3) { animation-delay: 50ms; } .dk-shell > *:nth-child(4) { animation-delay: 75ms; }
+.dk-shell > *:nth-child(5) { animation-delay: 100ms; } .dk-shell > *:nth-child(6) { animation-delay: 125ms; }
+.dk-shell > *:nth-child(7) { animation-delay: 150ms; } .dk-shell > *:nth-child(8) { animation-delay: 175ms; }
+@media (prefers-reduced-motion: reduce) {
+  .dk-shell > *, .dk-dot { animation: none !important; }
+  .dk-btn, .dk-card, .dk-action, .dk-alert, .dk-lang button { transition: none !important; }
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<!-- DECK design system fonts (IBM Plex EN/AR/mono). Inter + Share Tech Mono stay loaded
+     only until every tab is converted to DECK — then drop them from this request. -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Share+Tech+Mono&family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -13767,54 +13936,121 @@ function todayOpenChase(ev) { if (ev) ev.stopPropagation(); openChaseList(); }
 //                       month where it's still actionable — real company-bonus at risk).
 //   3. Acceptance drop— the existing accDrop signal (buildAlertCache), surfaced here.
 // Ranked: tier slip (direct company money) → pace collapse (SAR/14d lost) → acceptance.
-function buildTodayAttention(R, W) {
+// ═══ DECK i18n (exemplar scope: the Today tab) ═══════════════════════════════
+// One dictionary + t(). Numbers keep Western digits (fmt() is en-US); AR dates
+// must pin Gregorian + latin digits ('ar-SA-u-ca-gregory-nu-latn') — the bare
+// ar-SA default is Hijri. When ALL tabs are DECK, lift lang/dir to <html> and
+// re-render every tab from setDeckLang (see BOLT_DESIGN_SYSTEM.md §7).
+const DK_T = {
+  today:        { en: 'Today',                    ar: 'اليوم' },
+  daysLeftIn:   { en: 'days left in',             ar: 'يوم متبقٍ في' },
+  latestData:   { en: 'latest data',              ar: 'أحدث البيانات' },
+  chaseList:    { en: 'Chase list',               ar: 'قائمة المتابعة' },
+  doNext:       { en: 'Do next — ranked by SAR',  ar: 'نفّذ الآن — مرتّبة بالريال' },
+  domains:      { en: 'Domains',                  ar: 'الأقسام' },
+  open:         { en: 'open',                     ar: 'افتح' },
+  openDriver:   { en: 'Open driver',              ar: 'افتح السائق' },
+  viaCron:      { en: 'auto',                     ar: 'تلقائي' },
+  viaUpload:    { en: 'upload',                   ar: 'رفع يدوي' },
+  staleData:    { en: 'Data is stale — upload today\'s CSV or check the midnight sync', ar: 'البيانات قديمة — ارفع ملف CSV اليوم أو تحقق من مزامنة منتصف الليل' },
+  blockedOnBolt:{ en: 'blocked on Bolt — unblock queue', ar: 'محظور على بولت — قائمة فك الحظر' },
+  reconcileDue: { en: 'reconcile due',            ar: 'تسوية مستحقة' },
+  slipping:     { en: 'drivers slipping (tier / pace / acceptance)', ar: 'سائقون يتراجعون (فئة / وتيرة / قبول)' },
+  fleetNet:     { en: 'Fleet net (MTD)',          ar: 'صافي الأسطول (الشهر)' },
+  projBonus:    { en: 'Proj. company bonus',      ar: 'عمولة الشركة المتوقعة' },
+  tierLadder:   { en: 'Tier ladder (proj.)',      ar: 'سلّم الفئات (متوقع)' },
+  needsPush:    { en: 'Needs a push',             ar: 'يحتاج دفعة' },
+  blocked:      { en: 'Blocked',                  ar: 'محظور' },
+  activeToday:  { en: 'Active · latest day',      ar: 'نشِط · آخر يوم' },
+  trips:        { en: 'trips',                    ar: 'رحلة' },
+  money:        { en: 'Money',                    ar: 'المال' },
+  chase:        { en: 'Chase',                    ar: 'المتابعة' },
+  onboarding:   { en: 'Onboarding',               ar: 'التأهيل' },
+  bonusHealth:  { en: 'Bonus health',             ar: 'صحة الحوافز' },
+  blockers:     { en: 'Blockers',                 ar: 'العوائق' },
+  idleNoTrips:  { en: 'Idle · no trips',          ar: 'خامل · بلا رحلات' },
+  belowPace:    { en: 'Working below 4k pace',    ar: 'يعمل تحت وتيرة 4k' },
+  easyWins:     { en: 'Easy tier wins',           ar: 'مكاسب فئة سهلة' },
+  driversNeedPush:{ en: 'drivers need a push',    ar: 'سائق يحتاج دفعة' },
+  attributionGaps:{ en: 'attribution gaps',       ar: 'فجوات إسناد' },
+  noAmbassador: { en: 'Earners with no ambassador', ar: 'كاسبون بلا سفير' },
+  natUnconfirmed:{ en: 'Nationality unconfirmed', ar: 'جنسية غير مؤكدة' },
+  noCostProfile:{ en: 'Earners with no cost profile', ar: 'كاسبون بلا ملف تكلفة' },
+  inPipeline:   { en: 'in the pipeline',          ar: 'في مسار التأهيل' },
+  stuckOver:    { en: 'Stuck >',                  ar: 'متوقف أكثر من' },
+  days:         { en: 'days',                     ar: 'يوم' },
+  activatedWk:  { en: 'Activated this week',      ar: 'مُفعّل هذا الأسبوع' },
+  lostWk:       { en: 'Lost this week',           ar: 'مفقود هذا الأسبوع' },
+  vs:           { en: 'vs',                       ar: 'مقابل' },
+  tierMoves:    { en: 'Tier moves vs',            ar: 'تحركات الفئات مقابل' },
+  fleetNet14:   { en: '14-day fleet net',         ar: 'صافي الأسطول ١٤ يومًا' },
+  dayOverDay:   { en: 'Day-over-day',             ar: 'يوم مقابل يوم' },
+  blockersN:    { en: 'blockers',                 ar: 'عائق' },
+  bonusAtRisk:  { en: 'bonus at risk',            ar: 'حافز مهدد' },
+  recoverable:  { en: 'at stake — idle',          ar: 'على المحك — خامل' },
+  dropped:      { en: 'pace drop',                ar: 'هبوط وتيرة' },
+  pushTo:       { en: 'push to',                  ar: 'ادفعه إلى' },
+  perDay:       { en: '/work-day more',           ar: '/يوم عمل إضافي' },
+  idleWas:      { en: 'no trips this month — earned', ar: 'بلا رحلات هذا الشهر — كسب' },
+  last28:       { en: 'in the last 28d',          ar: 'في آخر ٢٨ يومًا' },
+  fellFrom:     { en: '14-day net fell',          ar: 'هبط صافي ١٤ يومًا' },
+  allCalm:      { en: 'Queue clear — no pushes, drops or idles right now.', ar: 'القائمة فارغة — لا دفعات أو تراجعات أو خمول الآن.' },
+  moreSlipping: { en: 'more slipping — full list in Chase', ar: 'آخرون يتراجعون — القائمة الكاملة في المتابعة' },
+  paceCollapsed:{ en: '14-day pace collapsed',    ar: 'انهارت وتيرة ١٤ يومًا' },
+  acceptDrop:   { en: 'acceptance ↘',             ar: 'قبول ↘' },
+  tierSlip:     { en: 'tier slip',                ar: 'تراجع فئة' },
+};
+function dkLang() { try { return localStorage.getItem('mohm_lang') === 'ar' ? 'ar' : 'en'; } catch (_) { return 'en'; } }
+function t(key) { const e = DK_T[key]; return e ? (e[dkLang()] || e.en) : key; }
+function setDeckLang(l) {
+  try { localStorage.setItem('mohm_lang', l === 'ar' ? 'ar' : 'en'); } catch (_) {}
+  renderToday();
+}
+
+// Slipping drivers (tier slip / pace collapse / acceptance drop) — data + DECK list.
+// Same signals as the old attention strip; now feeds one alert-rail row + a
+// collapsible list, instead of a permanent box. Returns { count, listHtml }.
+function dkTodaySlipping(R, W) {
   const { current, projectable, TIERS, monthSel } = R;
   const tierName = b => b >= 3 ? '6k' : b === 2 ? '5k' : b === 1 ? '4k' : '<4k';
   const esc = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const flagged = [];
   current.forEach(d => {
-    if (d.blocked) return;                                  // blockers have their own tile
+    if (d.blocked) return;                                  // blockers have their own card
     const flags = []; let sev = 0;
     if (projectable && !d.idle) {                            // 1) forward tier slip
       const bankBand = netTierBand(d.net);
       if (bankBand > d.band) {
         const lost = Math.max(0, bonusFor(TIERS[bankBand-1], monthSel).company - (d.companyBonus || 0));
-        flags.push({ t:'tier', txt:`tier slip ${tierName(bankBand)}→${tierName(d.band)} pace · −${fmt(Math.round(lost))} SAR bonus at risk` });
+        flags.push({ t:'tier', txt:`${t('tierSlip')} ${tierName(bankBand)}→${tierName(d.band)} · −${fmt(Math.round(lost))} SAR ${t('bonusAtRisk')}` });
         sev += 100000 + lost;
       }
     }
     const w = W.map[d.key];                                  // 2) pace collapse vs own baseline
     if (w && w.priorDays >= 3 && w.priorNet >= 800 && w.recentNet < w.priorNet * 0.5) {
       const drop = Math.round(w.priorNet - w.recentNet);
-      flags.push({ t:'pace', txt:`14-day pace collapsed ${fmt(Math.round(w.priorNet))}→${fmt(Math.round(w.recentNet))} SAR (−${fmt(drop)})` });
+      flags.push({ t:'pace', txt:`${t('paceCollapsed')} ${fmt(Math.round(w.priorNet))}→${fmt(Math.round(w.recentNet))} SAR` });
       sev += 1000 + drop;
     }
     if (d.accDrop) {                                         // 3) acceptance drop
-      flags.push({ t:'acc', txt:`acceptance ↘${d.accDrop}pp vs prior week` });
+      flags.push({ t:'acc', txt:`${t('acceptDrop')}${d.accDrop}pp` });
       sev += d.accDrop;
     }
     if (flags.length) flagged.push({ d, flags, sev });
   });
   flagged.sort((a,b) => b.sev - a.sev);
-  if (!flagged.length)
-    return `<div style="font-size:12px;color:var(--text-muted);padding:7px 12px;margin:0 4px 14px;border:1px solid var(--border);border-radius:10px">✓ No pace, tier or acceptance red flags across the fleet right now.</div>`;
+  if (!flagged.length) return { count: 0, listHtml: '' };
   const top = flagged.slice(0, 8);
   const nm = d => lookupForeignName(d.name) || d.name;
-  const badge = f => `<span style="font-size:11px;color:${f.t==='tier'?'var(--red)':f.t==='pace'?'var(--amber)':'var(--text-muted)'}">${f.txt}</span>`;
+  const col = f => f.t === 'tier' ? 'var(--dk-danger)' : f.t === 'pace' ? 'var(--dk-warn)' : 'var(--dk-mut)';
   const rows = top.map(({ d, flags }) =>
-    `<div class="today-row" onclick="openModal('${esc(d.name)}')" style="cursor:pointer;display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:5px 8px;border-radius:5px;font-size:12px;border-top:1px solid var(--border)">
-      <span style="font-weight:600;white-space:nowrap">${nm(d)}</span>
-      <span style="text-align:right;line-height:1.55">${flags.map(badge).join(' <span style="color:var(--text-muted)">·</span> ')}</span>
+    `<div class="dk-row click" onclick="openModal('${esc(d.name)}')">
+      <span style="font-weight:600;color:var(--dk-hi);white-space:nowrap">${nm(d)}</span>
+      <span style="text-align:end;line-height:1.55;font-size:11px">${flags.map(f => `<span style="color:${col(f)}">${f.txt}</span>`).join(' <span style="color:var(--dk-dim)">·</span> ')}</span>
     </div>`).join('');
   const more = flagged.length > top.length
-    ? `<div style="font-size:11px;color:var(--text-muted);padding:5px 8px">+${flagged.length-top.length} more slipping — full list in 📋 Chase</div>` : '';
-  return `<div style="border:1px solid var(--amber,#f59e0b);border-radius:10px;padding:8px 6px 6px;margin:0 4px 14px;background:rgba(255,170,0,.05)">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:2px 8px 5px">
-      <b style="font-size:13px;color:var(--amber)">⚠ Needs attention — ${flagged.length}</b>
-      <span style="font-size:11px;color:var(--text-muted)">tier slip · pace collapse · acceptance drop</span>
-    </div>
-    ${rows}${more}
-  </div>`;
+    ? `<div class="dk-row"><span class="k">+${flagged.length - top.length} ${t('moreSlipping')}</span></div>` : '';
+  return { count: flagged.length, listHtml: `<div class="dk-slip" id="dkSlipList" style="display:none">${rows}${more}</div>` };
 }
 
 // Build-170: daily pulse — the most-recent DATA day vs the day before (fleet net · active ·
@@ -13839,22 +14075,24 @@ function computeDailyPulse() {
   }
   return { latest: latest.period, prior: prior ? prior.period : null, L: agg(latest), P: prior ? agg(prior) : null, daysAgo };
 }
-function buildTodayPulse() {
+// DECK status readout data: `DATA 05 JUL · AUTO 00:52 ✓` + staleness flag.
+// Source is INFERRED from the newest entry's upload hour (≈21:00-01:30 UTC =
+// the midnight cron) until the codec carries a real `s` source tag (fix F1 in
+// BOLT_DATA_INTEGRITY_FINDINGS.md) — then swap the inference for the tag.
+function dkFreshness() {
   const p = computeDailyPulse();
-  if (!p) return '';
+  if (!p) return null;
   const stale = p.daysAgo != null && p.daysAgo >= 2;
-  const fresh = p.daysAgo == null ? '' : (p.daysAgo <= 0 ? 'today' : p.daysAgo === 1 ? 'yesterday' : p.daysAgo + 'd ago');
-  const pct = (cur, prev) => { if (prev == null || !prev) return ''; const d = cur - prev, c = d >= 0 ? 'var(--green)' : 'var(--red)';
-    return ` <span style="color:${c}">${d >= 0 ? '▲' : '▼'}${Math.abs(Math.round(d / Math.abs(prev) * 100))}%</span>`; };
-  const abs = (cur, prev) => { if (prev == null) return ''; const d = cur - prev, c = d >= 0 ? 'var(--green)' : 'var(--red)';
-    return ` <span style="color:${c}">${d >= 0 ? '+' : ''}${fmt(d)}</span>`; };
-  return `<div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:0 4px 12px;padding:9px 13px;border:1px solid ${stale ? 'var(--amber)' : 'var(--border)'};border-radius:8px;background:var(--bg-card);font-size:12px">
-    <span>📅 <b>Latest data</b> · ${p.latest}${fresh ? ` <span style="color:${stale ? 'var(--amber)' : 'var(--text-muted)'}">(${fresh}${stale ? " — upload today's CSV" : ''})</span>` : ''}</span>
-    <span style="color:var(--text-muted)">Fleet net <b style="color:var(--text)">${fmt(Math.round(p.L.net))}</b>${pct(p.L.net, p.P && p.P.net)}</span>
-    <span style="color:var(--text-muted)">Active <b style="color:var(--text)">${p.L.active}</b>${abs(p.L.active, p.P && p.P.active)}</span>
-    <span style="color:var(--text-muted)">Trips <b style="color:var(--text)">${fmt(p.L.trips)}</b>${abs(p.L.trips, p.P && p.P.trips)}</span>
-    ${p.prior ? `<span style="color:var(--text-muted);font-size:11px">vs ${p.prior}</span>` : '<span style="color:var(--text-muted);font-size:11px">first day of data</span>'}
-  </div>`;
+  const hist = getHistory().slice().sort((a, b) => periodSortKey(b.period) - periodSortKey(a.period));
+  const u = hist[0] && hist[0].uploadedAt ? new Date(hist[0].uploadedAt) : null;
+  let srcLabel = '', timeLabel = '';
+  if (u && !isNaN(u)) {
+    const hUTC = u.getUTCHours();
+    srcLabel  = (hUTC >= 20 || hUTC <= 1) ? t('viaCron') : t('viaUpload');
+    timeLabel = u.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  }
+  const dayShort = String(p.latest).replace(/\s\d{4}$/, '').toUpperCase(); // "05 JUL"
+  return { pulse: p, stale, srcLabel, timeLabel, dayShort };
 }
 
 // Build-171: three daily-insight blocks for the Today tab.
@@ -13880,81 +14118,82 @@ function fleetNetSeries(nDays) {
   const sorted = getHistory().slice().sort((a, b) => periodSortKey(a.period) - periodSortKey(b.period));
   return sorted.slice(-nDays).map(h => ({ period: h.period, net: (h.drivers || []).reduce((s, d) => s + sN(d.netEarnings), 0) }));
 }
-function buildTodayInsights(R) {
-  if (!R || !R.current || !R.current.length) return '';
-  const nm = d => lookupForeignName(d.name) || d.name;
-
-  // 14-day fleet-net sparkline.
+// Money-card footer: 14-day sparkline + day-over-day movers. Charts are LTR
+// islands by design — time flows left→right in both languages.
+function dkMoneyFoot() {
   let sparkHtml = '';
   const series = fleetNetSeries(14);
   if (series.length >= 2) {
     const vals = series.map(s => s.net), mx = Math.max(...vals), mn = Math.min(...vals), rng = (mx - mn) || 1;
-    const W = 180, H = 32, pad = 3;
+    const W = 150, H = 26, pad = 3;
     const xy = i => [pad + i * (W - 2 * pad) / (series.length - 1), H - pad - ((series[i].net - mn) / rng) * (H - 2 * pad)];
     const pts = series.map((s, i) => xy(i).map(v => v.toFixed(1)).join(',')).join(' ');
     const [lx, ly] = xy(series.length - 1);
-    sparkHtml = `<div style="display:flex;align-items:center;gap:8px;padding:2px 0">
-      <span style="color:var(--text-muted);font-size:12px">📈 14-day fleet net</span>
-      <svg width="${W}" height="${H}" style="overflow:visible"><polyline points="${pts}" fill="none" stroke="var(--bolt-green)" stroke-width="1.5"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.5" fill="var(--bolt-green)"/></svg>
-      <span style="color:var(--text-muted);font-size:11px">${fmt(Math.round(mn))}–${fmt(Math.round(mx))} SAR/day</span></div>`;
+    sparkHtml = `<div dir="ltr" style="display:flex;align-items:center;gap:8px;padding:1px 0">
+      <span style="color:var(--dk-mut);font-size:11px">${t('fleetNet14')}</span>
+      <svg width="${W}" height="${H}" style="overflow:visible"><polyline points="${pts}" fill="none" stroke="var(--dk-brand)" stroke-width="1.5"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="2.5" fill="var(--dk-brand)"/></svg>
+      <span class="dk-num" style="color:var(--dk-dim);font-size:11px">${fmt(Math.round(mn))}–${fmt(Math.round(mx))}</span></div>`;
   }
-
-  // Top mover / decliner, latest data day vs the day before.
   let moverHtml = '';
   const mv = computeDailyMovers();
   if (mv) {
-    const one = (x, arrow, col) => `${arrow} <b>${lookupForeignName(x.name) || x.name}</b> <span style="color:${col}">${x.delta >= 0 ? '+' : ''}${fmt(Math.round(x.delta))}</span>`;
-    const up = (mv.up && mv.up.delta > 0) ? one(mv.up, '🔼', 'var(--green)') : '';
-    const dn = (mv.down && mv.down.delta < 0) ? one(mv.down, '🔽', 'var(--red)') : '';
-    if (up || dn) moverHtml = `<div style="font-size:12px;padding:2px 0"><span style="color:var(--text-muted)">Day-over-day:</span> ${up}${up && dn ? ' · ' : ''}${dn} <span style="color:var(--text-muted);font-size:11px">(${mv.latest} vs ${mv.prior})</span></div>`;
+    const one = (x, arrow, col) => `${arrow} <b style="color:var(--dk-text)">${lookupForeignName(x.name) || x.name}</b> <span class="dk-num" style="color:${col}">${x.delta >= 0 ? '+' : ''}${fmt(Math.round(x.delta))}</span>`;
+    const up = (mv.up && mv.up.delta > 0) ? one(mv.up, '▲', 'var(--dk-brand)') : '';
+    const dn = (mv.down && mv.down.delta < 0) ? one(mv.down, '▼', 'var(--dk-danger)') : '';
+    if (up || dn) moverHtml = `<div style="font-size:11px;padding:1px 0;color:var(--dk-mut)">${t('dayOverDay')}: ${up}${up && dn ? ' · ' : ''}${dn}</div>`;
   }
-
-  // Tier moves — this month's PROJECTED tier vs last month's ACTUAL tier.
-  let tierHtml = '';
-  if (R.projectable) {
-    const [y, mn2] = R.monthSel.split('-').map(Number);
-    const pm0 = mn2 === 1 ? 11 : mn2 - 2, py = mn2 === 1 ? y - 1 : y;
-    const prevLabel = new Date(py, pm0, 1).toLocaleDateString('en-GB', { month: 'short' });
-    const bandOf = R.bandOf, TIERS = R.TIERS;
-    const bandLabel = b => b === 0 ? '<4k' : (TIERS[b - 1] / 1000) + 'k';
-    // Early-month gate: on day 1-4 the run-rate projection (×~15) is too noisy to compare
-    // tiers — same reason the Ambassadors tab gates its pace at day 5. Hold the comparison.
-    if (R.isCurrentMonth && R.elapsedDays < 5) {
-      tierHtml = `<div style="font-size:12px;padding:2px 0;color:var(--text-muted)">🎚 Tier moves vs ${prevLabel} — firms up after day 5 (projection too early at day ${R.elapsedDays})</div>`;
-    } else {
-      const ups = [], downs = [];
-      R.current.forEach(d => {
-        if (d.idle) return;
-        const last = getMonthlyNet(null, d.name, pm0, py);
-        if (last <= 0) return;                        // absent last month → not a "move"
-        const lb = bandOf(last);
-        if (d.band > lb) ups.push({ d, lb, tb: d.band });
-        else if (d.band < lb) downs.push({ d, lb, tb: d.band });
-      });
-      ups.sort((a, b) => (b.tb - b.lb) - (a.tb - a.lb));
-      downs.sort((a, b) => (a.tb - a.lb) - (b.tb - b.lb));
-      const chip = (arr, col, arrow) => arr.length ? `<span style="color:${col}">${arrow}${arr.length}</span> ${arr.slice(0, 2).map(x => `<span style="color:var(--text-muted)">${nm(x.d)} ${bandLabel(x.lb)}→${bandLabel(x.tb)}</span>`).join(', ')}${arr.length > 2 ? ` +${arr.length - 2}` : ''}` : '';
-      tierHtml = (ups.length || downs.length)
-        ? `<div style="font-size:12px;padding:2px 0"><span style="color:var(--text-muted)">🎚 Tier moves vs ${prevLabel} (projected):</span> ${chip(ups, 'var(--green)', '▲')}${ups.length && downs.length ? ' · ' : ''}${chip(downs, 'var(--red)', '▼')}</div>`
-        : `<div style="font-size:12px;padding:2px 0;color:var(--text-muted)">🎚 No projected tier moves vs ${prevLabel} yet</div>`;
-    }
-  }
-
-  if (!sparkHtml && !moverHtml && !tierHtml) return '';
-  return `<div style="margin:0 4px 12px;padding:8px 13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card)">${sparkHtml}${moverHtml}${tierHtml}</div>`;
+  return sparkHtml + moverHtml;
 }
 
+// Tier moves vs last month (projected) — one compact line under the ladder
+// instrument. Early-month gate unchanged: run-rate ×~15 on day 1-4 is noise.
+function dkTierMoves(R) {
+  if (!R.projectable) return '';
+  const nm = d => lookupForeignName(d.name) || d.name;
+  const [y, mn2] = R.monthSel.split('-').map(Number);
+  const pm0 = mn2 === 1 ? 11 : mn2 - 2, py = mn2 === 1 ? y - 1 : y;
+  const prevLabel = new Date(py, pm0, 1).toLocaleDateString(dkLang() === 'ar' ? 'ar-SA-u-ca-gregory-nu-latn' : 'en-GB', { month: 'short' });
+  if (R.isCurrentMonth && R.elapsedDays < 5)
+    return `<span style="color:var(--dk-dim)">${t('tierMoves')} ${prevLabel}: — (d${R.elapsedDays})</span>`;
+  const bandOf = R.bandOf, TIERS = R.TIERS;
+  const bandLabel = b => b === 0 ? '<4k' : (TIERS[b - 1] / 1000) + 'k';
+  const ups = [], downs = [];
+  R.current.forEach(d => {
+    if (d.idle) return;
+    const last = getMonthlyNet(null, d.name, pm0, py);
+    if (last <= 0) return;                        // absent last month → not a "move"
+    const lb = bandOf(last);
+    if (d.band > lb) ups.push({ d, lb, tb: d.band });
+    else if (d.band < lb) downs.push({ d, lb, tb: d.band });
+  });
+  if (!ups.length && !downs.length) return `<span style="color:var(--dk-dim)">${t('tierMoves')} ${prevLabel}: 0</span>`;
+  ups.sort((a, b) => (b.tb - b.lb) - (a.tb - a.lb));
+  downs.sort((a, b) => (a.tb - a.lb) - (b.tb - b.lb));
+  const top = [...ups.slice(0, 1).map(x => `<span style="color:var(--dk-mut)">${nm(x.d)} ${bandLabel(x.lb)}→${bandLabel(x.tb)}</span>`),
+               ...downs.slice(0, 1).map(x => `<span style="color:var(--dk-mut)">${nm(x.d)} ${bandLabel(x.lb)}→${bandLabel(x.tb)}</span>`)];
+  return `${t('tierMoves')} ${prevLabel}: ` +
+    (ups.length ? `<span style="color:var(--dk-brand)">▲${ups.length}</span> ` : '') +
+    (downs.length ? `<span style="color:var(--dk-danger)">▼${downs.length}</span> ` : '') + top.join(' · ');
+}
+
+// ═══ TODAY — the DECK exemplar: a daily ACTION cockpit ═══════════════════════
+// Layout contract (every tab converts to this — BOLT_DESIGN_SYSTEM.md §3):
+//   deck header → alert rail → stat strip → DO-NEXT action queue → domain cards.
+// All compute functions are untouched; only the presentation is DECK.
 function renderToday() {
   const el = document.getElementById('todayContent');
   if (!el) return;
+  const L = dkLang(), isAr = L === 'ar';
   const R = computeRosterForMonth('');                 // latest month with data
   if (!R || !R.viewData || !R.viewData.length) {
     el.innerHTML = `<div class="empty-state"><div class="empty-icon">🎯</div><div class="empty-title">No fleet data yet</div><div class="empty-sub">Pull from cloud (⇩ PULL above) or upload a Bolt CSV — Today lights up automatically.</div></div>`;
     return;
   }
   const { current, periodLabel, projectable, isCurrentMonth, remTotal, monthSel, blockedCount } = R;
+  const esc = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const nmt = d => lookupForeignName(d.name) || d.name;
 
-  // Money
+  // ── Money (calcs unchanged) ──
   const monthNet  = current.reduce((s,d)=>s+d.net,0);
   const projBonus = current.reduce((s,d)=>s+(d.idle?0:d.companyBonus),0);
   const [y, m] = monthSel.split('-').map(Number);
@@ -13968,33 +14207,23 @@ function renderToday() {
     const dayN = new Date(periodSortKey(h.period)).getDate();
     if (dayN > dayCut) return;
     (h.drivers||[]).forEach(d => prevNet += sN(d.netEarnings)); });
-  const prevLabel = new Date(py, pm0, 1).toLocaleDateString('en-GB',{month:'short'})
-    + (isCurrentMonth ? ` (first ${dayCut} day${dayCut!==1?'s':''})` : ' (full month)');
+  const prevMonthName = new Date(py, pm0, 1).toLocaleDateString(isAr ? 'ar-SA-u-ca-gregory-nu-latn' : 'en-GB', { month: 'short' });
+  const deltaPct = prevNet > 0 ? Math.round((monthNet - prevNet) / prevNet * 100) : null;
 
-  // Chase
+  // ── Chase signals (calcs unchanged) ──
   const idleN = current.filter(d=>d.idle && !d.blocked).length;
   const slowN = projectable ? current.filter(d=>!d.idle && !d.blocked && d.band===0).length : 0;
   const easy  = current.filter(d=>d.pushFeasible);
   const easySar = easy.reduce((s,d)=>s+d.unlocks,0);
-  // Build-165: put NAMES on the tile, not just counts — biggest idle earner (by recent
-  // earning), best easy tier win, steepest 14-day drop. W is also reused by the
-  // ⚠ attention strip below, so the window math is computed exactly once.
   const W = computeTrailingWindows();
   const recentEarn = k => { const w = W.map[k]; return w ? w.recentNet + w.priorNet : 0; };
   const idleTop = current.filter(d=>d.idle && !d.blocked).map(d=>({d,v:recentEarn(d.key)}))
     .filter(x=>x.v>0).sort((a,b)=>b.v-a.v)[0];
-  const easyTop = [...easy].sort((a,b)=> (b.unlocks-a.unlocks) || (a.pushExtra-b.pushExtra))[0];
   const dropTop = current.filter(d=>!d.blocked && !d.idle).map(d=>{ const w=W.map[d.key];
       const drop = (w && w.priorDays>=3 && w.priorNet>=800 && w.recentNet < w.priorNet*0.5) ? (w.priorNet-w.recentNet) : 0;
-      return { d, drop }; }).filter(x=>x.drop>0).sort((a,b)=>b.drop-a.drop)[0];
-  const nmt = d => lookupForeignName(d.name) || d.name;
-  const chaseNames = [
-    idleTop ? `💤 Biggest idle earner: <b>${nmt(idleTop.d)}</b> <span style="color:var(--text-muted)">(~${fmt(Math.round(idleTop.v))} SAR last 28d)</span>` : '',
-    easyTop ? `⚡ Best easy win: <b>${nmt(easyTop)}</b> <span style="color:var(--text-muted)">→ ${easyTop.nextFloor/1000}k (+${fmt(easyTop.unlocks)})</span>` : '',
-    dropTop ? `🔻 Steepest drop: <b>${nmt(dropTop.d)}</b> <span style="color:var(--text-muted)">(−${fmt(Math.round(dropTop.drop))} SAR vs prior 14d)</span>` : ''
-  ].filter(Boolean);
+      return { d, drop, w }; }).filter(x=>x.drop>0).sort((a,b)=>b.drop-a.drop)[0];
 
-  // Bonus health
+  // ── Bonus health (calcs unchanged) ──
   const profiles = loadCourierProfiles();
   const noAmb = current.filter(d => d.net > 0 && !(profiles[d.key] && profiles[d.key].ambassador)).length;
   let natPending = 0;
@@ -14003,72 +14232,177 @@ function renderToday() {
   const reconDue = R.months.includes(prevKey) && typeof isMonthReconciled === 'function' && !isMonthReconciled(prevKey);
   const noProfile = current.filter(d => d.net > 0 && !Object.prototype.hasOwnProperty.call(profiles, d.key)).length;
 
-  const dateLine = new Date().toLocaleDateString('en-GB',{weekday:'long', day:'2-digit', month:'long'});
-  const big  = (v,unit) => `<span style="font-size:26px;font-weight:800;font-family:var(--mono)">${v}</span>${unit?`<span style="font-size:12px;color:var(--text-muted)"> ${unit}</span>`:''}`;
-  // Rows can carry their OWN deep link (Build-160) — clicking "Idle" lands on the idle
-  // drill list, not just the Analytics tab. Hover affordance via the todayRow class.
-  const row  = (label, valHtml, click) => `<div ${click?`class="today-row" onclick="${click}"`:''} style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:3px 4px;font-size:12px;border-radius:4px;${click?'cursor:pointer':''}"><span style="color:var(--text-muted)">${label}${click?' ▸':''}</span><span>${valHtml}</span></div>`;
-  const attn = n => n ? `<b style="color:var(--amber)">${n}</b>` : `<span style="color:var(--text-muted)">0</span>`;
-  const tile = (click, icon, title, body, footer) => `
-    <div class="chart-card" onclick="${click}" style="cursor:pointer;display:flex;flex-direction:column;gap:6px;min-width:230px;flex:1 1 260px">
-      <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:center"><span>${icon} ${title}</span><span style="font-size:11px;color:var(--text-muted)">open →</span></div>
-      <div style="flex:1">${body}</div>
-      ${footer ? `<div style="font-size:11px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:6px">${footer}</div>` : ''}
+  // ── Tier ladder counts — the funnel lens (projected bands, workers only) ──
+  const bandCounts = [0, 0, 0, 0];
+  if (projectable) current.forEach(d => { if (!d.blocked && !d.idle) bandCounts[d.band]++; });
+
+  // ── Freshness + slipping ──
+  const F = dkFreshness();
+  const slip = dkTodaySlipping(R, W);
+
+  // ── Deck header ──
+  const dateLine = new Date().toLocaleDateString(isAr ? 'ar-SA-u-ca-gregory-nu-latn' : 'en-GB', { weekday:'long', day:'2-digit', month:'long' });
+  const context = isCurrentMonth ? `${remTotal} ${t('daysLeftIn')} ${periodLabel}` : `${periodLabel} (${t('latestData')})`;
+  const statusChip = F ? `
+    <span class="dk-status${F.stale ? ' warn' : ''}" title="${t('latestData')}: ${F.pulse.latest} · ${F.srcLabel} ${F.timeLabel}">
+      <span class="dk-dot"></span>DATA ${F.dayShort}${F.timeLabel ? ` · ${F.srcLabel.toUpperCase()} ${F.timeLabel}` : ''} ${F.stale ? '⚠' : '✓'}
+    </span>` : '';
+  const header = `
+    <div class="dk-head">
+      <div>
+        <div class="dk-title">${t('today')} — ${dateLine}</div>
+        <div class="dk-context">${context}</div>
+      </div>
+      <div class="dk-headside">
+        ${statusChip}
+        <span class="dk-lang" title="English / العربية">
+          <button class="${isAr ? '' : 'on'}" onclick="setDeckLang('en')">EN</button>
+          <button class="${isAr ? 'on' : ''}" onclick="setDeckLang('ar')">ع</button>
+        </span>
+        <button class="dk-btn pri" onclick="openChaseList()">${t('chaseList')}</button>
+      </div>
     </div>`;
 
-  const deltaPct = prevNet > 0 ? Math.round((monthNet - prevNet) / prevNet * 100) : null;
-  const moneyBody = `${big(fmt(Math.round(monthNet)),'SAR fleet net · '+periodLabel)}
-    ${row('Projected company bonus', projectable ? `<b style="color:var(--bolt-green)">+${fmt(projBonus)} SAR</b>` : '—', "todayGoExec(event)")}
-    ${row('vs '+prevLabel, prevNet ? `${fmt(Math.round(prevNet))} SAR <b style="color:${deltaPct>=0?'var(--green)':'var(--red)'}">${deltaPct!=null?(deltaPct>=0?'+':'')+deltaPct+'%':''}</b>` : '—')}`;
+  // ── Alert rail — only what needs attention, disappears when calm ──
+  const alerts = [];
+  if (blockedCount) alerts.push({ cls:'danger', n:blockedCount, txt:t('blockedOnBolt'), go:"todayGo('blocks')" });
+  if (F && F.stale) alerts.push({ cls:'warn', n:F.pulse.daysAgo + 'd', txt:t('staleData'), go:"todayGo('settings')" });
+  if (reconDue) alerts.push({ cls:'warn', n:monthLabel(prevKey), txt:t('reconcileDue'), go:'todayGoExec(event)' });
+  if (slip.count) alerts.push({ cls:'warn', n:slip.count, txt:t('slipping'), go:'dkToggleSlip(event)' });
+  const rail = alerts.length ? `<div class="dk-rail">${alerts.map(a =>
+    `<div class="dk-alert ${a.cls}" onclick="${a.go}"><span class="n">${a.n}</span><span>${a.txt}</span><span class="go">${t('open')} →</span></div>`).join('')}</div>` : '';
 
-  const chaseBody = `${big(idleN + slowN, 'drivers need a push')}
-    ${row('Idle · no trips', attn(idleN), "todayDrill('idle',event)")}
-    ${row('Working below 4k pace', attn(slowN), "todayDrill('slow',event)")}
-    ${row('⚡ Easy tier wins', easy.length ? `<b style="color:var(--bolt-green)">${easy.length} worth +${fmt(easySar)} SAR</b>` : '<span style="color:var(--text-muted)">none right now</span>', "todayOpenChase(event)")}
-    ${chaseNames.length ? `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--border);font-size:11px;line-height:1.75">${chaseNames.join('<br>')}</div>` : ''}`;
-
-  const bonusBody = `${big(noAmb + natPending, 'attribution gaps')}
-    ${row('Earners with no ambassador', attn(noAmb))}
-    ${row('Nationality unconfirmed', attn(natPending))}
-    ${row('Earners with no cost profile', attn(noProfile))}`;
-
-  const alertsBody = `${big(blockedCount + (reconDue?1:0), 'blockers')}
-    ${row('Blocked on Bolt', blockedCount ? `<b style="color:var(--red)">${blockedCount}</b>` : '<span style="color:var(--text-muted)">0</span>')}
-    ${row(monthLabel(prevKey)+' reconcile', reconDue ? '<b style="color:var(--amber)">due</b>' : '<span style="color:var(--green)">done ✓</span>', "todayGoExec(event)")}`;
-
-  el.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;padding:14px 4px 12px">
-      <div style="font-size:18px;font-weight:800">🎯 Today — ${dateLine}</div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <span style="font-size:11px;color:var(--text-muted)">${isCurrentMonth ? remTotal + ' day' + (remTotal!==1?'s':'') + ' left in ' + periodLabel + ' incl. today' : periodLabel + ' (latest data)'}</span>
-        <button class="save-btn" style="padding:5px 14px;font-size:11px" onclick="openChaseList()">📋 CHASE LIST</button>
-      </div>
+  // ── Stat strip — six instruments ──
+  const tierPills = projectable ? `
+    <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
+      <span class="dk-tier t6 hollow">6K <b>${bandCounts[3]}</b></span>
+      <span class="dk-tier t5 hollow">5K <b>${bandCounts[2]}</b></span>
+      <span class="dk-tier t4 hollow">4K <b>${bandCounts[1]}</b></span>
+      <span class="dk-tier t0">&lt;4K <b>${bandCounts[0]}</b></span>
     </div>
-    ${buildTodayPulse()}
-    ${buildTodayInsights(R)}
-    ${buildTodayAttention(R, W)}
-    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:stretch">
-      ${tile("todayGoExec(event)",'💰','Money', moneyBody, '👔 Executive P&L — company money only')}
-      ${tile("todayOpenChase(event)",'📞','Chase', chaseBody, 'Opens the WhatsApp-ready chase list · tap a row for that driver list')}
-      <div class="chart-card" onclick="todayGo('pipeline')" style="cursor:pointer;display:flex;flex-direction:column;gap:6px;min-width:230px;flex:1 1 260px">
-        <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:center"><span>🚦 Onboarding</span><span style="font-size:11px;color:var(--text-muted)">open →</span></div>
-        <div style="flex:1" id="todayOnb"><span style="font-size:12px;color:var(--text-muted)">loading…</span></div>
-        <div style="font-size:11px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:6px">Funnel, bottlenecks and stuck drivers live in Onboarding</div>
+    <div class="d" style="margin-block-start:6px">${dkTierMoves(R)}</div>` : `<div class="v">—</div>`;
+  const strip = `
+    <div class="dk-strip">
+      <div class="dk-stat">
+        <div class="l">${t('fleetNet')}</div>
+        <div class="v">${fmt(Math.round(monthNet))}<small> SAR</small></div>
+        ${deltaPct != null ? `<div class="d ${deltaPct >= 0 ? 'up' : 'down'}">${deltaPct >= 0 ? '▲' : '▼'} ${Math.abs(deltaPct)}% ${t('vs')} ${prevMonthName}</div>` : ''}
       </div>
-      ${tile("todayGo('ambassadors')",'🎖','Bonus health', bonusBody, 'Fix all three in the Ambassadors tab worklists')}
-      ${tile("todayGo('blocks')",'⚠','Blockers', alertsBody, 'Blocked drivers live in Blocks; reconcile in Finance')}
+      <div class="dk-stat brand">
+        <div class="l">${t('projBonus')}</div>
+        <div class="v">${projectable ? '+' + fmt(projBonus) : '—'}<small>${projectable ? ' SAR' : ''}</small></div>
+      </div>
+      <div class="dk-stat" style="grid-column:span 2;min-width:230px">
+        <div class="l">${t('tierLadder')}</div>
+        ${tierPills}
+      </div>
+      <div class="dk-stat${(idleN + slowN) ? ' warn' : ''}">
+        <div class="l">${t('needsPush')}</div>
+        <div class="v">${idleN + slowN}</div>
+      </div>
+      <div class="dk-stat${blockedCount ? ' danger' : ''}">
+        <div class="l">${t('blocked')}</div>
+        <div class="v">${blockedCount}</div>
+      </div>
+      ${F ? `<div class="dk-stat">
+        <div class="l">${t('activeToday')}</div>
+        <div class="v">${F.pulse.L.active}</div>
+        <div class="d">${fmt(F.pulse.L.trips)} ${t('trips')}</div>
+      </div>` : ''}
     </div>`;
+
+  // ── DO-NEXT queue — every candidate priced in SAR, top 3 win ──
+  const cands = [];
+  [...easy].sort((a,b) => (b.unlocks - a.unlocks) || (a.pushExtra - b.pushExtra)).slice(0, 2).forEach(d => cands.push({
+    worth: d.unlocks, risk: false, name: d.name, who: nmt(d),
+    why: `${t('pushTo')} ${d.nextFloor/1000}k — +${fmt(d.pushExtra)} SAR${t('perDay')}`,
+    label: `+${fmt(d.unlocks)} SAR`,
+  }));
+  if (idleTop) cands.push({
+    worth: idleTop.v * 0.5, risk: true, name: idleTop.d.name, who: nmt(idleTop.d),
+    why: `${t('idleWas')} ~${fmt(Math.round(idleTop.v))} SAR ${t('last28')}`,
+    label: `${fmt(Math.round(idleTop.v))} SAR ${t('recoverable')}`,
+  });
+  if (dropTop) cands.push({
+    worth: dropTop.drop * 0.6, risk: true, name: dropTop.d.name, who: nmt(dropTop.d),
+    why: `${t('fellFrom')} ${fmt(Math.round(dropTop.w.priorNet))}→${fmt(Math.round(dropTop.w.recentNet))} SAR`,
+    label: `−${fmt(Math.round(dropTop.drop))} SAR ${t('dropped')}`,
+  });
+  cands.sort((a, b) => b.worth - a.worth);
+  const queueCards = cands.slice(0, 3).map((c, i) => `
+    <div class="dk-action${i === 0 ? ' first' : ''}">
+      <div class="rank">#${i + 1}</div>
+      <div class="who">${c.who}</div>
+      <div class="why">${c.why}</div>
+      <div class="worth${c.risk ? ' risk' : ''}">${c.label}</div>
+      <div class="acts">
+        <button class="dk-btn sm" onclick="openModal('${esc(c.name)}')">${t('openDriver')}</button>
+        <button class="dk-btn sm" onclick="openChaseList()">${t('chaseList')}</button>
+      </div>
+    </div>`).join('');
+  const queue = `
+    <div class="dk-bulk"><span class="t">${t('doNext')}</span>${easy.length ? `<span class="c">${easy.length} × ${t('easyWins')} = +${fmt(easySar)} SAR</span>` : ''}</div>
+    ${cands.length ? `<div class="dk-queue">${queueCards}</div>`
+                   : `<div class="dk-card" style="color:var(--dk-mut);font-size:12px">${t('allCalm')}</div>`}`;
+
+  // ── Domain cards ──
+  const kRow = (label, valHtml, click) => `<div class="dk-row${click ? ' click' : ''}"${click ? ` onclick="${click}"` : ''}><span class="k">${label}${click ? ' ▸' : ''}</span><span class="v">${valHtml}</span></div>`;
+  const attn = n => n ? `<span class="dk-warn-n">${n}</span>` : `<span style="color:var(--dk-dim)">0</span>`;
+  const card = (click, title, body, footer) => `
+    <div class="dk-card click" onclick="${click}">
+      <div class="dk-card-t"><span class="t">${title}</span><span class="go">${t('open')} →</span></div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:2px">${body}</div>
+      ${footer ? `<div class="dk-foot">${footer}</div>` : ''}
+    </div>`;
+
+  const moneyBody = `<div class="dk-big">${fmt(Math.round(monthNet))}<small> SAR · ${periodLabel}</small></div>
+    ${kRow(t('projBonus'), projectable ? `<span class="dk-ok-n">+${fmt(projBonus)}</span>` : '—', 'todayGoExec(event)')}
+    ${kRow(`${t('vs')} ${prevMonthName}`, prevNet ? `${fmt(Math.round(prevNet))} <span class="${deltaPct >= 0 ? 'dk-ok-n' : 'dk-danger-n'}">${deltaPct != null ? (deltaPct >= 0 ? '+' : '') + deltaPct + '%' : ''}</span>` : '—')}`;
+  const chaseBody = `<div class="dk-big">${idleN + slowN}<small> ${t('driversNeedPush')}</small></div>
+    ${kRow(t('idleNoTrips'), attn(idleN), "todayDrill('idle',event)")}
+    ${kRow(t('belowPace'), attn(slowN), "todayDrill('slow',event)")}
+    ${kRow(t('easyWins'), easy.length ? `<span class="dk-ok-n">${easy.length} · +${fmt(easySar)}</span>` : `<span style="color:var(--dk-dim)">0</span>`, 'todayOpenChase(event)')}`;
+  const bonusBody = `<div class="dk-big">${noAmb + natPending}<small> ${t('attributionGaps')}</small></div>
+    ${kRow(t('noAmbassador'), attn(noAmb))}
+    ${kRow(t('natUnconfirmed'), attn(natPending))}
+    ${kRow(t('noCostProfile'), attn(noProfile))}`;
+  const blockBody = `<div class="dk-big">${blockedCount + (reconDue ? 1 : 0)}<small> ${t('blockersN')}</small></div>
+    ${kRow(t('blocked'), blockedCount ? `<span class="dk-danger-n">${blockedCount}</span>` : `<span style="color:var(--dk-dim)">0</span>`)}
+    ${kRow(monthLabel(prevKey) + ' ' + t('reconcileDue'), reconDue ? `<span class="dk-warn-n">●</span>` : `<span class="dk-ok-n">✓</span>`, 'todayGoExec(event)')}`;
+
+  const grid = `
+    <div class="dk-bulk"><span class="t">${t('domains')}</span></div>
+    <div class="dk-grid">
+      ${card('todayGoExec(event)', t('money'), moneyBody, dkMoneyFoot())}
+      ${card('todayOpenChase(event)', t('chase'), chaseBody, '')}
+      <div class="dk-card click" onclick="todayGo('pipeline')">
+        <div class="dk-card-t"><span class="t">${t('onboarding')}</span><span class="go">${t('open')} →</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:2px" id="todayOnb"><span style="font-size:12px;color:var(--dk-dim)">…</span></div>
+      </div>
+      ${card("todayGo('ambassadors')", t('bonusHealth'), bonusBody, '')}
+      ${card("todayGo('blocks')", t('blockers'), blockBody, '')}
+    </div>`;
+
+  el.innerHTML = `<div class="dk dk-shell" lang="${L}" dir="${isAr ? 'rtl' : 'ltr'}">
+    ${header}${rail}${strip}${queue}${slip.listHtml}${grid}
+  </div>`;
   renderTodayOnboarding();
 }
 
-// Fills the Onboarding tile async from the same cached fetches the 🚦 tab uses.
+function dkToggleSlip(ev) {
+  if (ev) ev.stopPropagation();
+  const el = document.getElementById('dkSlipList');
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+// Fills the Onboarding card async from the same cached fetches the 🚦 tab uses.
 async function renderTodayOnboarding() {
   const host = document.getElementById('todayOnb');
   if (!host) return;
-  if (!supabaseOn()) { host.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">Connect Supabase to see the onboarding funnel.</span>'; return; }
+  if (!supabaseOn()) { host.innerHTML = '<span style="font-size:12px;color:var(--dk-dim)">Connect Supabase to see the onboarding funnel.</span>'; return; }
   try {
     const [snap, log] = await Promise.all([fetchStageSnapshot(), fetchStageLog()]);
-    if (!(snap.length || log.length)) { host.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">No pipeline data yet.</span>'; return; }
+    if (!(snap.length || log.length)) { host.innerHTML = '<span style="font-size:12px;color:var(--dk-dim)">No pipeline data yet.</span>'; return; }
     const now = Date.now(), DAY = 86400000;
     const inPipe = snap.filter(r => !PIPELINE_TERMINAL.has(r.current_stage)).length;
     const stuck  = snap.filter(r => { if (PIPELINE_TERMINAL.has(r.current_stage)) return false;
@@ -14077,13 +14411,12 @@ async function renderTodayOnboarding() {
     const wk = r => { const t = Date.parse(r.changed_at); return !isNaN(t) && (now - t) < 7*DAY; };
     const lost7 = new Set(tracked.filter(r => PIPELINE_LOSS.has(r.to_stage) && wk(r)).map(r => r.driver_id||r.name)).size;
     const act7  = new Set(tracked.filter(r => r.to_stage === 'Active' && wk(r)).map(r => r.driver_id||r.name)).size;
-    const big  = (v,unit) => `<span style="font-size:26px;font-weight:800;font-family:var(--mono)">${v}</span><span style="font-size:12px;color:var(--text-muted)"> ${unit}</span>`;
-    const row  = (label, valHtml) => `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:3px 0;font-size:12px"><span style="color:var(--text-muted)">${label}</span><span>${valHtml}</span></div>`;
-    host.innerHTML = `${big(inPipe,'in the pipeline')}
-      ${row('Stuck > '+PIPELINE_STUCK_DAYS+' days', stuck ? `<b style="color:var(--red)">${stuck}</b>` : '<span style="color:var(--green)">0</span>')}
-      ${row('Activated this week', `<b style="color:var(--green)">${act7}</b>`)}
-      ${row('Lost this week', lost7 ? `<b style="color:var(--red)">${lost7}</b>` : '<span style="color:var(--text-muted)">0</span>')}`;
-  } catch (_) { host.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">Pipeline data unavailable.</span>'; }
+    const kRow = (label, valHtml) => `<div class="dk-row"><span class="k">${label}</span><span class="v">${valHtml}</span></div>`;
+    host.innerHTML = `<div class="dk-big">${inPipe}<small> ${t('inPipeline')}</small></div>
+      ${kRow(`${t('stuckOver')} ${PIPELINE_STUCK_DAYS} ${t('days')}`, stuck ? `<span class="dk-danger-n">${stuck}</span>` : `<span class="dk-ok-n">0</span>`)}
+      ${kRow(t('activatedWk'), `<span class="dk-ok-n">${act7}</span>`)}
+      ${kRow(t('lostWk'), lost7 ? `<span class="dk-danger-n">${lost7}</span>` : `<span style="color:var(--dk-dim)">0</span>`)}`;
+  } catch (_) { host.innerHTML = '<span style="font-size:12px;color:var(--dk-dim)">Pipeline data unavailable.</span>'; }
 }
 
 // ═══════════════════════════════════════════
