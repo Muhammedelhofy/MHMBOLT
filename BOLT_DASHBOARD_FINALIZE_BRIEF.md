@@ -18,6 +18,14 @@ Also read Fable's design pass on branch `claude/finalize-design`: `BOLT_DESIGN_S
 > Everything ELSE in Fable's specs (design language, F1-F8, tab reorganizations, driver panel, filters,
 > de-cliché, remove M8 orb/RADAR/GALAXY/SOLAR) stands as written.
 
+> ✅ **ALL 5 DECISIONS FINAL (2026-07-06) — execution unblocked:**
+> - **D-1** = delete the dead finance UI (rent/salary/fleet-cut columns, By Model tab), keep the data fields dormant in storage.
+> - **D-2** = KEEP the light theme + FIX its colours (proper light variant).
+> - **D-3** = KEEP BOTH — Today (daily cockpit) + Star Map (rebuilt high-level command centre, no driver list).
+> - **D-4** = document the ~2-driver Arabic/EN name-split quirk + SKIP the F6 rewrite (backlog, not this finalize).
+> - **D-5** = per-session deploy-OK (Muhammad's standing rule); the S6 C1 concurrency fix on a night he can watch the midnight cron.
+> - **Arabic toggle** = KEEP, quality-gated (ships per tab only when fully clean RTL; drop-if-worse).
+
 ---
 
 ## ★ BUSINESS MODEL — the lens for EVERYTHING
