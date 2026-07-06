@@ -1774,6 +1774,20 @@ create policy "team access" on fleet_data
   </div>
 
   <div class="settings-section">
+    <div class="st-title">⟳ On-demand Sheet Sync</div>
+    <div class="st-desc">Pulls the onboarding sheet into Supabase right now, instead of waiting for the ~00:45 Riyadh cron. Needs the sync key you (or Muhammad) set as <b>DASH_SYNC_KEY</b> in Vercel — paste the same string below. Never logged or shown once saved.</div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
+      <input type="password" id="dashSyncKeyInput" placeholder="On-demand sync key — must match Vercel's DASH_SYNC_KEY" autocomplete="off" style="flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--mono);background:var(--bg);box-sizing:border-box">
+      <button class="save-btn" onclick="saveDashSyncKey()">Save Key</button>
+      <button class="save-btn" style="background:#fff;color:var(--text-muted);border:1px solid var(--border)" onclick="clearDashSyncKey()">Clear</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+      <button class="save-btn" onclick="syncSheetNow('settingsSyncStatus')">⟳ Sync sheet now</button>
+      <span id="settingsSyncStatus" style="font-size:11px;color:var(--text-muted)"></span>
+    </div>
+  </div>
+
+  <div class="settings-section">
     <div class="st-title">🩺 Data Health — Ambassador / Incentive data</div>
     <div class="st-desc">Flags data-quality issues in the onboarding sheet that affect attribution &amp; bonuses. Reflects the last nightly sheet-sync — your latest sheet edits appear after the next ~00:45 Riyadh sync.</div>
     <div id="dataHealthBody" style="margin-top:10px;font-size:12px;font-family:var(--mono);line-height:1.9">
@@ -6185,6 +6199,11 @@ const SB_ROW_ID    = 'fleet';
 function getSbUrl() { return (localStorage.getItem(SB_URL_STORE) || '').trim().replace(/\/+$/, ''); }
 function getSbKey() { return (localStorage.getItem(SB_KEY_STORE) || '').trim(); }
 function supabaseOn() { return !!getSbUrl() && !!getSbKey(); }
+
+// ── On-demand sheet sync (F5) — DASH_SYNC_KEY, kept separate from the Supabase anon
+// key above and never logged/echoed anywhere. ──────────────────────────────────
+const DASH_SYNC_KEY_STORE = 'khair_dash_sync_key';
+function getDashSyncKey() { return (localStorage.getItem(DASH_SYNC_KEY_STORE) || '').trim(); }
 function sbHeaders(extra) { return { apikey: getSbKey(), Authorization: 'Bearer ' + getSbKey(), ...(extra || {}) }; }
 
 // Unified cloud read/write — dispatch to Supabase if configured, else JSONBin.
@@ -7321,6 +7340,68 @@ async function testSupabase() {
     set('<span style="color:#34D399">✓ Supabase works — read + write succeeded.</span> Tap Fix Sync to push your data, then share the link.');
   } else {
     set('<span style="color:var(--red)">✗ Could write but not read — check the team-access policy (run the SQL snippet).</span>');
+  }
+}
+
+// ── On-demand sheet sync (F5) — Settings card + Onboarding trust-strip button share this.
+// Key is never logged/echoed; only ever read from localStorage to build the Authorization header.
+function saveDashSyncKey() {
+  const el = document.getElementById('dashSyncKeyInput');
+  const key = (el?.value || '').trim();
+  if (!key) { toast('Paste the sync key first.'); return; }
+  localStorage.setItem(DASH_SYNC_KEY_STORE, key);
+  if (el) el.value = '';
+  toast('Sync key saved.');
+}
+function clearDashSyncKey() {
+  localStorage.removeItem(DASH_SYNC_KEY_STORE);
+  const el = document.getElementById('dashSyncKeyInput'); if (el) el.value = '';
+  toast('Sync key cleared.');
+}
+let _dashSyncInFlight = false;
+async function syncSheetNow(statusElId) {
+  const setStatus = html => { if (!statusElId) return; const el = document.getElementById(statusElId); if (el) el.innerHTML = html; };
+  const mut = 'var(--dk-mut, var(--text-muted))', ok = 'var(--dk-brand, var(--green))',
+        bad = 'var(--dk-danger, var(--red))', warn = 'var(--dk-warn, var(--amber))';
+  if (_dashSyncInFlight) return;
+  if (IS_FILE_ORIGIN) { toast('Open via a web server to sync.'); return; }
+  const key = getDashSyncKey();
+  if (!key) { toast('Set your sync key in Settings first'); setStatus(`<span style="color:${warn}">No key set — see Settings</span>`); return; }
+  _dashSyncInFlight = true;
+  setStatus(`<span style="color:${mut}">Syncing…</span>`);
+  try {
+    const r = await fetch('/api/bolt/sync-sheet-now', { method: 'POST', headers: { Authorization: `Bearer ${key}` } });
+    let j = {}; try { j = await r.json(); } catch (_) {}
+    if (r.ok && j.ok) {
+      const drivers = j.synced ?? 0, ambs = j.ambassadorsSynced ?? 0;
+      setStatus(`<span style="color:${ok}">Synced ✓ (${drivers} driver${drivers === 1 ? '' : 's'}, ${ambs == null ? '—' : ambs} ambassador${ambs === 1 ? '' : 's'})</span>`);
+      toast(`Sheet synced — ${drivers} drivers, ${ambs == null ? '—' : ambs} ambassadors`);
+      // pipelineRefresh() replaces the whole trust strip (incl. this status span) — delay it
+      // so "Synced ✓" is actually visible for a moment instead of being wiped instantly.
+      setTimeout(() => pipelineRefresh(), 1400);
+      if (typeof refreshAmbassadorList === 'function') {
+        refreshAmbassadorList(true).then(() => { if (document.getElementById('ambassadors')?.classList.contains('active')) renderAmbassadorsView(); }).catch(() => {});
+      }
+      if (document.getElementById('settings')?.classList.contains('active')) renderDataHealth(true);
+    } else if (r.status === 401) {
+      setStatus(`<span style="color:${bad}">Key doesn't match Vercel</span>`);
+      toast("Sync key doesn't match the one set in Vercel.");
+    } else if (r.status === 429) {
+      const wait = j.retryAfterSeconds || 60;
+      setStatus(`<span style="color:${warn}">Just synced — wait ${wait}s</span>`);
+      toast(`Just synced — try again in ${wait}s`);
+    } else if (r.status === 400) {
+      setStatus(`<span style="color:${bad}">Not configured — set DASH_SYNC_KEY in Vercel</span>`);
+      toast(j.error || 'Sync not configured on the server yet.');
+    } else {
+      setStatus(`<span style="color:${bad}">Sync failed — ${j.error || r.status}</span>`);
+      toast(j.error || `Sync failed (${r.status})`);
+    }
+  } catch (e) {
+    setStatus(`<span style="color:${bad}">Sync failed — could not reach the server</span>`);
+    toast('Could not reach the sync endpoint.');
+  } finally {
+    _dashSyncInFlight = false;
   }
 }
 
@@ -11069,7 +11150,8 @@ function pipelineDashboardHtml(snapshot, log, source) {
   };
   const trust = `<div class="dk-card"><div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-family:var(--dk-mono);font-size:11px;color:var(--dk-mut)">
     ${tsChip('MIRROR', pipelineMirrorTs)}${tsChip('STAGES', stagesTs)}
-    <button class="dk-btn sm" disabled title="On-demand sheet → mirror sync — wired in S5 (F5)" style="opacity:.5;margin-inline-start:auto">⟳ Sync sheet now</button>
+    <span id="onbSyncStatus" style="margin-inline-start:auto"></span>
+    <button class="dk-btn sm" onclick="syncSheetNow('onbSyncStatus')" title="Pull the onboarding sheet into Supabase right now (needs a sync key set in Settings)">⟳ Sync sheet now</button>
     <button class="dk-btn sm" onclick="pipelineRefresh()" title="Re-read the latest synced data from Supabase">↻ Reload</button>
   </div></div>`;
 
