@@ -49,6 +49,7 @@ function packEntry(h) {
   return {
     p:  h.period,
     u:  h.uploadedAt,
+    s:  'cron',                 // F1 entry source — this is a full nightly API roster pull
     dc: drivers.length,
     ac: activeCount,
     to: h.totalOrders || 0,

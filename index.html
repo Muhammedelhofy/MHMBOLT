@@ -2023,7 +2023,21 @@ async function renderDataHealth(force) {
       `<div style="display:flex;justify-content:space-between;gap:10px;${sub ? 'opacity:.8;padding-left:14px' : ''}">
          <span>${sub ? '↳ ' : dot(n, warnOnly) + ' '}${label}</span><b>${n}</b></div>`;
 
-    box.innerHTML =
+    // F2 — fleet-roster reconciliation: the ONE fleet count + how it squares with the Bolt portal.
+    const rec = getRosterReconciliation();
+    const recLine = rec
+      ? `<div style="margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid var(--border)">
+           <div style="display:flex;justify-content:space-between;gap:10px">
+             <span>🛰 Fleet roster <span style="color:var(--text-muted);font-size:11px">(${rec.period}${rec.source ? ' · ' + rec.source : ''})</span></span>
+             <b>${rec.total}</b>
+           </div>
+           <div style="color:var(--text-muted);font-size:11px;margin-top:3px">
+             = <b style="color:var(--text)">${rec.portal}</b> on Bolt portal + ${rec.deactivated} deactivated
+             &nbsp;·&nbsp; ${rec.active} active · ${rec.suspended} blocked
+           </div>
+         </div>`
+      : '';
+    box.innerHTML = recLine +
       row('Duplicate phone numbers', dupGroups.length, false) +
       row('Tagged drivers not on Bolt', unmatched.length, true) +
       row('of those, "Active" stage', unmatchedActive.length, false, true) +
@@ -2145,7 +2159,7 @@ function confirmUpload() {
   document.getElementById('confirmOverlay').classList.remove('open');
   document.getElementById('headerPeriod').textContent = period;
 
-  saveToHistory(period, currentDrivers, pendingFilename, pInfo);
+  saveToHistory(period, currentDrivers, pendingFilename, pInfo, 'csv');
   // Record Bolt transfer amounts from this CSV into the payment log
   recordTransfersFromUpload(htmlDate, currentDrivers);
   // Integrity guard: warn if this upload produced any suspicious transfer log entries
@@ -2230,7 +2244,7 @@ async function runBoltSync() {
     const period = `${String(dy).padStart(2,'0')} ${mn} ${yr}`;
 
     const pInfo = { start:{ day:dy, month:mo-1, year:yr }, end:{ day:dy, month:mo-1, year:yr } };
-    saveToHistory(period, j.drivers, 'bolt-api-sync', pInfo);
+    saveToHistory(period, j.drivers, 'bolt-api-sync', pInfo, 'api');
     updateBlockLog(period, j.drivers);
 
     status.style.color = 'var(--bolt-green)';
@@ -2569,22 +2583,54 @@ function aggregateDriverRows(rows) {
 // blank the roster and wrongly mark the whole fleet as left. Keys mirror
 // buildAggregatedDrivers' map key (trimmed-lowercase name, driverId fallback) so
 // they compare 1:1.
-function getDepartedKeys() {
+// ─── F2 · ONE fleet-roster truth ─────────────────────────────────────────────
+// The fleet roster = the drivers of the latest ROSTER-BEARING entry — a full
+// nightly-cron / API pull (source 'cron'|'api'), never a partial CSV/activity day.
+// For pre-tag history (no source), an interim heuristic stands in: the latest entry
+// whose driver count is ≥ 80% of the recent 14-day max. This is the single number
+// every "fleet size" surface should read; period views instead count "with activity
+// in ⟨period⟩" (a genuinely different thing — union of who drove those days).
+function getRosterEntry() {
   const hist = getHistory();
+  if (!hist.length) return null;
+  const sorted = [...hist].sort((a,b) => periodSortKey(b.period) - periodSortKey(a.period));
+  const recentMax = Math.max(0, ...sorted.slice(0,14).map(h => (h.drivers||[]).length));
+  const threshold = recentMax * 0.8;
+  const isRoster = h => {
+    if (h.source === 'cron' || h.source === 'api') return true;
+    const dc = (h.drivers||[]).length;
+    return dc > 0 && dc >= threshold;
+  };
+  return sorted.find(isRoster) || sorted.find(h => (h.drivers||[]).length) || null;
+}
+function getFleetRoster() {
+  const e = getRosterEntry();
+  return e ? (e.drivers||[]).slice() : [];
+}
+// Reconciliation breakdown for the Data-Health card: the roster vs the Bolt portal.
+// Bolt's portal count excludes deactivated drivers, so portal ≈ roster − deactivated.
+function getRosterReconciliation() {
+  const e = getRosterEntry();
+  if (!e) return null;
+  const ds    = e.drivers || [];
+  const st    = d => (d.boltState||'').toLowerCase();
+  const deact = ds.filter(d => st(d)==='deactivated').length;
+  const susp  = ds.filter(d => st(d)==='suspended').length;
+  return { period:e.period, source:e.source||'', total:ds.length,
+           active: ds.length - deact - susp, suspended:susp, deactivated:deact,
+           portal: ds.length - deact };
+}
+
+function getDepartedKeys() {
   const keyOf = d => (d.name || '').trim().toLowerCase() || (d.driverId || '').trim();
-  // Latest roster update = the most recent period that actually carries drivers.
-  let latest = null, latestK = -Infinity;
-  hist.forEach(h => {
-    const k = periodSortKey(h.period);
-    if (isFinite(k) && k > latestK && Array.isArray(h.drivers) && h.drivers.some(d => keyOf(d))) {
-      latestK = k; latest = h;
-    }
-  });
+  // F3 — the roster is the latest ROSTER-BEARING entry (F2), never a partial CSV day.
+  // (A partial upload for today used to become "the roster" and wrongly badge ~28
+  // idle-but-active drivers as LEFT FLEET.)
+  const latest = getRosterEntry();
   if (!latest) return new Set();
-  const roster = new Set(latest.drivers.map(keyOf).filter(Boolean));
-  // Anyone seen anywhere in history but NOT in that latest update has left.
+  const roster = new Set((latest.drivers||[]).map(keyOf).filter(Boolean));
   const departed = new Set();
-  hist.forEach(h => (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => {
+  getHistory().forEach(h => (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => {
     const key = keyOf(d);
     if (key && !roster.has(key)) departed.add(key);
   }));
@@ -5712,19 +5758,52 @@ function saveHistory(arr) {
   return 0;
 }
 
-function saveToHistory(period, drivers, filename, pInfo) {
-  const history  = getHistory().filter(h=>h.period!==period);
-  const active   = drivers.filter(d=>d.isActive);
-  history.unshift({
+// Build a day entry object from a drivers array (aggregates recomputed from `drivers`).
+function buildDayEntry(period, drivers, filename, pInfo, source) {
+  const active = drivers.filter(d=>d.isActive);
+  return {
     period, filename, uploadedAt:new Date().toISOString(), periodInfo:pInfo,
+    source: source || '',
     driverCount:drivers.length, activeCount:active.length,
     totalOrders: drivers.reduce((a,d)=>a+(d.orders||0),0),
     totalGross:  drivers.reduce((a,d)=>a+(d.grossEarnings||0),0),
     totalNet:    drivers.reduce((a,d)=>a+(d.netEarnings||0),0),
     avgAcceptance: active.length ? active.reduce((a,d)=>a+(d.acceptance||0),0)/active.length : 0,
     drivers,
-  });
-  saveHistory(history);
+  };
+}
+
+// F1 — per-driver day merge. A new entry for a period that already exists no longer
+// REPLACES it wholesale: drivers are UNIONED by key (the newer entry wins on matching
+// keys; drivers present in the older entry but ABSENT from the newer one are RETAINED).
+// This is what stops a later partial CSV upload (activity-only, ~67 drivers) from silently
+// wiping a complete nightly-cron roster day (~98 drivers). Aggregates are recomputed from
+// the merged set, and the merged day keeps a roster source ('cron'/'api') if either side
+// had one — so it still reads as roster-bearing (getRosterEntry). To wholly discard a bad
+// day, use the History tab's Delete (deleteHistoryEntry) then re-upload — the explicit
+// force-replace path the wholesale behaviour used to serve.
+function mergeDayEntries(older, newer) {
+  const keyOf = d => driverKey(d.name) || (d.driverId||'').trim();
+  const byKey = new Map();
+  (older.drivers||[]).forEach(d => { const k = keyOf(d); if (k) byKey.set(k, d); });
+  (newer.drivers||[]).forEach(d => { const k = keyOf(d); if (k) byKey.set(k, d); }); // newer wins
+  const drivers   = [...byKey.values()];
+  const rosterSrc = [older.source, newer.source].find(s => s==='cron' || s==='api');
+  const merged    = buildDayEntry(newer.period, drivers, newer.filename || older.filename,
+                                  newer.periodInfo || older.periodInfo,
+                                  rosterSrc || newer.source || older.source || '');
+  merged.uploadedAt = (newer.uploadedAt||'') > (older.uploadedAt||'') ? newer.uploadedAt : older.uploadedAt;
+  return merged;
+}
+
+function saveToHistory(period, drivers, filename, pInfo, source, forceReplace) {
+  const history  = getHistory();
+  const existing = history.find(h => h.period === period);
+  const fresh    = buildDayEntry(period, drivers, filename, pInfo, source);
+  const entry    = (existing && !forceReplace) ? mergeDayEntries(existing, fresh) : fresh;
+  const rest     = history.filter(h => h.period !== period);
+  rest.unshift(entry);
+  saveHistory(rest);
 }
 
 function setHistSort(col) {
@@ -6714,12 +6793,14 @@ function unpackDriver(o) {
 }
 
 function packEntry(h) {
-  return {
+  const o = {
     p: h.period, f: h.filename, u: h.uploadedAt, pi: h.periodInfo,
     dc: h.driverCount, ac: h.activeCount, to: h.totalOrders,
     tg: _r2(h.totalGross), tn: _r2(h.totalNet), aa: _r2(h.avgAcceptance),
     d: (h.drivers || []).map(packDriver),
   };
+  if (h.source) o.s = h.source;   // F1 entry source: 'cron' | 'api' | 'csv' (omit when unset)
+  return o;
 }
 
 function unpackEntry(c) {
@@ -6727,6 +6808,7 @@ function unpackEntry(c) {
     period: c.p, filename: c.f, uploadedAt: c.u, periodInfo: c.pi,
     driverCount: c.dc, activeCount: c.ac, totalOrders: c.to,
     totalGross: c.tg || 0, totalNet: c.tn || 0, avgAcceptance: c.aa || 0,
+    source: c.s || '',
     drivers: (c.d || []).map(unpackDriver),
   };
 }
@@ -6926,9 +7008,13 @@ function mergeHistories(local, cloud) {
     if (!h || !h.period) return;
     const existing = map.get(h.period);
     if (!existing) { map.set(h.period, h); return; }
+    // F1 — same day seen on both sides: per-driver UNION rather than picking one
+    // snapshot wholesale, so a partial upload on either side never erases roster
+    // drivers the other side carries. uploadedAt decides who wins a per-driver clash.
     const tNew = h.uploadedAt || '', tEx = existing.uploadedAt || '';
-    const take = (tNew !== tEx) ? (tNew > tEx) : (_entryRichness(h) >= _entryRichness(existing));
-    if (take) map.set(h.period, h);
+    const newer = (tNew >= tEx) ? h : existing;
+    const older = (newer === h) ? existing : h;
+    map.set(h.period, mergeDayEntries(older, newer));
   });
   return [...map.values()].sort((a,b) => periodSortKey(b.period) - periodSortKey(a.period));
 }
@@ -11998,7 +12084,7 @@ function renderAnalytics() {
     <div style="font-size:11px;color:var(--text-muted);margin:0 0 12px">📅 ${basisNote}</div>
 
     <div class="analytics-kpi-row" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
-      ${kpi('Total Drivers', totalDrivers, '#34D186', 'current fleet', 'all')}
+      ${kpi('In view', totalDrivers, '#34D186', 'with activity in period', 'all')}
       ${kpi('Active', activeCount, '#00D4FF', (totalDrivers?Math.round(activeCount/totalDrivers*100):0)+'% had trips', 'active')}
       ${kpi('Idle · 0 trips', idleCount, '#f59e0b', 'tap to chase', 'idle')}
       ${projectable ? kpi('Slow · proj &lt; 4k', slowCount, '#fb7185', 'working, no bonus yet', 'slow') : ''}
