@@ -302,16 +302,16 @@ body::after { display:none !important; }
 /* ── Driver detail panel ── */
 .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:200; opacity:0; pointer-events:none; transition:opacity .2s; }
 .modal-overlay.open { opacity:1; pointer-events:all; }
-.modal-panel { position:fixed; top:0; right:0; bottom:0; width:480px; max-width:100vw; background:#030D18; border-left:1px solid rgba(0,212,255,.18); z-index:201; transform:translateX(100%); transition:transform .25s ease; display:flex; flex-direction:column; overflow:hidden; box-shadow:-12px 0 40px rgba(0,0,0,.8); }
+.modal-panel { position:fixed; top:0; inset-inline-end:0; bottom:0; width:480px; max-width:100vw; background:var(--bg-card); border-inline-start:1px solid var(--border); z-index:201; transform:translateX(100%); transition:transform .25s ease; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 12px 32px rgba(0,0,0,.5); }
 .modal-panel.open { transform:translateX(0); }
-.modal-header { padding:18px 20px 14px; border-bottom:1px solid rgba(0,212,255,.1); display:flex; align-items:flex-start; gap:12px; }
-.modal-avatar { width:44px; height:44px; border-radius:50%; background:rgba(0,212,255,.07); border:1px solid rgba(0,212,255,.35); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:18px; color:var(--cyan); flex-shrink:0; text-shadow:0 0 12px rgba(0,212,255,.6); box-shadow:0 0 14px rgba(0,212,255,.2); }
+.modal-header { padding:18px 20px 14px; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; gap:12px; }
+.modal-avatar { width:44px; height:44px; border-radius:50%; background:var(--bg-card2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-weight:600; font-size:18px; color:var(--bolt-green); flex-shrink:0; }
 .modal-driver-name { font-size:16px; font-weight:700; color:var(--text); }
 .modal-driver-meta { font-size:12px; color:var(--text-muted); margin-top:3px; }
 .modal-close { margin-left:auto; width:32px; height:32px; display:flex; align-items:center; justify-content:center; cursor:pointer; border-radius:2px; background:transparent; border:1px solid var(--border); font-size:16px; color:var(--text-muted); flex-shrink:0; transition:all .15s; }
 .modal-close:hover { border-color:var(--red); color:var(--red); }
 .modal-body { flex:1; overflow-y:auto; padding:18px 20px; }
-.target-section { background:rgba(0,255,179,.03); border:1px solid rgba(0,255,179,.14); border-radius:3px; padding:16px; margin-bottom:16px; }
+.target-section { background:var(--brand-tint,rgba(61,219,174,.09)); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px; }
 .target-section-title { font-size:9px; font-weight:600; text-transform:uppercase; letter-spacing:.1em; color:var(--text-muted); margin-bottom:12px; }
 .target-big   { display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:10px; }
 .target-earned{ font-family:var(--mono); font-size:28px; color:var(--bolt-green); text-shadow:var(--glow-green); }
@@ -324,12 +324,12 @@ body::after { display:none !important; }
 .tstat { text-align:center; }
 .tstat-label{ font-size:9px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.07em; margin-bottom:3px; }
 .tstat-value{ font-family:var(--mono); font-size:14px; color:var(--text); }
-.section-label { font-size:9px; font-weight:600; text-transform:uppercase; letter-spacing:.1em; color:var(--text-muted); margin-bottom:10px; margin-top:16px; border-bottom:1px solid rgba(0,212,255,.07); padding-bottom:6px; }
+.section-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:10px; margin-top:16px; border-bottom:1px solid var(--border); padding-bottom:6px; }
 .kpi-grid-modal { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
-.kpi-card { background:var(--bg-card2); border:1px solid rgba(0,212,255,.08); border-radius:3px; padding:10px 12px; transition:border-color .2s; }
-.kpi-card:hover { border-color:rgba(0,212,255,.2); }
+.kpi-card { background:var(--bg-card2); border:1px solid var(--border); border-radius:7px; padding:10px 12px; transition:border-color .2s; }
+.kpi-card:hover { border-color:var(--text-dim); }
 .kpi-card-label { font-size:9px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.07em; margin-bottom:4px; }
-.kpi-card-value { font-family:var(--mono); font-size:16px; color:var(--cyan); }
+.kpi-card-value { font-family:var(--mono); font-size:16px; color:var(--text); }
 .kpi-card-unit  { font-size:10px; color:var(--text-dim); }
 .kpi-card.flag-red   .kpi-card-value { color:var(--red);        }
 .kpi-card.flag-amber .kpi-card-value { color:var(--amber);      }
@@ -2992,6 +2992,28 @@ function buildPagination(total, current) {
 let modalMonthFilter  = 'all';   // 'all' | 'YYYY-MM' — driver detail modal month filter
 let modalPeriodFilter = null;    // 'period-string' | null — single-day scope set by openModalForEntry
 let modalCtx          = null;    // cached context so the month filter can re-render in place
+// A1 — normalize a Saudi phone to E.164 digits for tel:/wa.me links.
+function _phoneDigits(phone) {
+  let p = String(phone||'').replace(/[^\d]/g,'');
+  if (!p) return '';
+  if (p.startsWith('00')) p = p.slice(2);
+  if (p.startsWith('966')) return p;
+  if (p.startsWith('0')) p = p.slice(1);
+  if (p.length === 9 && p.startsWith('5')) return '966' + p;   // local 5XXXXXXXX → +966
+  return p;
+}
+// A1 — the driver panel's action row: WhatsApp · Call · Copy (funnel chase actions).
+function driverPanelActions(d) {
+  const dig = _phoneDigits(d.phone);
+  if (!dig) return '';
+  const digAttr = dig.replace(/[^\d]/g,'');
+  return `<div class="modal-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+    <a class="dk-btn sm" href="https://wa.me/${digAttr}" target="_blank" rel="noopener" title="WhatsApp ${d.phone}">WhatsApp</a>
+    <a class="dk-btn sm" href="tel:+${digAttr}" title="Call ${d.phone}">Call</a>
+    <button class="dk-btn sm" onclick="navigator.clipboard&&navigator.clipboard.writeText('${digAttr}');toast('Phone copied')">Copy</button>
+  </div>`;
+}
+
 function openModal(id, periodFilter) {
   // Find the driver in currentDrivers first; if missing (e.g. they didn't work on
   // the latest uploaded day), scan all history for the most recent entry for them.
@@ -3043,6 +3065,7 @@ function openModal(id, periodFilter) {
       <div class="modal-driver-name">${d.name}${modalForeignName ? `<span class="d-foreign" style="font-size:13px;margin-left:6px;">→ ${modalForeignName}</span>` : ''}</div>
       <div class="modal-driver-meta"><span class="tier ${tc}" style="margin-right:6px">${d.tier.englishName}</span>${d.boltState && d.boltState !== 'active' ? `<span class="status-badge" style="background:rgba(255,68,102,.15);color:var(--red);border:1px solid rgba(255,68,102,.4);margin-right:6px;font-size:9px">${d.boltState.toUpperCase()}</span>` : ''}${d.phone||''}${d.email?' · '+d.email:''}${d.vehiclePlate?' · '+d.vehiclePlate:''}</div>
       ${firstSeenStr ? `<div style="font-size:10px;color:var(--text-dim);margin-top:3px">First seen ${firstSeenStr}</div>` : ''}
+      ${driverPanelActions(d)}
     </div>
     <div class="modal-close" onclick="closeModal()">×</div>`;
 
