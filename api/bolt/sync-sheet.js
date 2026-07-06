@@ -141,130 +141,143 @@ async function deleteAmbassadorsNotIn(names) {
   if (!resp.ok) throw new Error(`Supabase ambassadors delete: ${resp.status} ${await resp.text()}`);
 }
 
-// ── Handler ───────────────────────────────────────────────────────────────────
+// ── Core sync (F5: shared by the nightly cron handler AND the on-demand
+// /api/bolt/sync-sheet-now endpoint — reuse, don't reimplement) ────────────────
+// Returns the same result shape the handler used to build directly; throws on a
+// hard failure (missing env, sheet-read error) for the caller to translate to a
+// status code the way it needs to (cron vs on-demand have different auth/response needs).
+async function runSheetSync() {
+  if (!process.env.GOOGLE_SHEETS_CREDENTIALS_JSON) {
+    const err = new Error("GOOGLE_SHEETS_CREDENTIALS_JSON not configured"); err.status = 503; throw err;
+  }
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+    const err = new Error("SUPABASE_URL and SUPABASE_SERVICE_KEY required"); err.status = 503; throw err;
+  }
+
+  const values = await readSheetRange(SHEET_RANGE);
+  if (values.length < 2) {
+    return { ok: true, synced: 0, message: "No data rows found" };
+  }
+  const header = values[0];
+  const idx = h => header.indexOf(h);
+  const cId = idx("Driver ID"), cName = idx("Full Name"), cPhone = idx("Phone"),
+        cAmb = idx("Source / Ambassador"), cNat = idx("Nationality");
+  if (cId < 0 || cName < 0) {
+    const err = new Error(`Expected columns "Driver ID" and "Full Name" not found in header row: ${header.join(", ")}`);
+    err.status = 500; throw err;
+  }
+  // Nationality is an EXPLICIT sheet column ("Nationality" = Saudi | Foreigner). It CANNOT be
+  // derived from the ID: foreigners drive on a Saudi's account, so the recorded ID is the
+  // Saudi account-holder's and every ID looks Saudi. Normalize EN/AR values to saudi|foreigner.
+  const normNat = v => {
+    const s = String(v || "").trim().toLowerCase();
+    if (!s) return "";
+    if (s.indexOf("saud") !== -1 || s.indexOf("سعود") !== -1) return "saudi";
+    // Any other non-empty value is a non-Saudi = foreigner. The sheet records REAL
+    // nationalities (Egyptian, Yemeni, Sudanese, وافد, …), not the literal word "Foreigner",
+    // so treat everything that isn't Saudi as foreigner instead of dropping it to blank.
+    return "foreigner";
+  };
+
+  const rows = values.slice(1)
+    .filter(r => r[cId] && r[cName])
+    .map(r => ({
+      id:          String(r[cId]).trim(),
+      name:        String(r[cName]).trim(),
+      phone:       cPhone >= 0 ? String(r[cPhone] || "").trim() : "",
+      ambassador:  cAmb   >= 0 ? String(r[cAmb]   || "").trim() : "",
+      nationality: cNat   >= 0 ? normNat(r[cNat]) : "",
+      synced_at:   new Date().toISOString(),
+    }));
+
+  // Batch in chunks of 500 to keep each Supabase request small.
+  for (let i = 0; i < rows.length; i += 500) {
+    await upsertSyncedDrivers(rows.slice(i, i + 500));
+  }
+  // Mirror deletions/renumbers: purge any Supabase row whose Driver ID isn't in this read
+  // (guarded above — rows.length >= 1 here since we returned early on < 2 sheet rows).
+  await deleteSyncedDriversNotIn(rows.map(r => r.id));
+
+  // ── AMBASSADORS tab → `ambassadors` table ─────────────────────────────────
+  // Runs in its own try/catch so a problem here (e.g. the tab not created yet) never
+  // fails the drivers sync above, which is the more critical of the two.
+  let ambassadorsSynced = null, ambassadorsError = null;
+  try {
+    const ambValues = await readSheetRange(AMBASSADORS_RANGE);
+    if (ambValues.length < 2) {
+      // Header only (or empty): skip entirely — never upsert and never delete, so an empty
+      // read can't wipe an already-populated table.
+      ambassadorsSynced = 0;
+    } else {
+      const ah = ambValues[0].map(x => String(x || "").trim().toLowerCase());
+      const find = (needle, fallback) => { const i = ah.findIndex(x => x.indexOf(needle) !== -1); return i >= 0 ? i : fallback; };
+      const aName = find("name", 0), aAlias = find("alias", 1), aActive = find("active", 2);
+      // Team column (Egypt|Saudi) drives the referrer-incentive currency: Egypt team pays EGP,
+      // Saudi team pays SAR. Optional — no fixed fallback index (older sheets lack it → blank).
+      const aTeam = find("team", -1);
+      // A blank Active cell means active (don't hide an ambassador over an unfilled cell);
+      // only an explicit no/false/0/inactive turns it off.
+      const isActive = v => { const s = String(v == null ? "" : v).trim().toLowerCase(); return !/^(no|false|0|inactive|n)$/.test(s); };
+      // Normalize the Team cell (EN/AR) to egypt|saudi; anything unrecognized/blank → "".
+      const normTeam = v => {
+        const s = String(v == null ? "" : v).trim().toLowerCase();
+        if (!s) return "";
+        if (s.indexOf("egyp") !== -1 || s.indexOf("مصر") !== -1 || s === "eg") return "egypt";
+        if (s.indexOf("saud") !== -1 || s.indexOf("سعود") !== -1 || s === "ksa" || s === "sa") return "saudi";
+        return "";
+      };
+      const now = new Date().toISOString();
+      const seen = new Set();
+      const ambRows = [];
+      ambValues.slice(1).forEach(r => {
+        const name = String(r[aName] || "").trim();
+        if (!name) return;
+        const key = name.toLowerCase();
+        if (seen.has(key)) return;            // first row wins on a duplicate name
+        seen.add(key);
+        ambRows.push({
+          name,
+          aliases:    String(r[aAlias] || "").trim(),
+          active:     isActive(r[aActive]),
+          team:       aTeam >= 0 ? normTeam(r[aTeam]) : "",
+          updated_at: now,
+        });
+      });
+      if (ambRows.length) {
+        for (let i = 0; i < ambRows.length; i += 500) await upsertAmbassadors(ambRows.slice(i, i + 500));
+        await deleteAmbassadorsNotIn(ambRows.map(a => a.name));
+      }
+      ambassadorsSynced = ambRows.length;
+    }
+  } catch (e) {
+    console.error("[sync-sheet] ambassadors:", e.message);
+    ambassadorsError = e.message;
+  }
+
+  return {
+    ok: true,
+    synced: rows.length,
+    ambassadorsSynced,
+    ambassadorsError,
+    message: `Synced ${rows.length} driver rows` +
+      (ambassadorsError ? ` · ambassadors sync failed: ${ambassadorsError}`
+                        : ` · ${ambassadorsSynced} ambassador${ambassadorsSynced === 1 ? "" : "s"}`),
+  };
+}
+
+// ── Handler (nightly cron — CRON_SECRET auth) ──────────────────────────────────
 module.exports = async function handler(req, res) {
   const auth = req.headers["authorization"] || "";
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ ok: false, error: "unauthorized" });
   }
-  if (!process.env.GOOGLE_SHEETS_CREDENTIALS_JSON) {
-    return res.status(503).json({ ok: false, error: "GOOGLE_SHEETS_CREDENTIALS_JSON not configured" });
-  }
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
-    return res.status(503).json({ ok: false, error: "SUPABASE_URL and SUPABASE_SERVICE_KEY required" });
-  }
-
   try {
-    const values = await readSheetRange(SHEET_RANGE);
-    if (values.length < 2) {
-      return res.status(200).json({ ok: true, synced: 0, message: "No data rows found" });
-    }
-    const header = values[0];
-    const idx = h => header.indexOf(h);
-    const cId = idx("Driver ID"), cName = idx("Full Name"), cPhone = idx("Phone"),
-          cAmb = idx("Source / Ambassador"), cNat = idx("Nationality");
-    if (cId < 0 || cName < 0) {
-      return res.status(500).json({ ok: false, error: `Expected columns "Driver ID" and "Full Name" not found in header row: ${header.join(", ")}` });
-    }
-    // Nationality is an EXPLICIT sheet column ("Nationality" = Saudi | Foreigner). It CANNOT be
-    // derived from the ID: foreigners drive on a Saudi's account, so the recorded ID is the
-    // Saudi account-holder's and every ID looks Saudi. Normalize EN/AR values to saudi|foreigner.
-    const normNat = v => {
-      const s = String(v || "").trim().toLowerCase();
-      if (!s) return "";
-      if (s.indexOf("saud") !== -1 || s.indexOf("سعود") !== -1) return "saudi";
-      // Any other non-empty value is a non-Saudi = foreigner. The sheet records REAL
-      // nationalities (Egyptian, Yemeni, Sudanese, وافد, …), not the literal word "Foreigner",
-      // so treat everything that isn't Saudi as foreigner instead of dropping it to blank.
-      return "foreigner";
-    };
-
-    const rows = values.slice(1)
-      .filter(r => r[cId] && r[cName])
-      .map(r => ({
-        id:          String(r[cId]).trim(),
-        name:        String(r[cName]).trim(),
-        phone:       cPhone >= 0 ? String(r[cPhone] || "").trim() : "",
-        ambassador:  cAmb   >= 0 ? String(r[cAmb]   || "").trim() : "",
-        nationality: cNat   >= 0 ? normNat(r[cNat]) : "",
-        synced_at:   new Date().toISOString(),
-      }));
-
-    // Batch in chunks of 500 to keep each Supabase request small.
-    for (let i = 0; i < rows.length; i += 500) {
-      await upsertSyncedDrivers(rows.slice(i, i + 500));
-    }
-    // Mirror deletions/renumbers: purge any Supabase row whose Driver ID isn't in this read
-    // (guarded above — rows.length >= 1 here since we returned early on < 2 sheet rows).
-    await deleteSyncedDriversNotIn(rows.map(r => r.id));
-
-    // ── AMBASSADORS tab → `ambassadors` table ─────────────────────────────────
-    // Runs in its own try/catch so a problem here (e.g. the tab not created yet) never
-    // fails the drivers sync above, which is the more critical of the two.
-    let ambassadorsSynced = null, ambassadorsError = null;
-    try {
-      const ambValues = await readSheetRange(AMBASSADORS_RANGE);
-      if (ambValues.length < 2) {
-        // Header only (or empty): skip entirely — never upsert and never delete, so an empty
-        // read can't wipe an already-populated table.
-        ambassadorsSynced = 0;
-      } else {
-        const ah = ambValues[0].map(x => String(x || "").trim().toLowerCase());
-        const find = (needle, fallback) => { const i = ah.findIndex(x => x.indexOf(needle) !== -1); return i >= 0 ? i : fallback; };
-        const aName = find("name", 0), aAlias = find("alias", 1), aActive = find("active", 2);
-        // Team column (Egypt|Saudi) drives the referrer-incentive currency: Egypt team pays EGP,
-        // Saudi team pays SAR. Optional — no fixed fallback index (older sheets lack it → blank).
-        const aTeam = find("team", -1);
-        // A blank Active cell means active (don't hide an ambassador over an unfilled cell);
-        // only an explicit no/false/0/inactive turns it off.
-        const isActive = v => { const s = String(v == null ? "" : v).trim().toLowerCase(); return !/^(no|false|0|inactive|n)$/.test(s); };
-        // Normalize the Team cell (EN/AR) to egypt|saudi; anything unrecognized/blank → "".
-        const normTeam = v => {
-          const s = String(v == null ? "" : v).trim().toLowerCase();
-          if (!s) return "";
-          if (s.indexOf("egyp") !== -1 || s.indexOf("مصر") !== -1 || s === "eg") return "egypt";
-          if (s.indexOf("saud") !== -1 || s.indexOf("سعود") !== -1 || s === "ksa" || s === "sa") return "saudi";
-          return "";
-        };
-        const now = new Date().toISOString();
-        const seen = new Set();
-        const ambRows = [];
-        ambValues.slice(1).forEach(r => {
-          const name = String(r[aName] || "").trim();
-          if (!name) return;
-          const key = name.toLowerCase();
-          if (seen.has(key)) return;            // first row wins on a duplicate name
-          seen.add(key);
-          ambRows.push({
-            name,
-            aliases:    String(r[aAlias] || "").trim(),
-            active:     isActive(r[aActive]),
-            team:       aTeam >= 0 ? normTeam(r[aTeam]) : "",
-            updated_at: now,
-          });
-        });
-        if (ambRows.length) {
-          for (let i = 0; i < ambRows.length; i += 500) await upsertAmbassadors(ambRows.slice(i, i + 500));
-          await deleteAmbassadorsNotIn(ambRows.map(a => a.name));
-        }
-        ambassadorsSynced = ambRows.length;
-      }
-    } catch (e) {
-      console.error("[sync-sheet] ambassadors:", e.message);
-      ambassadorsError = e.message;
-    }
-
-    return res.status(200).json({
-      ok: true,
-      synced: rows.length,
-      ambassadorsSynced,
-      ambassadorsError,
-      message: `Synced ${rows.length} driver rows` +
-        (ambassadorsError ? ` · ambassadors sync failed: ${ambassadorsError}`
-                          : ` · ${ambassadorsSynced} ambassador${ambassadorsSynced === 1 ? "" : "s"}`),
-    });
+    const result = await runSheetSync();
+    return res.status(200).json(result);
   } catch (e) {
     console.error("[sync-sheet]", e.message);
-    return res.status(500).json({ ok: false, error: e.message });
+    return res.status(e.status || 500).json({ ok: false, error: e.message });
   }
 };
+
+module.exports.runSheetSync = runSheetSync;
