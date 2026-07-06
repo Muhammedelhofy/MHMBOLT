@@ -5,6 +5,18 @@ data-integrity pass, not a pile of separate tweaks.
 
 **Read alongside:** `BOLT_ARCHITECTURE_REVIEW_2026-07-04.md` (structure map + ranked backlog C1-C8, the
 3 crons, the Supabase schema, the SPEC 1/2/3) and `BOLT_FINANCE_V2_BRIEFING.md`.
+Also read Fable's design pass on branch `claude/finalize-design`: `BOLT_DESIGN_SYSTEM.md`,
+`BOLT_DATA_INTEGRITY_FINDINGS.md` (F1-F8), `BOLT_FINALIZE_TAB_SPECS.md` (the S0-S7 execution ladder).
+
+> ⚠️ **DECISION OVERRIDES — THIS BRIEF WINS over Fable's `BOLT_FINALIZE_TAB_SPECS.md` where they conflict.**
+> Muhammad overrode 3 of Fable's original recommendations (2026-07-06). Build THESE, not the spec's originals:
+> - **D-2 = KEEP the light theme + FIX its colours** (a proper light variant). NOT "drop." (S0/S7)
+> - **D-3 = KEEP BOTH** Today (daily cockpit) + Star Map (rebuilt as the REAL high-level command centre —
+>   fleet-wide tier distribution / funnel / ambassador leaderboard / bonus projection, NO driver list).
+>   NOT "remove Star Map." → S0 does NOT delete the Star Map tab; a later session rebuilds it high-level.
+> - **Arabic toggle = KEEP with a QUALITY GATE** (ships per tab only when fully clean RTL; drop-if-worse).
+> Everything ELSE in Fable's specs (design language, F1-F8, tab reorganizations, driver panel, filters,
+> de-cliché, remove M8 orb/RADAR/GALAXY/SOLAR) stands as written.
 
 ---
 
