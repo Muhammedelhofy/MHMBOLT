@@ -1632,14 +1632,6 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
     <button class="save-btn" onclick="saveSettings()">Save</button>
   </div>
   <div class="settings-section">
-    <div class="st-title">Fleet Cut per Tier</div>
-    <div class="st-desc">Monthly cut deducted from driver net earnings. Update when Bolt confirms thresholds.</div>
-    <div class="st-row"><label>Bronze (Level 0)</label><input type="number" id="cutBronze" placeholder="1000"> <span class="unit">SAR / month</span></div>
-    <div class="st-row"><label>Silver (Level 1)</label><input type="number" id="cutSilver" placeholder="1500"> <span class="unit">SAR / month</span></div>
-    <div class="st-row"><label>Gold (Level 2)</label>  <input type="number" id="cutGold"   placeholder="2000"> <span class="unit">SAR / month</span></div>
-    <button class="save-btn" onclick="saveSettings()">Save</button>
-  </div>
-  <div class="settings-section">
     <div class="st-title">Bolt Bonus Split</div>
     <div class="st-desc">Bolt pays the company 1,500/2,000/2,500 SAR per driver at the 4k/5k/6k net tiers. That bonus is split between you and Partner B — set your share below (the rest goes to Partner B).</div>
     <div class="st-row"><label>Your share of the bonus</label><input type="number" id="bonusSplitPct" placeholder="50" min="0" max="100"> <span class="unit">% (rest → Partner B)</span></div>
@@ -1661,6 +1653,7 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
   </div>
   <div class="settings-section">
     <div class="st-title">💸 Referrer Incentives (sales teams)</div>
+    <div class="st-desc" style="background:rgba(56,190,240,.08);border:1px solid rgba(56,190,240,.25);border-radius:6px;padding:7px 10px;margin-bottom:8px">📋 <b>Source of truth = the sheet</b> (AMBASSADORS tab, Build-173): who's a referrer + their team syncs from there nightly. The rule amounts below are the local offline fallback for the calculation — editing them here does <b>not</b> change the sheet.</div>
     <div class="st-desc">A driver's referrer (call-list caller OR ambassador) is credited when the driver they brought hits a net threshold. The amount depends on the referrer's <b>team</b> (set in the sheet's AMBASSADORS tab) and the driver's <b>nationality</b>:
       <br>• <b>Egypt team</b> — Saudi driver ≥5,000 → <b>500 EGP</b>; foreign driver ≥6,000 → <b>500 EGP</b>
       <br>• <b>Saudi team</b> — Saudi driver ≥5,000 → <b>200 SAR</b>; foreign driver ≥6,000 → <b>500 SAR</b>
@@ -1669,15 +1662,6 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
       <input type="checkbox" id="teamBonusRecurring" style="width:18px;height:18px;accent-color:var(--bolt-green);cursor:pointer">
       <span class="unit">off = one-time (first qualifying month only)</span></div>
     <div class="st-row"><label>EGP → SAR rate</label><input type="number" id="egpToSar" placeholder="0.077" step="0.001"> <span class="unit">for showing Egypt-team incentives in SAR (P&amp;L only — never changes what's paid)</span></div>
-    <button class="save-btn" onclick="saveSettings()">Save</button>
-  </div>
-  <div class="settings-section">
-    <div class="st-title">Performance Flags</div>
-    <div class="st-desc">Red / amber thresholds for acceptance rate and driver rating.</div>
-    <div class="st-row"><label>Acceptance — Amber below</label><input type="number" id="flagAccAmber" placeholder="80"> <span class="unit">%</span></div>
-    <div class="st-row"><label>Acceptance — Red below</label>  <input type="number" id="flagAccRed"   placeholder="70"> <span class="unit">%</span></div>
-    <div class="st-row"><label>Rating — Amber below</label>    <input type="number" id="flagRatAmber" placeholder="4.7" step=".1"> <span class="unit">★</span></div>
-    <div class="st-row"><label>Rating — Red below</label>      <input type="number" id="flagRatRed"   placeholder="4.5" step=".1"> <span class="unit">★</span></div>
     <button class="save-btn" onclick="saveSettings()">Save</button>
   </div>
   <div class="settings-section">
@@ -1790,6 +1774,20 @@ create policy "team access" on fleet_data
   </div>
 
   <div class="settings-section">
+    <div class="st-title">⟳ On-demand Sheet Sync</div>
+    <div class="st-desc">Pulls the onboarding sheet into Supabase right now, instead of waiting for the ~00:45 Riyadh cron. Needs the sync key you (or Muhammad) set as <b>DASH_SYNC_KEY</b> in Vercel — paste the same string below. Never logged or shown once saved.</div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
+      <input type="password" id="dashSyncKeyInput" placeholder="On-demand sync key — must match Vercel's DASH_SYNC_KEY" autocomplete="off" style="flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--mono);background:var(--bg);box-sizing:border-box">
+      <button class="save-btn" onclick="saveDashSyncKey()">Save Key</button>
+      <button class="save-btn" style="background:#fff;color:var(--text-muted);border:1px solid var(--border)" onclick="clearDashSyncKey()">Clear</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+      <button class="save-btn" onclick="syncSheetNow('settingsSyncStatus')">⟳ Sync sheet now</button>
+      <span id="settingsSyncStatus" style="font-size:11px;color:var(--text-muted)"></span>
+    </div>
+  </div>
+
+  <div class="settings-section">
     <div class="st-title">🩺 Data Health — Ambassador / Incentive data</div>
     <div class="st-desc">Flags data-quality issues in the onboarding sheet that affect attribution &amp; bonuses. Reflects the last nightly sheet-sync — your latest sheet edits appear after the next ~00:45 Riyadh sync.</div>
     <div id="dataHealthBody" style="margin-top:10px;font-size:12px;font-family:var(--mono);line-height:1.9">
@@ -1799,10 +1797,31 @@ create policy "team access" on fleet_data
   </div>
 
   <div class="settings-section">
-    <div class="st-title">Diagnostics</div>
-    <div class="st-desc" id="buildVersionLine" style="font-family:monospace;font-size:11px;color:var(--text-muted);">Loading version…</div>
-    <div class="st-desc" id="storageStatsLine" style="font-family:monospace;font-size:11px;color:var(--text-muted);margin-top:6px;">Loading storage stats…</div>
-    <div class="st-desc" style="margin-top:8px;font-size:11px;">After pushing a new build to GitHub, press <b>Ctrl+Shift+R</b> on the deployed page to bypass browser cache. The version line above will change when the new build loads.</div>
+    <details>
+      <summary style="cursor:pointer;font-weight:700;font-size:14px;color:var(--text)">Advanced</summary>
+      <div style="margin-top:14px">
+        <div class="st-title" style="font-size:13px">Performance Flags</div>
+        <div class="st-desc">Red / amber thresholds for acceptance rate and driver rating.</div>
+        <div class="st-row"><label>Acceptance — Amber below</label><input type="number" id="flagAccAmber" placeholder="80"> <span class="unit">%</span></div>
+        <div class="st-row"><label>Acceptance — Red below</label>  <input type="number" id="flagAccRed"   placeholder="70"> <span class="unit">%</span></div>
+        <div class="st-row"><label>Rating — Amber below</label>    <input type="number" id="flagRatAmber" placeholder="4.7" step=".1"> <span class="unit">★</span></div>
+        <div class="st-row"><label>Rating — Red below</label>      <input type="number" id="flagRatRed"   placeholder="4.5" step=".1"> <span class="unit">★</span></div>
+        <button class="save-btn" onclick="saveSettings()">Save</button>
+      </div>
+      <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
+        <div class="st-title" style="font-size:13px">Fleet Cut per Tier <span style="font-size:11px;color:var(--text-muted);font-weight:400">— legacy rental model (drivers use own cars now); kept for old months only</span></div>
+        <div class="st-row"><label>Bronze (Level 0)</label><input type="number" id="cutBronze" placeholder="1000"> <span class="unit">SAR / month</span></div>
+        <div class="st-row"><label>Silver (Level 1)</label><input type="number" id="cutSilver" placeholder="1500"> <span class="unit">SAR / month</span></div>
+        <div class="st-row"><label>Gold (Level 2)</label>  <input type="number" id="cutGold"   placeholder="2000"> <span class="unit">SAR / month</span></div>
+        <button class="save-btn" onclick="saveSettings()">Save</button>
+      </div>
+      <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
+        <div class="st-title" style="font-size:13px">Diagnostics</div>
+        <div class="st-desc" id="buildVersionLine" style="font-family:monospace;font-size:11px;color:var(--text-muted);">Loading version…</div>
+        <div class="st-desc" id="storageStatsLine" style="font-family:monospace;font-size:11px;color:var(--text-muted);margin-top:6px;">Loading storage stats…</div>
+        <div class="st-desc" style="margin-top:8px;font-size:11px;">After pushing a new build to GitHub, press <b>Ctrl+Shift+R</b> on the deployed page to bypass browser cache. The version line above will change when the new build loads.</div>
+      </div>
+    </details>
   </div>
 </div>
 
@@ -2111,7 +2130,26 @@ async function renderDataHealth(force) {
     const fleetVerify = Object.values(stageBy).filter(s => s.trim().toLowerCase() === 'fleet check - verify').length;
 
     const dot = (n, warnOnly) => n === 0 ? '🟢' : (warnOnly ? '🟡' : '🔴');
-    const row = (label, n, warnOnly, sub) =>
+    const jsq = s => String(s == null ? '' : s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    // One affected-driver line — click drills to the A1 driver panel.
+    const driverItem = r => {
+      const nm = (r.name || '').trim() || '(no name)';
+      const bits = [];
+      if (r.phone)       bits.push(String(r.phone));
+      if (r.ambassador)  bits.push('🎖 ' + r.ambassador);
+      if (r.nationality) bits.push(r.nationality);
+      const sub = bits.length ? ` <span style="color:var(--text-muted);font-size:11px">${bits.join(' · ')}</span>` : '';
+      return `<div onclick="dataHealthOpenDriver('${jsq(nm)}')" style="cursor:pointer;padding:4px 8px;border-radius:5px;display:flex;justify-content:space-between;gap:8px;align-items:center" onmouseover="this.style.background='var(--bg-card2,#1c232d)'" onmouseout="this.style.background=''"><span>${nm}${sub}</span><span style="color:var(--cyan)">→</span></div>`;
+    };
+    // Interactive issue: 🟢 when clean; otherwise a click reveals the affected drivers → A1.
+    const issue = (label, list, warnOnly) => {
+      const n = list.length;
+      if (n === 0) return `<div style="display:flex;justify-content:space-between;gap:10px;padding:2px 0"><span>🟢 ${label}</span><b>0</b></div>`;
+      const items = list.slice(0, 60).map(driverItem).join('');
+      const more = n > 60 ? `<div style="color:var(--text-muted);padding:4px 8px">+${n-60} more — fix in the sheet</div>` : '';
+      return `<details style="padding:2px 0"><summary style="cursor:pointer;display:flex;justify-content:space-between;gap:10px;list-style:none"><span>${dot(n, warnOnly)} ${label} <span style="color:var(--cyan);font-size:11px">▸ show</span></span><b>${n}</b></summary><div style="margin:4px 0 8px 6px;border-left:2px solid var(--border);padding-left:6px">${items}${more}</div></details>`;
+    };
+    const plainRow = (label, n, warnOnly, sub) =>
       `<div style="display:flex;justify-content:space-between;gap:10px;${sub ? 'opacity:.8;padding-left:14px' : ''}">
          <span>${sub ? '↳ ' : dot(n, warnOnly) + ' '}${label}</span><b>${n}</b></div>`;
 
@@ -2129,21 +2167,42 @@ async function renderDataHealth(force) {
            </div>
          </div>`
       : '';
-    box.innerHTML = recLine +
-      row('Duplicate phone numbers', dupGroups.length, false) +
-      row('Tagged drivers not on Bolt', unmatched.length, true) +
-      row('of those, "Active" stage', unmatchedActive.length, false, true) +
-      row('Phone / name conflicts', conflicts.length, false) +
-      row('Attributed missing nationality', noNat.length, true) +
-      row('Drivers with no ambassador', noAmb.length, true) +
-      row('Ambassadors missing Team', ambNoTeam.length, false) +
-      row('Fleet Check - Verify (needs review)', fleetVerify, true) +
-      `<div style="margin-top:8px;color:var(--text-muted);font-size:11px">Based on ${Array.isArray(sheet) ? sheet.length : 0} synced sheet drivers · ${getHistory().length} days of Bolt data.</div>`;
+    // F8 — backup visibility: reads the { count, latest } field S5 adds to /api/bolt/health.
+    // On a local preview (no serverless) this endpoint 404s → render "—" defensively.
+    let backupsLine = '';
+    try {
+      const h = await fetch('/api/bolt/health').then(r => r.ok ? r.json() : null).catch(() => null);
+      const b = h && h.backups;
+      backupsLine = (b && b.count != null)
+        ? `<div style="display:flex;justify-content:space-between;gap:10px;margin-top:2px"><span>💾 Nightly backups <span style="color:var(--text-muted);font-size:11px">${b.latest ? '· latest ' + b.latest : ''}</span></span><b style="color:var(--bolt-green)">${b.count} ✓</b></div>`
+        : `<div style="display:flex;justify-content:space-between;gap:10px;margin-top:2px"><span>💾 Nightly backups</span><b style="color:var(--text-muted)">—</b></div>`;
+    } catch (_) {
+      backupsLine = `<div style="display:flex;justify-content:space-between;gap:10px;margin-top:2px"><span>💾 Nightly backups</span><b style="color:var(--text-muted)">—</b></div>`;
+    }
+    box.innerHTML = recLine + backupsLine +
+      issue('Duplicate phone numbers', dupGroups.flat(), false) +
+      issue('Tagged drivers not on Bolt', unmatched, true) +
+      plainRow('of those, "Active" stage', unmatchedActive.length, false, true) +
+      issue('Phone / name conflicts', conflicts, false) +
+      issue('Attributed missing nationality', noNat, true) +
+      issue('Drivers with no ambassador', noAmb, true) +
+      issue('Ambassadors missing Team', ambNoTeam.map(nm => ({ name: nm })), false) +
+      plainRow('Fleet Check - Verify (needs review)', fleetVerify, true) +
+      `<div style="margin-top:8px;color:var(--text-muted);font-size:11px">Click any 🔴/🟡 row to see the affected drivers → open their card. Based on ${Array.isArray(sheet) ? sheet.length : 0} synced sheet drivers · ${getHistory().length} days of Bolt data.</div>`;
   } catch (e) {
     box.innerHTML = `<span style="color:var(--red)">Data-health check failed: ${e.message}</span>`;
   } finally {
     _dataHealthLoading = false;
   }
+}
+// Data-Health drill: open the affected driver's A1 panel; if they're not on Bolt
+// (the whole point of "tagged not on Bolt"), point to the sheet row instead.
+function dataHealthOpenDriver(name) {
+  if (!name || name === '(no name)') { toast('No name on this sheet row — open the onboarding sheet to fix'); return; }
+  const known = (currentDrivers || []).some(x => driverKey(x.name) === driverKey(name))
+    || ((typeof getDriverAllHistory === 'function' ? getDriverAllHistory('', name) : []) || []).length > 0;
+  if (known) openModal(name, null, {});
+  else toast(`${name} isn't on Bolt yet — check the onboarding sheet row`);
 }
 
 // ═══════════════════════════════════════════
@@ -5509,7 +5568,8 @@ function handleBoltBonusFile(file, monthKey) {
       const totalGross = Object.values(out).reduce((s, d) => s + (+d.gross || 0), 0);
       syncToCloud();
       if (typeof renderBoltBonusStatus === 'function') renderBoltBonusStatus();
-      if (typeof renderFinance === 'function') renderFinance();
+      // Repaint the finance tab if it's open so the new invoice shows immediately.
+      if (document.getElementById('finance')?.classList.contains('active') && typeof renderFinanceTab === 'function') renderFinanceTab();
       toast(`Imported ${n} drivers for ${monthLabel(monthKey)} · Bolt paid ${fmt(Math.round(totalGross))} gross`);
     } catch (err) { console.error(err); toast('Could not read the sheet — check it matches the invoice format'); }
   };
@@ -6139,6 +6199,11 @@ const SB_ROW_ID    = 'fleet';
 function getSbUrl() { return (localStorage.getItem(SB_URL_STORE) || '').trim().replace(/\/+$/, ''); }
 function getSbKey() { return (localStorage.getItem(SB_KEY_STORE) || '').trim(); }
 function supabaseOn() { return !!getSbUrl() && !!getSbKey(); }
+
+// ── On-demand sheet sync (F5) — DASH_SYNC_KEY, kept separate from the Supabase anon
+// key above and never logged/echoed anywhere. ──────────────────────────────────
+const DASH_SYNC_KEY_STORE = 'khair_dash_sync_key';
+function getDashSyncKey() { return (localStorage.getItem(DASH_SYNC_KEY_STORE) || '').trim(); }
 function sbHeaders(extra) { return { apikey: getSbKey(), Authorization: 'Bearer ' + getSbKey(), ...(extra || {}) }; }
 
 // Unified cloud read/write — dispatch to Supabase if configured, else JSONBin.
@@ -7278,6 +7343,68 @@ async function testSupabase() {
   }
 }
 
+// ── On-demand sheet sync (F5) — Settings card + Onboarding trust-strip button share this.
+// Key is never logged/echoed; only ever read from localStorage to build the Authorization header.
+function saveDashSyncKey() {
+  const el = document.getElementById('dashSyncKeyInput');
+  const key = (el?.value || '').trim();
+  if (!key) { toast('Paste the sync key first.'); return; }
+  localStorage.setItem(DASH_SYNC_KEY_STORE, key);
+  if (el) el.value = '';
+  toast('Sync key saved.');
+}
+function clearDashSyncKey() {
+  localStorage.removeItem(DASH_SYNC_KEY_STORE);
+  const el = document.getElementById('dashSyncKeyInput'); if (el) el.value = '';
+  toast('Sync key cleared.');
+}
+let _dashSyncInFlight = false;
+async function syncSheetNow(statusElId) {
+  const setStatus = html => { if (!statusElId) return; const el = document.getElementById(statusElId); if (el) el.innerHTML = html; };
+  const mut = 'var(--dk-mut, var(--text-muted))', ok = 'var(--dk-brand, var(--green))',
+        bad = 'var(--dk-danger, var(--red))', warn = 'var(--dk-warn, var(--amber))';
+  if (_dashSyncInFlight) return;
+  if (IS_FILE_ORIGIN) { toast('Open via a web server to sync.'); return; }
+  const key = getDashSyncKey();
+  if (!key) { toast('Set your sync key in Settings first'); setStatus(`<span style="color:${warn}">No key set — see Settings</span>`); return; }
+  _dashSyncInFlight = true;
+  setStatus(`<span style="color:${mut}">Syncing…</span>`);
+  try {
+    const r = await fetch('/api/bolt/sync-sheet-now', { method: 'POST', headers: { Authorization: `Bearer ${key}` } });
+    let j = {}; try { j = await r.json(); } catch (_) {}
+    if (r.ok && j.ok) {
+      const drivers = j.synced ?? 0, ambs = j.ambassadorsSynced ?? 0;
+      setStatus(`<span style="color:${ok}">Synced ✓ (${drivers} driver${drivers === 1 ? '' : 's'}, ${ambs == null ? '—' : ambs} ambassador${ambs === 1 ? '' : 's'})</span>`);
+      toast(`Sheet synced — ${drivers} drivers, ${ambs == null ? '—' : ambs} ambassadors`);
+      // pipelineRefresh() replaces the whole trust strip (incl. this status span) — delay it
+      // so "Synced ✓" is actually visible for a moment instead of being wiped instantly.
+      setTimeout(() => pipelineRefresh(), 1400);
+      if (typeof refreshAmbassadorList === 'function') {
+        refreshAmbassadorList(true).then(() => { if (document.getElementById('ambassadors')?.classList.contains('active')) renderAmbassadorsView(); }).catch(() => {});
+      }
+      if (document.getElementById('settings')?.classList.contains('active')) renderDataHealth(true);
+    } else if (r.status === 401) {
+      setStatus(`<span style="color:${bad}">Key doesn't match Vercel</span>`);
+      toast("Sync key doesn't match the one set in Vercel.");
+    } else if (r.status === 429) {
+      const wait = j.retryAfterSeconds || 60;
+      setStatus(`<span style="color:${warn}">Just synced — wait ${wait}s</span>`);
+      toast(`Just synced — try again in ${wait}s`);
+    } else if (r.status === 400) {
+      setStatus(`<span style="color:${bad}">Not configured — set DASH_SYNC_KEY in Vercel</span>`);
+      toast(j.error || 'Sync not configured on the server yet.');
+    } else {
+      setStatus(`<span style="color:${bad}">Sync failed — ${j.error || r.status}</span>`);
+      toast(j.error || `Sync failed (${r.status})`);
+    }
+  } catch (e) {
+    setStatus(`<span style="color:${bad}">Sync failed — could not reach the server</span>`);
+    toast('Could not reach the sync endpoint.');
+  } finally {
+    _dashSyncInFlight = false;
+  }
+}
+
 // ── Private cloud key (per-fleet quota) ──
 function renderKeyStatus() {
   const el = document.getElementById('customKeyStatus'); if (!el) return;
@@ -7523,7 +7650,7 @@ const COURIER_OVERRIDES_KEY = 'khair_courier_overrides';
 const CYCLE_RECEIPTS_KEY    = 'khair_cycle_receipts';
 const CYCLE_ANCHOR_KEY      = 'khair_cycle_anchor';
 const TRANSFER_LOG_KEY      = 'khair_transfer_log';
-let financeViewMode  = 'courier'; // 'courier' | 'model' | 'cycle' | 'transfers'
+let financeViewMode  = 'exec';    // 'exec' | 'bonus' | 'courier' | 'transfers' (S4)
 let financeMonth     = '';
 let financeCycle     = '';
 let finShowAllCycles = false;
@@ -8445,32 +8572,13 @@ function renderFinanceTab() {
     : `<option value="${financeMonth}">${monthLabel(financeMonth)} (no CSV data)</option>`;
   const visibleCycles = finShowAllCycles ? cycles : cycles.filter(c => cycleInMonth(c, financeMonth));
   const cycleOpts = visibleCycles.map(c => `<option value="${c}" ${c===financeCycle?'selected':''}>${cycleLabel(c)}</option>`).join('');
-  // Cycle + anchor controls are only relevant for By Captain / By Model / Cycle Reconciliation.
-  // Transfer Log has its own date navigation inside — hide the shared controls there.
+  // S4: By Model + Cycle Reconciliation were consolidated away, so only the Month
+  // selector is shared now. Transfer Log keeps its own internal date navigation.
   const isTransfers = financeViewMode === 'transfers';
-  const anchorBanner = isTransfers ? '' : (!anchor
-    ? `<div style="background:rgba(255,193,7,0.12);border:1px solid var(--amber,#f59e0b);border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <span style="font-size:13px;color:var(--text)">📅 <strong>Set a starting cycle date</strong> — pick any Sunday or Wednesday to activate the fixed payment calendar.</span>
-        <input type="date" id="anchorDatePicker" value="2026-05-10" style="padding:4px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:13px">
-        <button class="finance-btn finance-btn-primary" onclick="applyAnchorDate()" style="padding:5px 14px;font-size:13px">Set Calendar</button>
-      </div>`
-    : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">
-        📅 Cycle calendar anchored from <strong>${anchor}</strong>
-        <button class="finance-btn finance-btn-secondary" onclick="resetCycleAnchor()" style="margin-left:8px;padding:2px 8px;font-size:11px">Change start date</button>
-      </div>`);
   const periodControls = isTransfers ? '' : `
       <div class="fin-period-controls">
         <label>Month</label>
         <select class="kpi-select" onchange="setFinanceMonth(this.value)">${monthOpts}</select>
-        <label style="margin-left:14px">Cycle</label>
-        <select class="kpi-select" onchange="setFinanceCycle(this.value)" style="min-width:280px">
-          <option value="">— pick a cycle —</option>
-          ${cycleOpts}
-        </select>
-        <label style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:5px;margin-left:6px;cursor:pointer">
-          <input type="checkbox" ${finShowAllCycles?'checked':''} onchange="setFinShowAllCycles(this.checked)"> Show all cycles
-        </label>
-        <button class="finance-btn finance-btn-secondary" onclick="openCycleReceiptModal(financeCycle)" style="margin-left:8px">✎ Cycle Receipt</button>
       </div>`;
   el.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
@@ -8482,45 +8590,27 @@ function renderFinanceTab() {
         <button class="finance-btn finance-btn-secondary" onclick="openReconcileModal()" title="Upload Bolt's monthly report to lock finalised numbers for bonuses">📋 Reconcile w/ Bolt${isMonthReconciled(financeMonth) ? ' <span style=\'color:var(--green)\'>✓</span>' : ''}</button>
       </div>
     </div>
-    ${anchorBanner}
     <div id="financeAlerts"></div>
     <div class="fin-period-bar">
       ${periodControls}
       <div class="view-toggle">
-        <button class="view-toggle-btn ${financeViewMode==='exec'?'active':''}" onclick="setFinanceView('exec')" title="CEO view — monthly P&L trend and unit economics">👔 Executive</button>
+        <button class="view-toggle-btn ${financeViewMode==='exec'?'active':''}" onclick="setFinanceView('exec')" title="CEO view — company profit + bonus projection">👔 Executive</button>
+        <button class="view-toggle-btn ${financeViewMode==='bonus'?'active':''}" onclick="setFinanceView('bonus')" title="Bolt tier bonus + campaign bonuses + closed-month invoice">🎯 Bolt Bonus</button>
         <button class="view-toggle-btn ${financeViewMode==='courier'?'active':''}" onclick="setFinanceView('courier')">By Captain</button>
-        <button class="view-toggle-btn ${financeViewMode==='model'?'active':''}" onclick="setFinanceView('model')">By Model</button>
-        <button class="view-toggle-btn ${financeViewMode==='cycle'?'active':''}" onclick="setFinanceView('cycle')">Cycle Reconciliation</button>
         <button class="view-toggle-btn ${financeViewMode==='transfers'?'active':''}" onclick="setFinanceView('transfers')" style="${Object.keys(loadTransferLog()).length>0?'color:var(--bolt-green)':''}">💸 Transfer Log</button>
       </div>
     </div>
     <div id="financeMainContent"></div>
-    ${!isTransfers ? `
-    <div class="finance-section" style="margin-top:18px">
-      <div class="finance-section-header">
-        <span class="finance-section-title">Captain Bonuses</span>
-        <span style="font-size:11px;color:var(--text-muted)">Bolt campaign bonuses — paid in full to each captain</span>
-      </div>
-      <div id="finBonusContent"></div>
-    </div>
-    <div class="finance-section" style="margin-top:18px">
-      <div class="finance-section-header">
-        <span class="finance-section-title">Fleet Bolt Tier Bonus</span>
-        <span style="font-size:11px;color:var(--text-muted)">Your share (${Math.round(companySplitPct(financeMonth))}% split): ${[...BOLT_BONUS_TIERS].sort((a,b)=>a.floor-b.floor).map(t=>fmt(splitAfterOpCost(t.gross, financeMonth).company)).join(' / ')} SAR at the 4k / 5k / 6k net tiers</span>
-      </div>
-      <div id="finFleetBonusContent"></div>
-    </div>` : ''}
   `;
   // Modals live at <body> level (not inside this panel) so they can open from
   // any tab — the Ambassadors tab in particular, since #finance is display:none then.
   ensureFinanceModals();
+  // Legacy stored modes ('model' / 'cycle') fall through to Executive.
   if (financeViewMode === 'courier')         renderFinanceCourierView();
-  else if (financeViewMode === 'model')      renderFinanceModelView();
-  else if (financeViewMode === 'cycle')      renderFinanceCycleView();
+  else if (financeViewMode === 'bonus')      renderFinanceBonusView();
   else if (financeViewMode === 'transfers')  renderFinanceTransferView();
-  else if (financeViewMode === 'exec')       renderFinanceExecView();
+  else                                       renderFinanceExecView();
   renderFinanceAlerts();
-  if (!isTransfers) { renderFinBonus(); renderFleetBoltBonus(); }
 }
 // Finance-tab nudges: (1) a past month with data not yet reconciled with Bolt, (2) earners in
 // the viewed month with no saved cost profile (their "Fleet keeps" is raw net, unadjusted).
@@ -8539,16 +8629,15 @@ function renderFinanceAlerts() {
       <button class="finance-btn finance-btn-primary" style="padding:4px 12px;font-size:12px" onclick="financeMonth='${m}';openReconcileModal()">Reconcile ${monthLabel(m)}</button>
     </div>`);
   }
-  const profiles = loadCourierProfiles();
-  const noProfile = getDriversInMonth(financeMonth)
-    .filter(n => computeDriverNetForPeriod(n, financeMonth) > 0 && !Object.prototype.hasOwnProperty.call(profiles, driverKey(n)))
-    .map(n => ({ n, net: computeDriverNetForPeriod(n, financeMonth) }))
-    .sort((a,b) => b.net - a.net);
-  if (noProfile.length) {
-    const names = noProfile.slice(0,6).map(x => `${x.n} (${fmt(x.net)})`).join(', ');
-    const extra = noProfile.length > 6 ? `, +${noProfile.length-6} more` : '';
-    cards.push(`<div style="background:rgba(56,190,240,.10);border:1px solid var(--blue,#38a5e0);border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.5">
-      🧾 <b>${noProfile.length}</b> earner${noProfile.length===1?'':'s'} in ${monthLabel(financeMonth)} ${noProfile.length===1?'has':'have'} <b>no cost profile</b> — their "Fleet keeps" is just raw net (no rent/salary/cut applied): <span style="color:var(--text-muted)">${names}${extra}</span>
+  // ★ Loud affordance (S4): a CLOSED month with driver data but no uploaded Bolt bonus
+  // invoice is running on a pace ESTIMATE — surface it so the real numbers get locked in.
+  const missingInv = getAvailableMonths().filter(m => m < curKey && getDriversInMonth(m).length && !boltBonusMonth(m));
+  if (missingInv.length) {
+    const m = missingInv[0];                              // getAvailableMonths is newest-first
+    const more = missingInv.length > 1 ? ` (+${missingInv.length-1} more)` : '';
+    cards.push(`<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--warn-tint,rgba(255,176,32,.10));border:1px solid var(--amber,#f59e0b);border-radius:8px;padding:10px 14px">
+      <span style="font-size:13px">🎯 <b>${monthLabel(m)}</b> is closed but Bolt's bonus invoice isn't uploaded${more} — the bonus is a pace <i>estimate</i> until you add the real sheet.</span>
+      <button class="finance-btn finance-btn-primary" style="padding:4px 12px;font-size:12px" onclick="financeMonth='${m}';setFinanceView('bonus');financeUploadBoltInvoice('${m}')">Upload ${monthLabel(m)} invoice</button>
     </div>`);
   }
   box.innerHTML = cards.length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">${cards.join('')}</div>` : '';
@@ -8590,12 +8679,8 @@ function renderFinanceCourierView() {
   const pnlCell = v => `<span style="font-weight:700;color:${v >= 0 ? 'var(--green)' : 'var(--red)'}">${v >= 0 ? '+' : ''}${fmt(v)}</span>`;
   const escAttr = s => String(s||'').replace(/\\/g,'\\\\').replace(/'/g, "\\'").replace(/"/g,'&quot;');
   const rows = visPls.map(p => {
-    const modelLabel = p.model === 'Custom' ? (p.modelCustom || 'Custom') : resolveModelDisplay(p.model);
     const foreign = lookupForeignName(p.name);
     const hasOverride = !!getOverride(p.name, monthKey);
-    const otherLabel = p.profile?.other?.label;
-    const fcType = p.profile?.fleetCut?.type;
-    const fcValue = p.profile?.fleetCut?.value;
     const nameAttr = escAttr(p.name);
     return `<tr>
       <td>
@@ -8604,7 +8689,6 @@ function renderFinanceCourierView() {
         </div>
         ${foreign?`<span class="d-foreign">${foreign}</span>`:''}
       </td>
-      <td><span class="${modelBadgeClass(p.model)}">${modelLabel}</span></td>
       <td style="white-space:nowrap">
         <input value="${(p.ambassador||'').replace(/"/g,'&quot;')}" placeholder="—" title="Type the ambassador's name (e.g. Omar) to tag this driver"
           onchange="setDriverAmbassador('${nameAttr}', this.value)"
@@ -8618,11 +8702,6 @@ function renderFinanceCourierView() {
         </select>
       </td>
       <td style="text-align:right">${fmt(p.income)}</td>
-      <td style="text-align:right">${signed(p.acctRent)}</td>
-      <td style="text-align:right">${signed(p.carRent)}</td>
-      <td style="text-align:right">${signed(p.salary)}</td>
-      <td style="text-align:right">${signed(p.fleetCut)}${fcType==='PCT'?`<div style="font-size:10px;color:var(--text-muted)">${fcValue}%</div>`:''}</td>
-      <td style="text-align:right">${signed(p.other)}${otherLabel?`<div style="font-size:10px;color:var(--text-muted)">${otherLabel}</div>`:''}</td>
       <td style="text-align:right">${signed(p.bonusCost)}${(p.ambModel||p.saudiA)?`<div style="font-size:10px;color:${p.ambPayout&&p.ambPayout.qualifies?'var(--text-muted)':'var(--amber)'}">${p.ambOwed?`${p.ambassador||'Amb'} ${fmt(p.ambOwed)}`:''}${p.saudiA?`${p.ambOwed?' · ':''}Saudi ${fmt(p.saudiA)}`:''}${(!p.ambOwed&&!p.saudiA)?p.ambModel:''}</div>`:''}</td>
       <td style="text-align:right">${pnlCell(p.netPnL)}</td>
       <td style="text-align:right;white-space:nowrap">
@@ -8688,28 +8767,17 @@ function renderFinanceCourierView() {
       <div style="overflow-x:auto"><table class="finance-table">
         <thead><tr>
           <th class="${finThCls('name')}"    onclick="setFinanceSort('name')"    style="cursor:pointer;user-select:none">Driver ${finArrow('name')}</th>
-          <th>Model</th>
           <th>Ambassador</th>
           <th class="${finThCls('income')}"   onclick="setFinanceSort('income')"   style="cursor:pointer;user-select:none;text-align:right">Bolt Net ${finArrow('income')}</th>
-          <th class="${finThCls('acctRent')}" onclick="setFinanceSort('acctRent')" style="cursor:pointer;user-select:none;text-align:right">Acct Rent ${finArrow('acctRent')}</th>
-          <th class="${finThCls('carRent')}"  onclick="setFinanceSort('carRent')"  style="cursor:pointer;user-select:none;text-align:right">Car Rent ${finArrow('carRent')}</th>
-          <th class="${finThCls('salary')}"   onclick="setFinanceSort('salary')"   style="cursor:pointer;user-select:none;text-align:right">Salary ${finArrow('salary')}</th>
-          <th class="${finThCls('fleetCut')}" onclick="setFinanceSort('fleetCut')" style="cursor:pointer;user-select:none;text-align:right">Fleet Cut ${finArrow('fleetCut')}</th>
-          <th class="${finThCls('other')}"    onclick="setFinanceSort('other')"    style="cursor:pointer;user-select:none;text-align:right">Other ${finArrow('other')}</th>
           <th class="${finThCls('bonusCost')}"  onclick="setFinanceSort('bonusCost')"  style="cursor:pointer;user-select:none;text-align:right" title="Bonuses paid out (ambassador + Model-A Saudi 500)">Bonuses ${finArrow('bonusCost')}</th>
           <th class="${finThCls('netPnL')}"   onclick="setFinanceSort('netPnL')"   style="cursor:pointer;user-select:none;text-align:right">Net P&amp;L ${finArrow('netPnL')}</th>
           <th style="text-align:right">Actions</th>
         </tr></thead>
         <tbody>
-          ${rows || `<tr><td colspan="12" style="text-align:center;padding:20px;color:var(--text-muted)">No captains match your filter</td></tr>`}
+          ${rows || `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted)">No captains match your filter</td></tr>`}
           ${!hasFilt ? `<tr style="background:var(--bg-card2);font-weight:700">
-            <td colspan="3">TOTAL</td>
+            <td colspan="2">TOTAL</td>
             <td style="text-align:right">${fmt(tot.income)}</td>
-            <td style="text-align:right">${signed(tot.acctRent)}</td>
-            <td style="text-align:right">${signed(tot.carRent)}</td>
-            <td style="text-align:right">${signed(tot.salary)}</td>
-            <td style="text-align:right">${signed(tot.fleetCut)}</td>
-            <td style="text-align:right">${signed(tot.other)}</td>
             <td style="text-align:right">${signed(tot.bonusCost)}</td>
             <td style="text-align:right">${pnlCell(tot.netPnL)}</td>
             <td></td>
@@ -8774,9 +8842,17 @@ function computeExecMonth(monthKey) {
       S.tierCounts[net >= 6000 ? 2 : net >= 5000 ? 1 : 0]++;
     });
   }
+  // ★ P&L PARITY (S4): the referral-incentive cost reads the ONE shared engine
+  // incentiveTotalsFor(month).grandSar — the exact SAR total the Incentives tab shows
+  // (override-aware, EGP→SAR-converted) — so the P&L incentive line can never disagree
+  // with the Incentives tab. (Historically this line summed per-driver p.bonusCost; that
+  // sum equals grandSar today — both 0 until nationality data fills in — so wiring the
+  // shared source moves no company-profit number, it just makes the agreement structural.)
+  S.incentivesOwed = (typeof incentiveTotalsFor === 'function')
+    ? (incentiveTotalsFor(monthKey).totals.grandSar || 0) : 0;
   // Company net = rentals/deal income + Bolt-bonus company share (company % of gross) − REAL
-  // costs (referrals + Saudi bonuses, bonusPaid ≤0; salaries are inside dealOut).
-  S.dealNet    = S.dealIn + S.dealOut + S.bonusPaid;
+  // costs (referral incentives; salaries are inside dealOut).
+  S.dealNet    = S.dealIn + S.dealOut - S.incentivesOwed;
   S.companyNet = S.dealNet + S.tierCompany;
   S.perDriver  = S.activeN ? S.companyNet / S.activeN : 0;
   S.splitPct   = companySplitPct(monthKey);
@@ -8828,7 +8904,7 @@ function renderFinanceExecView() {
     ${row('Car rentals & deal income', S.dealIn>0 ? signed(S.dealIn) : '<span style="color:var(--text-muted)">— fill cost profiles</span>')}
     ${subhdr('MONEY OUT')}
     ${row('Salaries & deal payouts', Math.round(S.dealOut)<0 ? signed(S.dealOut) : '<span style="color:var(--text-muted)">—</span>')}
-    ${row('Referrals + Saudi bonuses <span style="font-size:11px;color:var(--text-muted)">(actual paid)</span>', Math.round(S.bonusPaid)<0 ? signed(S.bonusPaid) : '<span style="color:var(--text-muted)">—</span>')}
+    ${row('Referral incentives <span style="font-size:11px;color:var(--text-muted)">(= Incentives tab total)</span>', S.incentivesOwed>0 ? signed(-S.incentivesOwed) : '<span style="color:var(--text-muted)">—</span>')}
     ${row('★ Company profit', `<span style="color:${S.companyNet>=0?'var(--bolt-green)':'var(--red)'}">${money(S.companyNet)} SAR</span>`, {strong:true})}
   </div>`;
 
@@ -8846,34 +8922,85 @@ function renderFinanceExecView() {
     ${row('Total real costs', money(actualCosts))}
   </div>`;
 
-  // Projection — current in-progress month only (keeps the "before Bolt sends it" number).
-  let projCallout = '';
-  if (R.isCurrentMonth && sel === curKey) {
+  // Projection — current in-progress month only (the "before Bolt sends it" number).
+  const isCurrent = R.isCurrentMonth && sel === curKey;
+  let projectedBonus = S.tierCompany;                 // closed month: the actual company bonus
+  let projNet = S.companyNet;
+  if (isCurrent) {
     const nonIdle = R.current.filter(d => !d.idle);
-    const projTierCompany = nonIdle.reduce((s,d) => s + (d.companyBonus || 0), 0);
-    const projNet = S.dealNet + projTierCompany;
+    projectedBonus = nonIdle.reduce((s,d) => s + (d.companyBonus || 0), 0);
+    projNet = S.dealNet + projectedBonus;
+  }
+  let projCallout = '';
+  if (isCurrent) {
     const up = projNet - S.companyNet;
     const note = R.elapsedDays <= 4 ? ` (early read — ${R.elapsedDays}d in)` : (up>0 ? ` (+${money(up)} as tiers firm up)` : '');
     projCallout = `<div style="margin:0 12px 12px;background:rgba(61,219,174,.08);border:1px solid var(--bolt-green,#3DDBAE);border-radius:8px;padding:9px 12px;font-size:12px">📈 ${monthLabel(curKey)} booked so far <b>${money(S.companyNet)} SAR</b> · on pace to close at <b style="color:var(--bolt-green)">~${money(projNet)} SAR</b>${note}.</div>`;
   }
 
+  // ── Projection header: PROJECTED COMPANY BONUS / BANKED / SPLIT % (S4) ──
+  const execStat = (label, val, sub, o) => `<div style="flex:1;min-width:150px;background:var(--bg-card);border:1px solid ${o&&o.accent?'var(--bolt-green,#3DDBAE)':'var(--border)'};border-radius:10px;padding:11px 14px">
+    <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)">${label}</div>
+    <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:${(o&&o.color)||'var(--text)'};margin-top:2px">${val}</div>
+    ${sub?`<div style="font-size:11px;color:var(--text-muted);margin-top:1px">${sub}</div>`:''}</div>`;
+  const projHeader = `<div style="display:flex;gap:10px;flex-wrap:wrap;padding:2px 12px 6px">
+    ${isCurrent
+      ? execStat('Projected company bonus', money(projectedBonus)+' SAR', 'on pace to month-end', {accent:true, color:'var(--bolt-green)'})
+        + execStat('Booked so far', money(S.tierCompany)+' SAR', `${R.elapsedDays||0}d in · estimate`)
+        + execStat('Your split', Math.round(S.splitPct)+'%', 'rest → Partner B')
+      : execStat('Company bonus', money(S.tierCompany)+' SAR', S.bonusSource==='actual'?'actual · final':'estimate', {color:'var(--bolt-green)'})
+        + execStat('Banked', S.bonusSource==='actual'?('✓ '+money(S.tierGross)):'—', S.bonusSource==='actual'?'Bolt invoice gross':'no invoice yet')
+        + execStat('Your split', Math.round(S.splitPct)+'%', 'rest → Partner B')}
+  </div>`;
+
+  // ── Tier status (the ONE shared source — matches the Bolt Bonus tab exactly) ──
+  const tierBlock = `<div style="margin:8px 12px 0;padding:10px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px">
+    <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px">Tier status — ${monthLabel(sel)} <span style="text-transform:none;letter-spacing:0;color:var(--text-dim,#5D6772)">· one shared source, matches Bolt Bonus</span></div>
+    ${tierStatusStrip(sel, {compact:true})}
+  </div>`;
+
+  // ── Reconciliation checklist (replaces the Cycle Reconciliation sub-tab; feeds reconDue) ──
+  const reconRows = [...months].reverse().map(m => {
+    const isCur = m === curKey;
+    const rec = isMonthReconciled(m);
+    const hasInv = !!boltBonusMonth(m);
+    const statusChip = isCur ? '<span style="color:var(--text-muted)">in progress</span>'
+      : rec ? '<span style="color:var(--bolt-green)">reconciled ✓</span>'
+            : '<span style="color:var(--amber)">reconcile due</span>';
+    const invChip = hasInv ? '<span style="color:var(--bolt-green)">invoice ✓</span>'
+      : isCur ? '<span style="color:var(--text-muted)">—</span>'
+              : '<span style="color:var(--amber)">no invoice</span>';
+    const act = (!isCur && !rec) ? `<button class="finance-btn finance-btn-secondary" style="padding:2px 10px;font-size:11px" onclick="financeMonth='${m}';openReconcileModal()">Reconcile</button>`
+      : (!isCur && !hasInv) ? `<button class="finance-btn finance-btn-secondary" style="padding:2px 10px;font-size:11px" onclick="financeMonth='${m}';setFinanceView('bonus');financeUploadBoltInvoice('${m}')">Upload invoice</button>`
+      : '<span style="color:var(--text-dim,#5D6772);font-size:11px">—</span>';
+    return `<div style="display:grid;grid-template-columns:1.1fr 1fr 1fr auto;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--border);font-size:12px">
+      <b>${monthLabel(m)}</b><span>${statusChip}</span><span>${invChip}</span><span style="text-align:right">${act}</span></div>`;
+  }).join('');
+  const reconCard = `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:12px 20px;margin:14px 12px 0">
+    <div style="font-size:14px;font-weight:700">Month reconciliation checklist</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Lock each closed month with Bolt's monthly report + bonus invoice so the numbers are exact, not estimates.</div>
+    <div style="margin-top:6px">${reconRows}</div>
+  </div>`;
+
   host.innerHTML = `
     <div class="finance-section">
-      <div class="finance-section-header"><span class="finance-section-title">👔 Executive P&L — company money only</span>
-        <span style="font-size:11px;color:var(--text-muted)">Your company's monthly profit. Driver net is THEIR money — context only.</span></div>
+      <div class="finance-section-header"><span class="finance-section-title">👔 Executive — company profit &amp; bonus projection</span>
+        <span style="font-size:11px;color:var(--text-muted)">Company money only. Driver net is THEIR money — context, never company revenue.</span></div>
+      ${projHeader}
       ${strip}
       ${projCallout}
       ${statement}
+      ${tierBlock}
+      ${reconCard}
       ${spend}
       <details style="margin:14px 12px 0"><summary style="cursor:pointer;font-size:12px;color:var(--cyan)">Details &amp; context for ${monthLabel(sel)}</summary>
         <div style="padding:8px 0">
-          ${row('Drivers at 4k / 5k / 6k tier', `<span style="color:var(--text-muted)">${S.tierCounts[0]} / ${S.tierCounts[1]} / ${S.tierCounts[2]}</span>`, {dim:true})}
           ${row('Active drivers', String(S.activeN), {dim:true})}
           ${row('Net per active driver', signed(S.perDriver), {dim:true})}
           ${row('Partner B tier share', money(S.tierPartnerB), {dim:true})}
           ${row("Drivers' Bolt net (their money — context only)", money(S.driversNet), {dim:true})}
           ${row('Data quality', (S.reconciled?'<span style="color:var(--bolt-green)">reconciled ✓</span>':(sel===curKey?'<span style="color:var(--text-muted)">open (in progress)</span>':'<span style="color:var(--amber)">reconcile due</span>'))+(S.noProfile?` · <span style="color:var(--amber)">${S.noProfile} no-profile</span>`:''), {dim:true})}
-          <div style="font-size:11px;color:var(--text-muted);padding:10px 0 0;line-height:1.7">Bolt pays 1,500 / 2,000 / 2,500 per driver at 4k / 5k / 6k net. Closed months use Bolt's uploaded invoice (Settings → Bolt Bonus Split); the current month estimates from pace. The bonus splits <b>${Math.round(S.splitPct)}% you / ${Math.round(100-S.splitPct)}% Partner B</b> (editable per month or per driver). Referrals + Saudi bonuses + salaries are your real costs, subtracted separately.</div>
+          <div style="font-size:11px;color:var(--text-muted);padding:10px 0 0;line-height:1.7">Bolt pays 1,500 / 2,000 / 2,500 per driver at 4k / 5k / 6k net. Closed months use Bolt's uploaded invoice (Settings → Bolt Bonus Split); the current month estimates from pace. The bonus splits <b>${Math.round(S.splitPct)}% you / ${Math.round(100-S.splitPct)}% Partner B</b> (editable per month or per driver). Referral incentives are your real cost, subtracted above.</div>
         </div>
       </details>
     </div>`;
@@ -9636,27 +9763,34 @@ function renderFleetBoltBonus() {
   const tierLabel     = f => f ? `${fmt(f)} tier` : 'below tier';
   const tierClass     = f => f >= 6000 ? 'tier-txt-3' : f >= 5000 ? 'tier-txt-2' : f >= 4000 ? 'tier-txt-1' : 'tier-txt-0';
 
-  const drivers = getDriversInMonth(monthKey);
-  if (!drivers.length) {
+  const monthDrivers = getDriversInMonth(monthKey);
+  const imported = boltBonusMonth(monthKey);   // closed month: Bolt's real invoice
+  if (!monthDrivers.length && !imported) {
     el.innerHTML = `<div class="finance-empty">No driver data for ${monthLabel(monthKey)}</div>`;
     return;
   }
-  const imported = boltBonusMonth(monthKey);   // closed month: match the Executive tab (Bolt's real invoice)
-  const rows = drivers
-    .map(name => {
+  let rows;
+  if (imported) {
+    // ★ Render Bolt's invoice DIRECTLY (the exact source computeExecMonth uses) so this
+    // table's qualifier count + total always equal the Executive P&L. The old phone-match
+    // over getDriversInMonth silently dropped invoice-paid drivers whose stored phone
+    // didn't match (e.g. a blank-name invoice row) — under-counting the fleet bonus.
+    // Resolve a display name: CSV driver matched by phone(9) → invoice name → phone tail.
+    const csvByPhone = {};
+    monthDrivers.forEach(name => { const ph = String(getKnownDriverPhone(name)||'').replace(/\D/g,'').slice(-9); if (ph && !csvByPhone[ph]) csvByPhone[ph] = name; });
+    rows = Object.entries(imported).map(([ph, d]) => {
+      const gross = +d.gross || 0, net = +d.net || 0;
+      const name = csvByPhone[ph] || (d.name && d.name.trim()) || ('#' + String(ph).slice(-4));
+      const floor = gross > 0 ? (net >= 6000 ? 6000 : net >= 5000 ? 5000 : 4000) : null;
+      return { name, net, bonus: gross > 0 ? splitAfterOpCost(gross, monthKey, name).company : 0, floor };
+    }).filter(r => r.bonus > 0).sort((a, b) => b.net - a.net);   // only Bolt-paid qualifiers
+  } else {
+    rows = monthDrivers.map(name => {
       const pl = computeDriverPnL(name, monthKey);
-      if (imported) {
-        const ph = String(getKnownDriverPhone(name) || '').replace(/\D/g, '').slice(-9);
-        const d = ph && imported[ph];
-        const gross = d ? (+d.gross || 0) : 0;
-        const net = d ? (+d.net || 0) : pl.income;
-        const floor = gross > 0 ? (net >= 6000 ? 6000 : net >= 5000 ? 5000 : 4000) : null;
-        return { name, net: pl.income, bonus: gross > 0 ? splitAfterOpCost(gross, monthKey, name).company : 0, floor };
-      }
       const b = bonusForDriver(name, pl.income, monthKey);
       return { name, net: pl.income, bonus: b.company, floor: b.tierFloor };
-    })
-    .sort((a, b) => b.net - a.net);
+    }).sort((a, b) => b.net - a.net);
+  }
 
   const totalBonus = rows.reduce((s, r) => s + r.bonus, 0);
   const earners    = rows.filter(r => r.bonus > 0);
@@ -9689,6 +9823,126 @@ function renderFleetBoltBonus() {
         </tr>
       </tbody>
     </table>`;
+}
+
+// ── ★ tierStatusFor(month) — the ONE shared tier-status source (S4) ───────────
+// Per tier {achieved, projected}: `achieved` = drivers whose BANKED net lands in that
+// band; `projected` = current-month drivers not yet banked there but on pace to reach
+// it. Executive, Bolt Bonus and the Fleet tier section all read this, so the tier story
+// is identical everywhere — killing the "No drivers hit a tier / 6,000 tier" contradiction.
+// For a CLOSED month with Bolt's invoice, banked = invoice net (month over → nothing "on
+// pace"); this mirrors computeExecMonth's tierCounts exactly, so displays never disagree.
+function tierStatusFor(monthKey) {
+  const st = { 4000:{achieved:0,projected:0}, 5000:{achieved:0,projected:0}, 6000:{achieved:0,projected:0} };
+  const imported = boltBonusMonth(monthKey);
+  if (imported) {
+    // Closed month: Bolt's invoice is banked truth. A paid row (gross>0) lands at its
+    // net band, floored at 4k (matches computeExecMonth + the Fleet bonus table exactly).
+    Object.values(imported).forEach(d => {
+      if ((+d.gross||0) <= 0) return;
+      const net = +d.net||0;
+      const f = net>=6000?6000 : net>=5000?5000 : 4000;
+      st[f].achieved++;
+    });
+  } else {
+    // Open / un-invoiced month: classify each driver by the tier his bonus lands in
+    // (pace-aware bonusForDriver.tierFloor — identical to computeExecMonth's count), then
+    // split that tier into achieved (banked ≥ floor) vs on-pace (projected, not yet banked).
+    getDriversInMonth(monthKey).forEach(name => {
+      const income = computeDriverNetForPeriod(name, monthKey);
+      const b = bonusForDriver(name, income, monthKey);
+      const f = b.tierFloor;
+      if (!f) return;                                // below pace → pipeline, not a tier
+      if (income >= f) st[f].achieved++; else st[f].projected++;
+    });
+  }
+  const total = { achieved: 0, projected: 0 };
+  [4000,5000,6000].forEach(f => { total.achieved += st[f].achieved; total.projected += st[f].projected; });
+  return { month: monthKey, tiers: st, total };
+}
+// The ONE copy pattern: "6,000 — 2 achieved · 3 on pace" per tier, high→low.
+function tierStatusStrip(monthKey, o) {
+  o = o || {};
+  const s = tierStatusFor(monthKey);
+  const nm = { 6000:'6,000', 5000:'5,000', 4000:'4,000' };
+  const cls = { 6000:'tier-txt-3', 5000:'tier-txt-2', 4000:'tier-txt-1' };
+  const parts = [6000,5000,4000].map(f => {
+    const t = s.tiers[f];
+    const bits = [`${t.achieved} achieved`];
+    if (t.projected) bits.push(`${t.projected} on pace`);
+    return `<span style="display:inline-flex;gap:6px;align-items:baseline;margin-right:16px;white-space:nowrap">
+      <b class="${cls[f]}" style="font-family:var(--mono)">${nm[f]}</b>
+      <span style="color:var(--text-muted);font-size:12px">— ${bits.join(' · ')}</span></span>`;
+  }).join('');
+  return `<div style="padding:${o.compact?'2px 2px 8px':'8px 2px 12px'};font-size:13px;line-height:1.9">${parts}</div>`;
+}
+
+// ── 🎯 Bolt Bonus sub-tab (S4) ───────────────────────────────────────────────
+// Consolidates what used to be two always-on sections under every finance view
+// (Fleet Bolt Tier Bonus + Captain Bonuses) into one dedicated sub-tab, and adds
+// the closed-month invoice affordance up top. The tier-status line reads the ONE
+// shared tierStatusFor() so it never contradicts the Executive tab.
+function renderFinanceBonusView() {
+  const host = document.getElementById('financeMainContent');
+  if (!host) return;
+  const monthKey  = financeMonth;
+  const splitPct  = Math.round(companySplitPct(monthKey));
+  const tierShares = [...BOLT_BONUS_TIERS].sort((a,b)=>a.floor-b.floor)
+    .map(t => fmt(splitAfterOpCost(t.gross, monthKey).company)).join(' / ');
+  const imported  = boltBonusMonth(monthKey);
+  const now = new Date();
+  const curKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const isClosed = monthKey < curKey;
+
+  // Closed-month invoice affordance: loud amber prompt when a closed month has driver
+  // data but no uploaded Bolt invoice; quiet confirmation once it's loaded.
+  let invoiceStrip = '';
+  if (imported) {
+    const drivers = Object.keys(imported).length;
+    const gross = Object.values(imported).reduce((s,d)=>s+(+d.gross||0),0);
+    invoiceStrip = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:rgba(61,219,174,.08);border:1px solid rgba(61,219,174,.3);border-radius:8px;padding:9px 14px;margin-bottom:12px;font-size:13px">
+      <span style="color:var(--bolt-green)">✓ Bolt invoice loaded</span>
+      <span style="color:var(--text-muted)">${drivers} drivers · ${fmt(Math.round(gross))} SAR gross (exact) — this month uses Bolt's real numbers, not the pace estimate.</span>
+      <button class="finance-btn finance-btn-secondary" style="padding:3px 10px;font-size:12px;margin-left:auto" onclick="financeUploadBoltInvoice('${monthKey}')">Replace</button>
+    </div>`;
+  } else if (isClosed && getDriversInMonth(monthKey).length) {
+    invoiceStrip = `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--warn-tint,rgba(255,176,32,.10));border:1px solid var(--amber,#f59e0b);border-radius:8px;padding:11px 14px;margin-bottom:12px">
+      <span style="font-size:13px;color:var(--text)">⚠️ <b>${monthLabel(monthKey)} is closed but Bolt's invoice isn't uploaded</b> — bonuses are a pace <i>estimate</i> until you add the real sheet (the one with the <b>Max Value</b> column).</span>
+      <button class="finance-btn finance-btn-primary" style="padding:5px 14px;font-size:13px" onclick="financeUploadBoltInvoice('${monthKey}')">⬆ Upload ${monthLabel(monthKey)} invoice</button>
+    </div>`;
+  }
+
+  host.innerHTML = `
+    <div class="finance-section">
+      <div class="finance-section-header">
+        <span class="finance-section-title">Fleet Bolt Tier Bonus — ${monthLabel(monthKey)}</span>
+        <span style="font-size:11px;color:var(--text-muted)">Your share (${splitPct}% split): ${tierShares} SAR at the 4k / 5k / 6k net tiers</span>
+      </div>
+      ${invoiceStrip}
+      <div id="finTierStatusLine"></div>
+      <div id="finFleetBonusContent"></div>
+    </div>
+    <div class="finance-section" style="margin-top:18px">
+      <div class="finance-section-header">
+        <span class="finance-section-title">Captain Bonuses</span>
+        <span style="font-size:11px;color:var(--text-muted)">Bolt campaign bonuses — paid in full to each captain</span>
+      </div>
+      <div id="finBonusContent"></div>
+    </div>`;
+  const tsLine = document.getElementById('finTierStatusLine');
+  if (tsLine) tsLine.innerHTML = tierStatusStrip(monthKey);
+  renderFleetBoltBonus();
+  renderFinBonus();
+}
+
+// Route a Bolt-invoice upload from anywhere (Finance affordances) through the
+// existing Settings file input + handler — set the target month, open the picker.
+function financeUploadBoltInvoice(monthKey) {
+  const mEl = document.getElementById('boltBonusMonth');
+  const fEl = document.getElementById('boltBonusFile');
+  if (mEl) mEl.value = monthKey || financeMonth;
+  if (fEl) fEl.click();
+  else toast('Open Settings → Bolt Bonus Split to upload the invoice');
 }
 
 // ═══════════════════════════════════════════
@@ -10896,7 +11150,8 @@ function pipelineDashboardHtml(snapshot, log, source) {
   };
   const trust = `<div class="dk-card"><div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-family:var(--dk-mono);font-size:11px;color:var(--dk-mut)">
     ${tsChip('MIRROR', pipelineMirrorTs)}${tsChip('STAGES', stagesTs)}
-    <button class="dk-btn sm" disabled title="On-demand sheet → mirror sync — wired in S5 (F5)" style="opacity:.5;margin-inline-start:auto">⟳ Sync sheet now</button>
+    <span id="onbSyncStatus" style="margin-inline-start:auto"></span>
+    <button class="dk-btn sm" onclick="syncSheetNow('onbSyncStatus')" title="Pull the onboarding sheet into Supabase right now (needs a sync key set in Settings)">⟳ Sync sheet now</button>
     <button class="dk-btn sm" onclick="pipelineRefresh()" title="Re-read the latest synced data from Supabase">↻ Reload</button>
   </div></div>`;
 
