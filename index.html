@@ -7053,6 +7053,7 @@ async function syncToCloud() {
     khair_settings:         JSON.parse(localStorage.getItem('khair_settings3')    || '{}'),
     khair_courier_profiles: JSON.parse(localStorage.getItem(COURIER_PROFILES_KEY)  || '{}'),
     khair_courier_overrides:JSON.parse(localStorage.getItem(COURIER_OVERRIDES_KEY) || '{}'),
+    khair_incentive_overrides: loadIncentiveOverrides(),
     khair_cycle_receipts:   JSON.parse(localStorage.getItem(CYCLE_RECEIPTS_KEY)    || '{}'),
     khair_transfer_log:     JSON.parse(localStorage.getItem(TRANSFER_LOG_KEY)      || '{}'),
     khair_reconcile:        loadReconcile(),
@@ -7137,6 +7138,9 @@ async function fetchFromCloud() {
   }
   if ('khair_courier_overrides' in r) {
     saveOverrides(mergeStampedByKey(r.khair_courier_overrides, loadOverrides()));
+  }
+  if ('khair_incentive_overrides' in r) {
+    saveIncentiveOverrides({ ...r.khair_incentive_overrides, ...loadIncentiveOverrides() });   // per-key; local edits win on conflict
   }
   if ('khair_cycle_receipts' in r) {
     const local = loadCycleReceipts();
@@ -10210,7 +10214,7 @@ let sheetAmbassadorSyncCache = null;
 async function fetchSheetAmbassadorSync(force) {
   if (sheetAmbassadorSyncCache && !force) return sheetAmbassadorSyncCache;
   if (!supabaseOn()) return [];
-  const rows = await jbFetch(`${getSbUrl()}/rest/v1/sheet_ambassador_sync?select=id,name,phone,ambassador,nationality`, { headers: sbHeaders() });
+  const rows = await jbFetch(`${getSbUrl()}/rest/v1/sheet_ambassador_sync?select=id,name,phone,ambassador,nationality,synced_at`, { headers: sbHeaders() });
   sheetAmbassadorSyncCache = dedupeSyncedByPhone(Array.isArray(rows) ? rows : []);
   return sheetAmbassadorSyncCache;
 }
@@ -10373,151 +10377,288 @@ function renderIncentivesTab() {
   refreshAmbassadorList().then(() => renderIncentives()).catch(() => {});
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// S3 · THE CROSS-TAB INCENTIVE CONTRACT — `incentiveTotalsFor(month)`
+// ONE function computes per-referrer owed for a month AND applies the manual
+// overrides, so the Incentives totals row, the Ambassadors roster's "incentive
+// MTD", and Finance's P&L (S4) all read the SAME number and can never drift.
+// Manual overrides live in `khair_incentive_overrides`, keyed 'YYYY-MM|refName'
+// → { mode:'delta'|'replace'|'waive', amount, note, by, ts }. `amount` is in the
+// referrer's NATIVE currency (EGP for Egypt team, SAR for Saudi / no-team).
+// ═══════════════════════════════════════════════════════════════════════════
+const INCENTIVE_OVERRIDES_KEY = 'khair_incentive_overrides';
+function loadIncentiveOverrides() { try { return JSON.parse(localStorage.getItem(INCENTIVE_OVERRIDES_KEY) || '{}') || {}; } catch { return {}; } }
+function saveIncentiveOverrides(o) { try { localStorage.setItem(INCENTIVE_OVERRIDES_KEY, JSON.stringify(o || {})); } catch (e) {} }
+function incOverrideKey(monthKey, refName) { return monthKey + '|' + String(refName || '').trim(); }
+function getIncentiveOverride(monthKey, refName) { return loadIncentiveOverrides()[incOverrideKey(monthKey, refName)] || null; }
+// Apply one override object to an auto-computed native amount → the paid native amount.
+function applyIncOverride(autoNative, ov) {
+  if (!ov) return autoNative;
+  const amt = Number(ov.amount) || 0;
+  const paid = ov.mode === 'waive' ? 0 : ov.mode === 'replace' ? amt : (autoNative + amt); // 'delta' default
+  return Math.max(0, paid);
+}
+
+// The shared engine. Returns { month, refs[], totals, meta }.
+//   refs[i] = { name, key, team, currency, drivers[], autoNative, autoSar, override,
+//               paidNative, paidSar, qualifying, hit }
+//   totals  = { egyptNative, egyptSar, saudiSar, autoGrandSar, grandSar }  (grandSar = P&L line)
+function incentiveTotalsFor(monthKey) {
+  const [yy, mm] = String(monthKey).split('-').map(Number);
+  const monthIdx = mm - 1, year = yy;
+  const overrides = loadIncentiveOverrides();
+  const refsMap = {};
+  let noNat = 0, totalDrivers = 0;
+  getAllDriverNames().forEach(name => {
+    const p = getCourierProfile(name);
+    if (!p || !p.ambassador) return;
+    const net = getMonthlyNet(null, name, monthIdx, year);
+    if (net <= 0) return;                          // only drivers earning this month matter to a threshold
+    totalDrivers++;
+    const ref  = p.ambassador.trim();
+    const team = teamForReferrer(ref);
+    const ti   = teamIncentiveFor(name, p, monthKey);
+    const k = ref.toLowerCase();
+    const g = refsMap[k] = refsMap[k] || { name: ref, key: k, team, currency: team === 'egypt' ? 'EGP' : 'SAR',
+                                           drivers: [], autoNative: 0, autoSar: 0, hit: 0, qualifying: 0 };
+    g.drivers.push({ name, net, nationality: p.nationality || '', ti });
+    g.autoNative += ti.owed; g.autoSar += ti.owedSar;
+    if (ti.qualifies) g.qualifying++;
+    if (ti.threshold && net >= ti.threshold) g.hit++;
+    if (!p.nationality) noNat++;
+  });
+  const refs = Object.values(refsMap);
+  // Apply overrides to referrers that have earning drivers this month.
+  refs.forEach(g => {
+    const ov = overrides[incOverrideKey(monthKey, g.name)] || null;
+    g.override  = ov;
+    g.paidNative = applyIncOverride(g.autoNative, ov);
+    g.paidSar    = ov ? incToSar(g.paidNative, g.currency) : g.autoSar;
+  });
+  // An override can name a referrer with NO earning drivers this month (a purely
+  // discretionary payment). Surface those too so the money is never hidden.
+  Object.keys(overrides).forEach(key => {
+    if (key.indexOf(monthKey + '|') !== 0) return;
+    const refName = key.slice((monthKey + '|').length);
+    if (refs.some(g => g.name.toLowerCase() === refName.toLowerCase())) return;
+    const ov = overrides[key];
+    const team = teamForReferrer(refName), currency = team === 'egypt' ? 'EGP' : 'SAR';
+    const paidNative = applyIncOverride(0, ov);
+    refs.push({ name: refName, key: refName.toLowerCase(), team, currency, drivers: [],
+                autoNative: 0, autoSar: 0, hit: 0, qualifying: 0, override: ov,
+                paidNative, paidSar: incToSar(paidNative, currency), discretionary: true });
+  });
+  const egyptRefs = refs.filter(g => g.team === 'egypt');
+  const saudiRefs = refs.filter(g => g.team === 'saudi');
+  const totals = {
+    egyptNative:  egyptRefs.reduce((s, g) => s + g.paidNative, 0),   // EGP
+    egyptSar:     egyptRefs.reduce((s, g) => s + g.paidSar, 0),      // SAR-equiv
+    saudiSar:     saudiRefs.reduce((s, g) => s + g.paidNative, 0),   // SAR (native == SAR)
+    autoGrandSar: refs.reduce((s, g) => s + g.autoSar, 0),
+    grandSar:     refs.reduce((s, g) => s + g.paidSar, 0),           // ← the Finance P&L incentive line
+  };
+  return { month: monthKey, refs, totals, meta: { noNat, totalDrivers } };
+}
+
+let incTeamFilter = '';     // '' | 'egypt' | 'saudi' | 'noteam'
+let incQualOnly   = false;  // show only referrers with someone to pay
+let incOverrideEditing = null;   // referrer name whose ⚙ editor is open (scoped to incMonth)
+function setIncTeam(v)    { incTeamFilter = (incTeamFilter === v) ? '' : v; renderIncentives(); }
+function toggleIncQual()  { incQualOnly = !incQualOnly; renderIncentives(); }
+
 function renderIncentives() {
   const el = document.getElementById('incentivesContent');
   if (!el) return;
   const months  = getAvailableMonths();
   if (!incMonth) incMonth = defaultMonth();
   const monthKey = incMonth;
-  const [yy, mm] = monthKey.split('-').map(Number);
-  const monthIdx = mm - 1, year = yy;
-  const recurring = !!loadSettings().teamBonusRecurring;
-  const rate = egpToSarRate();
-  const money = (v, c) => `${fmt(v)} ${c}`;
+  const recurring  = !!loadSettings().teamBonusRecurring;
+  const nativeView = incView !== 'sar';
+  const money = (v, c) => `${fmt(Math.round(v || 0))} ${c}`;
+  const escH  = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escA  = s => escH(s).replace(/"/g, '&quot;');
+  const jsq   = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const inpCss = 'background:var(--dk-s3);border:1px solid var(--dk-line2);color:var(--dk-text);border-radius:7px;height:30px;padding:0 10px;font-family:var(--dk-sans);font-size:12px;box-sizing:border-box';
 
-  // Group every attributed driver who EARNED this month by their referrer.
-  const allNames = getAllDriverNames();
-  const refs = {};                       // key → { name, team, currency, drivers[], owedNative, owedSar, hit, qualifying }
-  let noNat = 0, totalDrivers = 0;
-  allNames.forEach(name => {
-    const p = getCourierProfile(name);
-    if (!p || !p.ambassador) return;
-    const net = getMonthlyNet(null, name, monthIdx, year);
-    if (net <= 0) return;                // only drivers earning this month are relevant to a threshold
-    totalDrivers++;
-    const ref  = p.ambassador.trim();
-    const team = teamForReferrer(ref);
-    const ti   = teamIncentiveFor(name, p, monthKey);
-    const k = ref.toLowerCase();
-    const g = refs[k] = refs[k] || { name: ref, team, currency: team === 'egypt' ? 'EGP' : 'SAR',
-                                     drivers: [], owedNative: 0, owedSar: 0, hit: 0, qualifying: 0 };
-    g.drivers.push({ name, net, nationality: p.nationality || '', ti });
-    g.owedNative += ti.owed; g.owedSar += ti.owedSar;
-    if (ti.qualifies) g.qualifying++;
-    if (ti.threshold && net >= ti.threshold) g.hit++;
-    if (!p.nationality) noNat++;
-  });
+  // The shared engine (also read by the Ambassadors roster + Finance P&L).
+  const data = incentiveTotalsFor(monthKey);
+  const { refs, totals, meta } = data;
+  const anyTeamSet = Object.values(AMBASSADOR_TEAM).some(t => t);
 
-  const byOwed = (a, b) => b.owedSar - a.owedSar || a.name.localeCompare(b.name);
-  const egyptRefs  = Object.values(refs).filter(g => g.team === 'egypt').sort(byOwed);
-  const saudiRefs  = Object.values(refs).filter(g => g.team === 'saudi').sort(byOwed);
-  const noTeamRefs = Object.values(refs).filter(g => !g.team)
-                       .sort((a, b) => b.drivers.length - a.drivers.length || a.name.localeCompare(b.name));
-
-  const egyptOwedNative = egyptRefs.reduce((s, g) => s + g.owedNative, 0);   // EGP
-  const egyptOwedSar    = egyptRefs.reduce((s, g) => s + g.owedSar, 0);      // SAR-equiv
-  const saudiOwed       = saudiRefs.reduce((s, g) => s + g.owedNative, 0);   // SAR
-  const grandSar        = egyptOwedSar + saudiOwed;
-  const anyTeamSet      = Object.values(AMBASSADOR_TEAM).some(t => t);
-
-  // ── Toolbar ──
+  // ── Deck header ──
   const monthOpts = (months.length ? months : [monthKey]).map(m => `<option value="${m}" ${m === monthKey ? 'selected' : ''}>${monthLabel(m)}</option>`).join('');
-  const vbtn = (v, label) => `<button onclick="setIncView('${v}')" style="padding:6px 12px;font-size:12px;border:1px solid ${incView === v ? 'var(--bolt-green)' : 'var(--border)'};background:${incView === v ? 'var(--bolt-green)' : 'var(--bg)'};color:${incView === v ? '#021' : 'var(--text)'};border-radius:6px;cursor:pointer;font-weight:${incView === v ? '700' : '500'}">${label}</button>`;
-  const toolbar = `
-    <div style="padding:16px 4px 8px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">
-      <div><div style="font-size:18px;font-weight:800">💸 Referrer Incentives</div>
-        <div style="font-size:11px;color:var(--text-muted)">Egypt team in EGP · Saudi team in SAR · each referrer credited when a driver they brought hits the net threshold</div></div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <select id="incMonthSel" onchange="setIncMonth(this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg)">${monthOpts}</select>
-        <div style="display:flex;gap:4px">${vbtn('native', 'Native EGP/SAR')}${vbtn('sar', 'All SAR')}</div>
-        <button onclick="toggleTeamRecurring()" title="Toggle whether the bonus pays once or every qualifying month" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);border-radius:6px;cursor:pointer">${recurring ? '🔁 Recurring' : '1️⃣ One-time'} · flip</button>
-      </div>
-    </div>`;
+  const vChip = (v, label) => `<button class="dk-chip${incView === v ? ' on' : ''}" onclick="setIncView('${v}')">${label}</button>`;
+  const actions = `<select onchange="setIncMonth(this.value)" style="${inpCss}" title="Month">${monthOpts}</select>
+    ${vChip('native', 'EGP/SAR')}${vChip('sar', 'All SAR')}
+    <button class="dk-btn sm" onclick="toggleTeamRecurring()" title="Toggle whether a bonus pays once or every qualifying month">${recurring ? '🔁 Recurring' : '1️⃣ One-time'}</button>`;
+  const header = dkDeckHeader({ title: 'Referrer Incentives',
+    context: 'each referrer credited when a driver they brought hits the net threshold · Egypt pays EGP, Saudi pays SAR',
+    status: dkStatusChip(), actions });
 
-  // ── Blockers / data-gap banners ──
-  let banners = '';
-  if (!anyTeamSet) banners += `<div style="margin:0 4px 10px;padding:10px 14px;border:1px solid var(--amber);border-radius:8px;background:rgba(255,170,0,.08);font-size:12px">⚠ <b>No referrer has a Team set yet.</b> Add a <b>Team</b> column (Egypt / Saudi) to the sheet's <b>AMBASSADORS</b> tab and fill it — the nightly sync mirrors it here. Until then everyone falls under "No team set" below and no incentive can be priced.</div>`;
-  if (noNat)       banners += `<div style="margin:0 4px 10px;padding:10px 14px;border:1px solid var(--amber);border-radius:8px;background:rgba(255,170,0,.08);font-size:12px">⚠ <b>${noNat} earning referred driver${noNat === 1 ? '' : 's'} ha${noNat === 1 ? 's' : 've'} no Nationality set.</b> Fill the DRIVERS <b>Nationality</b> column (or set it per-driver on the 🎖 Ambassadors tab) — the amount depends on it, so those rows show 0 until it's set.</div>`;
+  // ── Data-gap notices (honesty rail — the tab refuses to guess) ──
+  const gaps = [];
+  if (!anyTeamSet) gaps.push(`<div class="dk-alert warn"><span class="n">!</span><span>No referrer has a <b>Team</b> set — add a Team column (Egypt/Saudi) to the sheet's AMBASSADORS tab. Until then incentives can't be priced.</span></div>`);
+  if (meta.noNat)  gaps.push(`<div class="dk-alert warn"><span class="n">${meta.noNat}</span><span>earning referred driver${meta.noNat === 1 ? '' : 's'} missing <b>Nationality</b> — the amount depends on it, so those read 0 until it's set. The tab won't guess.</span></div>`);
+  const rail = gaps.length ? `<div class="dk-rail">${gaps.join('')}</div>` : '';
 
-  if (!totalDrivers) {
-    el.innerHTML = toolbar + banners +
-      `<div class="empty-state"><div class="empty-icon">💸</div><div class="empty-title">No referred earners in ${monthLabel(monthKey)}</div><div class="empty-sub">Drivers need an ambassador/referrer on their profile and net earnings this month. Attribute them on the 🎖 Ambassadors tab.</div></div>`;
+  if (!refs.length) {
+    el.innerHTML = `<div class="dk"><div class="dk-shell" style="padding-block:2px 8px">${header}${rail}
+      <div class="dk-card" style="align-items:center;text-align:center;padding:34px 20px;color:var(--dk-mut)">
+        <div style="font-size:26px">💸</div><div style="font-size:15px;font-weight:600;color:var(--dk-text)">No referred earners in ${monthLabel(monthKey)}</div>
+        <div style="font-size:12px">Drivers need an ambassador on their profile and net earnings this month. Attribute them on the Ambassadors tab.</div>
+      </div></div></div>`;
     return;
   }
 
-  // ── Per-team panels ──
-  const driverTable = g => {
-    const rows = g.drivers.sort((a, b) => b.net - a.net).map(d => {
-      const natTag = d.nationality
-        ? `<span style="color:var(--text-muted)">${d.nationality === 'saudi' ? '🇸🇦 Saudi' : '🌍 Foreign'}</span>`
-        : `<span style="color:var(--amber)">nationality?</span>`;
-      const hit = d.ti.threshold && d.net >= d.ti.threshold;
-      const thrCell = d.ti.threshold ? `${fmt(d.ti.threshold)}` : '—';
-      const status = d.ti.qualifies
-        ? `<span style="color:var(--green);font-weight:700">${incView === 'sar' ? money(d.ti.owedSar, 'SAR') : money(d.ti.owed, d.ti.currency)}</span>`
-        : `<span style="color:var(--text-muted)">${d.ti.reason}</span>`;
-      return `<tr style="border-top:1px solid var(--border)">
-        <td style="padding:5px 10px">${d.name}</td>
-        <td style="padding:5px 10px">${natTag}</td>
-        <td style="padding:5px 10px;text-align:right;font-family:var(--mono)">${fmt(d.net)}</td>
-        <td style="padding:5px 10px;text-align:right;font-family:var(--mono);color:${hit ? 'var(--green)' : 'var(--text-muted)'}">${thrCell}${hit ? ' ✓' : ''}</td>
-        <td style="padding:5px 10px;text-align:right">${status}</td>
-      </tr>`;
-    }).join('');
-    return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em">
-        <th style="padding:5px 10px">Driver</th><th style="padding:5px 10px">Nationality</th>
-        <th style="padding:5px 10px;text-align:right">Net (mo)</th><th style="padding:5px 10px;text-align:right">Threshold</th>
-        <th style="padding:5px 10px;text-align:right">Incentive</th></tr></thead>
-      <tbody>${rows}</tbody></table></div>`;
+  // ── Totals strip (always visible; whole-month totals so Finance P&L parity holds) ──
+  const toPay = refs.reduce((s, g) => s + g.qualifying, 0);
+  const overridden = totals.grandSar !== totals.autoGrandSar;
+  const strip = `<div class="dk-strip">
+    <div class="dk-stat brand"><div class="l">Total owed · ${monthLabel(monthKey)}</div><div class="v">${fmt(Math.round(totals.grandSar))}<small> SAR</small></div>${overridden ? `<div class="d">auto ${fmt(Math.round(totals.autoGrandSar))} · overrides applied</div>` : ''}</div>
+    <div class="dk-stat"><div class="l">🇪🇬 Egypt</div><div class="v">${fmt(Math.round(totals.egyptNative))}<small> EGP</small></div><div class="d">${fmt(Math.round(totals.egyptSar))} SAR</div></div>
+    <div class="dk-stat"><div class="l">🇸🇦 Saudi</div><div class="v">${fmt(Math.round(totals.saudiSar))}<small> SAR</small></div></div>
+    <div class="dk-stat"><div class="l">Referrers</div><div class="v">${refs.length}</div></div>
+    <div class="dk-stat"><div class="l">Drivers to pay</div><div class="v">${toPay}</div></div>
+  </div>`;
+
+  // ── Filter bar (A2 chrome — team + qualified-only; month stays single, incentives is per-month) ──
+  const tChip = (v, label) => `<button class="dk-chip${incTeamFilter === v ? ' on' : ''}" onclick="setIncTeam('${v}')">${label}</button>`;
+  const filterbar = `<div class="dk-filterbar">
+    <div class="dk-fgroup"><span class="lb">Team</span>${tChip('egypt', '🇪🇬 Egypt')}${tChip('saudi', '🇸🇦 Saudi')}${tChip('noteam', 'No team')}</div>
+    <div class="dk-fgroup"><span class="lb">Show</span><button class="dk-chip${incQualOnly ? ' on' : ''}" onclick="toggleIncQual()">Qualified only</button></div>
+    ${(incTeamFilter || incQualOnly) ? `<button class="dk-filter-clear" onclick="incTeamFilter='';incQualOnly=false;renderIncentives()">Clear ✕</button>` : ''}
+  </div>`;
+
+  // ── Team chip on a card ──
+  const teamChip = g => g.team === 'egypt' ? `<span style="font-family:var(--dk-mono);font-size:10px;font-weight:600;border-radius:999px;padding:1px 7px;border:1px solid rgba(167,139,255,.35);color:var(--dk-t5);background:rgba(167,139,255,.12)">EGP</span>`
+                     : g.team === 'saudi' ? `<span style="font-family:var(--dk-mono);font-size:10px;font-weight:600;border-radius:999px;padding:1px 7px;border:1px solid rgba(61,219,174,.35);color:var(--dk-brand);background:var(--dk-brand-tint)">SAR</span>`
+                     : `<span style="font-family:var(--dk-mono);font-size:10px;font-weight:600;border-radius:999px;padding:1px 7px;border:1px solid rgba(255,176,32,.35);color:var(--dk-warn);background:var(--dk-warn-tint)">no team</span>`;
+
+  // ── One driver row (click → A1, scoped to this month) ──
+  const dRow = d => {
+    const foreign = lookupForeignName(d.name);
+    const natDot = d.nationality
+      ? `<span title="${d.nationality === 'saudi' ? 'Saudi' : 'Foreigner'}" style="color:var(--dk-dim)">${d.nationality === 'saudi' ? '🇸🇦' : '🌍'}</span>`
+      : `<span title="nationality not set" style="color:var(--dk-warn)">◦</span>`;
+    const inc = d.ti.qualifies ? (nativeView ? money(d.ti.owed, d.ti.currency) : money(d.ti.owedSar, 'SAR')) : '';
+    return `<div class="dk-row click" onclick="dkOpenDriver('${jsq(d.name)}','${monthKey}')" title="${escA(d.ti.reason)}">
+      <span class="k">${natDot} ${escH(d.name)}${foreign ? ` <span style="color:var(--dk-dim)">${escH(foreign)}</span>` : ''}</span>
+      <span class="v">${fmt(Math.round(d.net))}${d.ti.qualifies ? ` · <b style="color:var(--dk-brand)">${inc}</b>` : ` · <span style="color:var(--dk-dim)">—</span>`}</span>
+    </div>`;
   };
 
-  const teamPanel = (flag, title, refsArr, subtitleCur, subtotalNative, subtotalSar) => {
-    const subDisp = incView === 'sar' ? money(subtotalSar, 'SAR') : money(subtotalNative, subtitleCur);
-    const cards = refsArr.length ? refsArr.map(g => {
-      const owedDisp = incView === 'sar' ? money(g.owedSar, 'SAR') : money(g.owedNative, g.currency);
-      return `<div style="border:1px solid var(--border);border-radius:8px;margin:8px 0;overflow:hidden">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 12px;background:var(--bg-card);flex-wrap:wrap">
-          <div style="font-weight:700">${g.name}</div>
-          <div style="font-size:11px;color:var(--text-muted)">${g.drivers.length} driver${g.drivers.length === 1 ? '' : 's'} · ${g.hit} hit threshold · ${g.qualifying} to pay</div>
-          <div style="font-weight:800;color:${g.owedNative > 0 ? 'var(--bolt-green)' : 'var(--text-muted)'}">${g.owedNative > 0 ? owedDisp : '—'}</div>
-        </div>
-        ${driverTable(g)}
+  // ── Override editor (inline, when its ⚙ is open) ──
+  const editorHtml = g => {
+    const ov = g.override || {};
+    return `<div style="border-block-start:1px solid var(--dk-line);margin-block-start:4px;padding-block-start:8px;display:flex;flex-direction:column;gap:6px">
+      <div style="font-size:11px;color:var(--dk-mut)">Manual override — amount in <b>${g.currency}</b>. A note is <b>required</b>.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <select id="incOvMode" style="${inpCss}">
+          <option value="delta"${ov.mode === 'delta' ? ' selected' : ''}>+ Extra (delta)</option>
+          <option value="replace"${ov.mode === 'replace' ? ' selected' : ''}>= Replace</option>
+          <option value="waive"${ov.mode === 'waive' ? ' selected' : ''}>∅ Waive</option>
+        </select>
+        <input id="incOvAmount" type="number" value="${ov.amount != null ? ov.amount : ''}" placeholder="amount ${g.currency}" style="${inpCss};width:130px">
+        <input id="incOvNote" value="${ov.note ? escA(ov.note) : ''}" placeholder="reason (required)" style="${inpCss};flex:1;min-width:170px">
+      </div>
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="dk-btn sm" onclick="incOverrideCancel()">Cancel</button>
+        <button class="dk-btn sm pri" onclick="incOverrideSave('${jsq(g.name)}')">Save override</button>
+      </div>
+    </div>`;
+  };
+
+  // ── One referrer card ──
+  const card = g => {
+    const editing = incOverrideEditing && incOverrideEditing.toLowerCase() === g.name.toLowerCase();
+    const ov = g.override;
+    const paidDisp = nativeView ? money(g.paidNative, g.currency) : money(g.paidSar, 'SAR');
+    const autoDisp = nativeView ? money(g.autoNative, g.currency) : money(g.autoSar, 'SAR');
+    const owedColor = g.paidNative > 0 ? 'var(--dk-brand)' : 'var(--dk-dim)';
+    const drivers = g.drivers.slice().sort((a, b) => b.net - a.net).map(dRow).join('')
+      || `<div style="color:var(--dk-dim);font-size:11px;padding:4px">discretionary — no earning drivers this month</div>`;
+    const ovLine = ov
+      ? `<div style="font-size:11px;color:var(--dk-warn);display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+           <span>auto <span class="dk-num">${autoDisp}</span> → paid <span class="dk-num" style="color:var(--dk-brand);font-weight:700">${paidDisp}</span></span>
+           <span style="color:var(--dk-mut)">· ${ov.mode}${ov.note ? ` · "${escH(ov.note)}"` : ''}</span>
+           <button class="dk-btn sm" onclick="incOverrideEdit('${jsq(g.name)}')">edit</button>
+           <button class="dk-btn sm" onclick="incOverrideClear('${jsq(g.name)}')" title="Remove override">✕</button>
+         </div>`
+      : '';
+    const gear = (ov || editing) ? '' : `<button class="dk-btn sm" onclick="incOverrideEdit('${jsq(g.name)}')" title="Set a manual override (extra / replace / waive)">⚙ override</button>`;
+    return `<div class="dk-card">
+      <div class="dk-card-t"><span class="t">${escH(g.name)} ${teamChip(g)}</span><span class="go dk-num" style="color:${owedColor};font-weight:700">${paidDisp}</span></div>
+      <div style="font-size:11px;color:var(--dk-mut)">${g.drivers.length} driver${g.drivers.length === 1 ? '' : 's'} · ${g.hit} hit threshold · ${g.qualifying} to pay${g.discretionary ? ' · <span style="color:var(--dk-warn)">discretionary</span>' : ''}</div>
+      ${ovLine}
+      ${drivers}
+      ${gear ? `<div style="display:flex;justify-content:flex-end;margin-block-start:2px">${gear}</div>` : ''}
+      ${editing ? editorHtml(g) : ''}
+    </div>`;
+  };
+
+  const shownRefs = refs.filter(g => {
+    const teamKey = g.team || 'noteam';
+    if (incTeamFilter && teamKey !== incTeamFilter) return false;
+    if (incQualOnly && !(g.qualifying > 0 || g.paidNative > 0)) return false;
+    return true;
+  }).sort((a, b) => b.paidSar - a.paidSar || a.name.localeCompare(b.name));
+
+  const cardsHtml = shownRefs.length
+    ? `<div class="dk-grid">${shownRefs.map(card).join('')}</div>`
+    : `<div class="dk-card" style="color:var(--dk-mut);font-size:12px">No referrers match this filter.</div>`;
+
+  // ── Override audit list (every override for this month) ──
+  const monthOvs = Object.entries(loadIncentiveOverrides())
+    .filter(([k]) => k.indexOf(monthKey + '|') === 0)
+    .map(([k, v]) => ({ ref: k.slice((monthKey + '|').length), ...v }))
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  let auditHtml = '';
+  if (monthOvs.length) {
+    const rows = monthOvs.map(o => {
+      const when = o.ts ? new Date(o.ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+      const amtDisp = o.mode === 'waive' ? 'waive' : `${o.mode === 'replace' ? '=' : '+'}${fmt(o.amount || 0)}`;
+      return `<div class="dk-row">
+        <span class="k"><b>${escH(o.ref)}</b> · <span style="color:var(--dk-warn)">${o.mode}</span>${o.note ? ` · "${escH(o.note)}"` : ''} <span style="color:var(--dk-dim)">— ${escH(o.by || 'manual')}${when ? ' · ' + when : ''}</span></span>
+        <span class="v" style="display:flex;gap:6px;align-items:center"><span class="dk-num">${amtDisp}</span>
+          <button class="dk-btn sm" onclick="incOverrideEdit('${jsq(o.ref)}')">edit</button>
+          <button class="dk-btn sm" onclick="incOverrideClear('${jsq(o.ref)}')" title="Remove override">✕</button></span>
       </div>`;
-    }).join('') : `<div style="padding:14px;color:var(--text-muted);font-size:12px">No ${title} referrers with earning drivers this month.</div>`;
-    return `<div style="margin:0 4px 16px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg-card2);flex-wrap:wrap;gap:6px">
-        <div style="font-weight:800;font-size:15px">${flag} ${title}</div>
-        <div style="font-size:13px;color:var(--text-muted)">Owed ${monthLabel(monthKey)}: <b style="color:var(--bolt-green)">${subDisp}</b></div>
-      </div>
-      <div style="padding:6px 10px 10px">${cards}</div>
-    </div>`;
-  };
-
-  // ── Grand total strip ──
-  const totalStrip = `
-    <div style="margin:4px 4px 14px;padding:10px 14px;border:1px solid var(--bolt-green);border-radius:8px;background:rgba(0,255,179,.05);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-      <div style="font-size:12px;color:var(--text-muted)">${recurring ? 'Recurring — pays every qualifying month' : 'One-time — first qualifying month only'}${incView === 'sar' ? ` · EGP→SAR @ ${rate}` : ''}</div>
-      <div style="font-size:13px">
-        <span style="color:var(--text-muted)">🇪🇬 ${money(egyptOwedNative, 'EGP')}${incView === 'sar' ? ` (${money(egyptOwedSar, 'SAR')})` : ''}</span>
-        &nbsp;·&nbsp; <span style="color:var(--text-muted)">🇸🇦 ${money(saudiOwed, 'SAR')}</span>
-        &nbsp;·&nbsp; <b>Total ${money(grandSar, 'SAR')}</b>
-      </div>
-    </div>`;
-
-  let html = toolbar + banners + totalStrip;
-  html += teamPanel('🇪🇬', 'Egypt team', egyptRefs, 'EGP', egyptOwedNative, egyptOwedSar);
-  html += teamPanel('🇸🇦', 'Saudi team', saudiRefs, 'SAR', saudiOwed, saudiOwed);
-
-  if (noTeamRefs.length) {
-    const list = noTeamRefs.map(g => `<li style="margin:2px 0"><b>${g.name}</b> — ${g.drivers.length} earning driver${g.drivers.length === 1 ? '' : 's'}</li>`).join('');
-    html += `<div style="margin:0 4px 16px;border:1px solid var(--amber);border-radius:10px;overflow:hidden">
-      <div style="padding:10px 14px;background:rgba(255,170,0,.08);font-weight:800;font-size:14px;color:var(--amber)">⚠ No team set — ${noTeamRefs.length} referrer${noTeamRefs.length === 1 ? '' : 's'}</div>
-      <div style="padding:10px 14px;font-size:12px;color:var(--text-muted)">These referrers have earning drivers but no <b>Team</b> in the AMBASSADORS tab, so their incentive can't be priced (EGP vs SAR is unknown). Set each one's Team to Egypt or Saudi in the sheet.
-        <ul style="margin:8px 0 0 18px">${list}</ul></div></div>`;
+    }).join('');
+    auditHtml = dkBulk('Overrides · ' + monthLabel(monthKey), monthOvs.length) + `<div class="dk-slip">${rows}</div>`;
   }
 
-  el.innerHTML = html;
+  el.innerHTML = `<div class="dk"><div class="dk-shell" style="padding-block:2px 8px">
+    ${header}${rail}${strip}${filterbar}
+    ${dkBulk('Referrers', refs.length)}
+    ${cardsHtml}
+    ${auditHtml}
+  </div></div>`;
+}
+
+// ── Override handlers (state lives in incOverrideEditing; storage in khair_incentive_overrides) ──
+function incOverrideEdit(refName)   { incOverrideEditing = refName; renderIncentives(); }
+function incOverrideCancel()        { incOverrideEditing = null; renderIncentives(); }
+function incOverrideSave(refName) {
+  const modeEl = document.getElementById('incOvMode'), amtEl = document.getElementById('incOvAmount'), noteEl = document.getElementById('incOvNote');
+  const mode = modeEl ? modeEl.value : 'delta';
+  const amount = amtEl ? (Number(amtEl.value) || 0) : 0;
+  const note = noteEl ? (noteEl.value || '').trim() : '';
+  if (!note) { toast('A note is required to save an override'); if (noteEl) noteEl.focus(); return; }   // REJECT empty note
+  if (mode !== 'waive' && !(amount > 0)) { toast('Enter an amount, or choose Waive'); if (amtEl) amtEl.focus(); return; }
+  const all = loadIncentiveOverrides();
+  all[incOverrideKey(incMonth, refName)] = { mode, amount, note, by: 'manual', ts: Date.now() };
+  saveIncentiveOverrides(all);
+  incOverrideEditing = null;
+  toast(`Override saved · ${refName}`);
+  renderIncentives();
+}
+function incOverrideClear(refName) {
+  const all = loadIncentiveOverrides();
+  delete all[incOverrideKey(incMonth, refName)];
+  saveIncentiveOverrides(all);
+  if (incOverrideEditing && incOverrideEditing.toLowerCase() === refName.toLowerCase()) incOverrideEditing = null;
+  toast(`Override removed · ${refName}`);
+  renderIncentives();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -10557,7 +10698,7 @@ let stageSnapshotCache = null, stageLogCache = null;
 async function fetchStageSnapshot(force) {
   if (stageSnapshotCache && !force) return stageSnapshotCache;
   if (!supabaseOn()) return [];
-  const rows = await jbFetch(`${getSbUrl()}/rest/v1/sheet_stage_snapshot?select=driver_id,iqama,name,current_stage,entered_at`, { headers: sbHeaders() });
+  const rows = await jbFetch(`${getSbUrl()}/rest/v1/sheet_stage_snapshot?select=driver_id,iqama,name,current_stage,entered_at,synced_at`, { headers: sbHeaders() });
   stageSnapshotCache = Array.isArray(rows) ? rows : [];
   return stageSnapshotCache;
 }
@@ -10569,7 +10710,36 @@ async function fetchStageLog(force) {
   return stageLogCache;
 }
 function pipelineRefresh() { stageSnapshotCache = null; stageLogCache = null; renderPipeline(); }
-function setPipelineMode(m) { pipelineMode = m; renderPipeline(); }
+function setPipelineMode(m) { pipelineMode = m; pipelineMacroSel = null; renderPipeline(); }
+
+// S3 · macro-stage map — collapses the ~14 canonical onboarding stages into legible
+// macro buckets for the funnel bar. Every non-terminal stage maps to exactly one bucket;
+// anything unmapped falls into "Other" so no driver is ever silently dropped.
+const PIPELINE_MACRO = [
+  { key: 'Fleet check',     owner: 'Khaled',  stages: ['Fleet Check', 'Fleet Check - Verify'] },
+  { key: 'Block check',     owner: 'Khaled',  stages: ['Block Check'] },
+  { key: 'Transfer',        owner: 'Bolt CS', stages: ['Transfer Request', 'Transfer Hold'] },
+  { key: 'Docs & Istimara', owner: 'Khaled',  stages: ['Docs Collection', 'Istimara Authorization'] },
+  { key: 'Submitted',       owner: 'Bolt',    stages: ['Submitted to Bolt'] },
+  { key: 'Notify driver',   owner: 'Omar',    stages: ['Notify Driver'] },
+];
+let pipelineMacroSel = null;     // selected macro key → its stuck-list; null = all active
+let pipelineLastData = null;     // {snapshot, log, source} — re-render on macro click without refetch
+let pipelineMirrorTs = null;     // max synced_at of the DRIVERS mirror (sheet_ambassador_sync)
+function pipelineSelectMacro(key) {
+  pipelineMacroSel = (pipelineMacroSel === key) ? null : key;
+  const el = document.getElementById('pipelineContent');
+  if (el && pipelineLastData) el.innerHTML = pipelineDashboardHtml(pipelineLastData.snapshot, pipelineLastData.log, pipelineLastData.source);
+}
+// Onboarding leads may not be on the Bolt fleet roster yet — open A1 for those who are,
+// otherwise say so honestly rather than silently doing nothing.
+function pipelineOpenDriver(name) {
+  const id = driverKey(name);
+  const inFleet = (currentDrivers || []).some(x => x.driverId === name || driverKey(x.name) === id)
+    || (typeof getDriverAllHistory === 'function' && getDriverAllHistory('', name).length);
+  if (inFleet) dkOpenDriver(name, null);
+  else toast(`${name} is still in onboarding — not on the Bolt fleet roster yet.`);
+}
 
 function pplMedian(arr) {
   if (!arr || !arr.length) return null;
@@ -10590,13 +10760,18 @@ async function renderPipeline() {
   if (!el) return;
   let snapshot = [], log = [], source = pipelineMode;
   if (pipelineMode === 'sample') {
-    const s = pipelineSampleData(); snapshot = s.snapshot; log = s.log;
+    const s = pipelineSampleData(); snapshot = s.snapshot; log = s.log; pipelineMirrorTs = null;
   } else {
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">Loading pipeline…</div></div>`;
-    try { const r = await Promise.all([fetchStageSnapshot(), fetchStageLog()]); snapshot = r[0]||[]; log = r[1]||[]; }
+    el.innerHTML = `<div class="dk"><div class="dk-shell"><div class="dk-card" style="color:var(--dk-mut)">Loading pipeline…</div></div></div>`;
+    try {
+      const r = await Promise.all([fetchStageSnapshot(), fetchStageLog(), fetchSheetAmbassadorSync()]);
+      snapshot = r[0] || []; log = r[1] || [];
+      pipelineMirrorTs = (r[2] || []).reduce((m, x) => { const t = Date.parse(x.synced_at); return isNaN(t) ? m : Math.max(m, t); }, 0) || null;
+    }
     catch(_) { snapshot = []; log = []; }
     if (!(snapshot.length || log.length)) { el.innerHTML = pipelineEmptyStateHtml(); return; }
   }
+  pipelineLastData = { snapshot, log, source };
   el.innerHTML = pipelineDashboardHtml(snapshot, log, source);
 }
 
@@ -10619,246 +10794,139 @@ function pipelineEmptyStateHtml() {
 
 function pipelineDashboardHtml(snapshot, log, source) {
   const now = Date.now(), DAY = 86400000;
-  const curDwell = r => { const t = Date.parse(r.entered_at); return isNaN(t) ? null : (now - t)/DAY; };
+  const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escA = s => escH(s).replace(/"/g, '&quot;');
+  const jsq  = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const curDwell = r => { const t = Date.parse(r.entered_at); return isNaN(t) ? null : (now - t) / DAY; };
 
-  // Current-state metrics (from the snapshot).
-  const distribution = {};
-  const active = [];
-  (snapshot||[]).forEach(r => {
+  // ── Current state (snapshot) ──
+  const distribution = {}, active = [];
+  (snapshot || []).forEach(r => {
     const st = r.current_stage || '(unknown)';
-    distribution[st] = (distribution[st]||0) + 1;
+    distribution[st] = (distribution[st] || 0) + 1;
     if (!PIPELINE_TERMINAL.has(st))
-      active.push({ name: r.name || r.driver_id || '—', stage: st, owner: PIPELINE_STAGE_OWNER[st]||'—', dwell: curDwell(r) });
+      active.push({ name: r.name || r.driver_id || '—', stage: st, owner: PIPELINE_STAGE_OWNER[st] || '—', dwell: curDwell(r) });
   });
-  active.sort((a,b)=>(b.dwell||0)-(a.dwell||0));
+  active.sort((a, b) => (b.dwell || 0) - (a.dwell || 0));
+  const stuckN = active.filter(a => (a.dwell || 0) > PIPELINE_STUCK_DAYS).length;
 
-  // Owner load (active drivers grouped by whose queue they're in).
-  const ownerMap = {};
-  active.forEach(a => { const o = ownerMap[a.owner] || (ownerMap[a.owner]={n:0,sum:0,k:0}); o.n++; if (a.dwell!=null){ o.sum+=a.dwell; o.k++; } });
+  // ── 7-day movement (log) — same activated/lost math as Today's card ──
+  const wk7 = now - 7 * DAY, act7 = new Set(), lost7 = new Set();
+  (log || []).forEach(r => { const t = Date.parse(r.changed_at); if (isNaN(t) || t < wk7) return; const k = r.driver_id || r.name;
+    if (r.to_stage === 'Active') act7.add(k); else if (PIPELINE_LOSS.has(r.to_stage)) lost7.add(k); });
 
-  // Dwell-per-stage (from the change history) — the bottleneck view. Skips entry markers
-  // ("(new)"/"(baseline)") and terminal stages (a driver isn't "stuck" in a finished stage).
-  const dwellByStage = {};
-  (log||[]).forEach(r => {
-    const d = +r.days_in_from;
-    if (r.from_stage && r.days_in_from !== '' && !isNaN(d) && r.from_stage.charAt(0) !== '(' && !PIPELINE_TERMINAL.has(r.from_stage))
-      (dwellByStage[r.from_stage] = dwellByStage[r.from_stage] || []).push(d);
+  // ── Macro funnel (the ~14 stages collapsed to legible buckets via PIPELINE_MACRO) ──
+  const macroData = PIPELINE_MACRO.map(m => {
+    const list = active.filter(a => m.stages.includes(a.stage));
+    return { key: m.key, owner: m.owner, list, count: list.length, stuck: list.filter(a => (a.dwell || 0) > PIPELINE_STUCK_DAYS).length };
   });
-  const dwellRows = Object.keys(dwellByStage).map(st => {
-    const arr = dwellByStage[st];
-    return { stage: st, avg: arr.reduce((s,x)=>s+x,0)/arr.length, med: pplMedian(arr), n: arr.length };
-  }).sort((a,b)=>b.avg-a.avg);
-  const maxAvg = dwellRows.reduce((m,r)=>Math.max(m,r.avg),0) || 1;
+  const mapped = new Set(PIPELINE_MACRO.flatMap(m => m.stages));
+  const otherList = active.filter(a => !mapped.has(a.stage));
+  if (otherList.length) macroData.push({ key: 'Other', owner: '—', list: otherList, count: otherList.length, stuck: otherList.filter(a => (a.dwell || 0) > PIPELINE_STUCK_DAYS).length });
+  const macroTotal = Math.max(1, macroData.reduce((s, m) => s + m.count, 0));
+  const macroCols = ['--dk-info', '--dk-t4', '--dk-t5', '--dk-warn', '--dk-t6', '--dk-brand', '--dk-mut'];
 
-  // Typical time to Active — ONLY for drivers whose full journey was tracked: entered the
-  // pipeline after logging began (have a "(new)" row) AND reached Active. Baseline-seeded
-  // drivers (already Active when logging started) are excluded, so this can't show a false
-  // "<1h" from their empty journey; it stays "—" until real leads flow New→Active.
-  const enteredAt = {}, activeAt = {};
-  (log||[]).forEach(r => {
-    const key = r.driver_id || r.name, t = Date.parse(r.changed_at);
-    if (isNaN(t)) return;
-    if (r.from_stage === '(new)' && (enteredAt[key] == null || t < enteredAt[key])) enteredAt[key] = t;
-    if (r.to_stage === 'Active' && (activeAt[key] == null || t < activeAt[key])) activeAt[key] = t;
-  });
-  const ttaVals = [];
-  Object.keys(activeAt).forEach(key => {
-    if (enteredAt[key] != null && activeAt[key] >= enteredAt[key]) ttaVals.push((activeAt[key] - enteredAt[key]) / DAY);
-  });
-  const medianTTA = ttaVals.length ? pplMedian(ttaVals) : null;
-
-  // ── Funnel + losses (Build-150) ──────────────────────────────────────────────
-  // Baseline seed rows only restate where a driver already WAS when logging began —
-  // they're excluded here, so the funnel counts genuinely TRACKED movement. That also
-  // means early stages can show fewer drivers than later ones on a young log (drivers
-  // seeded mid-pipeline never "entered" the earlier stages on record).
-  const funnelLog = (log||[]).filter(r => r.from_stage !== '(baseline)');
-  const stageReached = {}, stageLost = {};             // stage -> Set(driver key)
-  const winSet = new Set(), lossSet = new Set(), seenSet = new Set();
-  funnelLog.forEach(r => {
-    const key = r.driver_id || r.name; if (!key) return;
-    seenSet.add(key);
-    if (r.to_stage === 'Active') winSet.add(key);
-    else if (PIPELINE_LOSS.has(r.to_stage)) {
-      lossSet.add(key);
-      const from = (r.from_stage && r.from_stage.charAt(0) !== '(') ? r.from_stage : '(at entry)';
-      (stageLost[from] = stageLost[from] || new Set()).add(key);
-    } else if (r.to_stage && r.to_stage.charAt(0) !== '(')
-      (stageReached[r.to_stage] = stageReached[r.to_stage] || new Set()).add(key);
-  });
-  const decidedCount = new Set([...winSet, ...lossSet]).size;
-  const convPct   = decidedCount ? Math.round(winSet.size / decidedCount * 100) : null;
-  const stillIn   = [...seenSet].filter(k => !winSet.has(k) && !lossSet.has(k)).length;
-  const funnelStages = PIPELINE_STAGES.filter(s => !PIPELINE_TERMINAL.has(s));
-  const maxReached = Math.max(1, ...funnelStages.map(s => (stageReached[s]||new Set()).size), winSet.size);
-  const funnelRows = funnelStages.map(st => {
-    const n = (stageReached[st]||new Set()).size, lost = (stageLost[st]||new Set()).size;
-    if (!n && !lost) return '';
-    const pct = Math.round(n/maxReached*100);
-    return `<div style="display:flex;align-items:center;gap:10px">
-      <div style="width:150px;flex-shrink:0;font-size:11px;color:var(--text)">${st}</div>
-      <div style="flex:1;background:rgba(255,255,255,.04);border-radius:3px;height:22px;position:relative;overflow:hidden">
-        <div style="height:100%;width:${n?Math.max(pct,5):0}%;background:#56BEF0;opacity:.8;border-radius:3px"></div>
-        <div style="position:absolute;inset:0;display:flex;align-items:center;padding:0 9px;font-size:11px;color:var(--text)"><b>${n}</b>&nbsp;<span style="color:var(--text-muted)">entered</span></div>
-      </div>
-      <div style="width:92px;flex-shrink:0;text-align:right;font-size:11px;font-weight:700;color:${lost?'var(--red)':'var(--text-muted)'}">${lost ? '− '+lost+' lost' : '—'}</div>
-    </div>`;
-  }).join('');
-  const entryLost = (stageLost['(at entry)']||new Set()).size;
-  const funnelHtml = funnelRows + `
-    <div style="display:flex;align-items:center;gap:10px;margin-top:2px">
-      <div style="width:150px;flex-shrink:0;font-size:11px;color:var(--green);font-weight:700">✓ Active</div>
-      <div style="flex:1;background:rgba(255,255,255,.04);border-radius:3px;height:22px;position:relative;overflow:hidden">
-        <div style="height:100%;width:${winSet.size?Math.max(Math.round(winSet.size/maxReached*100),5):0}%;background:var(--green);opacity:.85;border-radius:3px"></div>
-        <div style="position:absolute;inset:0;display:flex;align-items:center;padding:0 9px;font-size:11px;color:var(--text)"><b>${winSet.size}</b>&nbsp;<span style="color:var(--text-muted)">activated since tracking</span></div>
-      </div>
-      <div style="width:92px;flex-shrink:0"></div>
-    </div>
-    ${entryLost ? `<div style="font-size:10px;color:var(--text-muted);margin-top:6px">${entryLost} lead${entryLost>1?'s':''} closed at entry (blocked/exists before reaching a tracked stage).</div>` : ''}
-    <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--text-muted)">
-      <span>Conversion of decided leads: <b style="color:${convPct==null?'var(--text-muted)':convPct>=60?'var(--green)':convPct>=35?'var(--amber)':'var(--red)'}">${convPct==null?'—':convPct+'%'}</b> reach Active <span style="opacity:.7">(${winSet.size} won · ${lossSet.size} lost)</span></span>
-      <span><b style="color:var(--text)">${stillIn}</b> still undecided in the pipeline</span>
-    </div>`;
-
-  // ── Weekly flow (Build-151): leads in vs activations out, last 6 weeks ───────
-  const WEEK = 7*DAY;
-  const weekStart = t => { const d = new Date(t); const dow = (d.getDay()+6)%7; d.setHours(0,0,0,0); return d.getTime() - dow*DAY; };
-  const flowByWeek = {};
-  funnelLog.forEach(r => {
-    const t = Date.parse(r.changed_at); if (isNaN(t)) return;
-    if (r.from_stage === '(new)')      { const w = weekStart(t); (flowByWeek[w] = flowByWeek[w] || {inN:0,act:0}).inN++; }
-    else if (r.to_stage === 'Active')  { const w = weekStart(t); (flowByWeek[w] = flowByWeek[w] || {inN:0,act:0}).act++; }
-  });
-  const thisWeek = weekStart(now);
-  const weeks = [];
-  for (let i = 5; i >= 0; i--) { const w = thisWeek - i*WEEK; weeks.push({ w, ...(flowByWeek[w] || {inN:0,act:0}) }); }
-  const flowMax = Math.max(1, ...weeks.map(x => Math.max(x.inN, x.act)));
-  const wkLabel = w => w === thisWeek ? 'this wk' : new Date(w).toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
-  const flowHtml = `<div style="display:flex;gap:10px;align-items:flex-end;justify-content:space-between;margin-top:8px">
-    ${weeks.map(x => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
-      <div style="display:flex;gap:4px;align-items:flex-end;height:64px">
-        <div title="${x.inN} new lead${x.inN!==1?'s':''}" style="width:16px;border-radius:2px 2px 0 0;background:#56BEF0;opacity:.85;height:${Math.max(x.inN/flowMax*60, x.inN?4:1)}px"></div>
-        <div title="${x.act} activated" style="width:16px;border-radius:2px 2px 0 0;background:var(--green);opacity:.85;height:${Math.max(x.act/flowMax*60, x.act?4:1)}px"></div>
-      </div>
-      <div style="font-size:10px;font-family:var(--mono);color:var(--text)">${x.inN}·${x.act}</div>
-      <div style="font-size:9px;color:var(--text-muted);white-space:nowrap">${wkLabel(x.w)}</div>
-    </div>`).join('')}
-  </div>
-  <div style="display:flex;gap:14px;margin-top:8px;font-size:10px;color:var(--text-muted)">
-    <span><span style="display:inline-block;width:9px;height:9px;background:#56BEF0;border-radius:2px;vertical-align:-1px"></span> new leads in</span>
-    <span><span style="display:inline-block;width:9px;height:9px;background:var(--green);border-radius:2px;vertical-align:-1px"></span> activated</span>
-    <span style="opacity:.8">tracked transitions only — weeks before logging began read 0</span>
+  const segBar = `<div style="display:flex;height:36px;border-radius:8px;overflow:hidden;border:1px solid var(--dk-line);background:var(--dk-s2)">
+    ${macroData.filter(m => m.count).map((m, i) => {
+      const w = Math.max(m.count / macroTotal * 100, 6), selc = pipelineMacroSel === m.key;
+      return `<div onclick="pipelineSelectMacro('${jsq(m.key)}')" title="${escA(m.key)} · ${m.count} in stage${m.stuck ? ' · ' + m.stuck + ' over SLA' : ''}"
+        style="width:${w}%;background:var(${macroCols[i % macroCols.length]});opacity:${selc ? 1 : .5};cursor:pointer;display:flex;align-items:center;justify-content:center;color:#0C1116;font-family:var(--dk-mono);font-size:12px;font-weight:700;border-inline-end:1px solid var(--dk-bg);min-width:0;position:relative;transition:opacity var(--dk-tf)">${m.count}${m.stuck ? `<span style="position:absolute;top:2px;inset-inline-end:4px;width:6px;height:6px;border-radius:50%;background:var(--dk-danger)"></span>` : ''}</div>`;
+    }).join('')}
+  </div>`;
+  const legend = `<div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-block-start:9px">
+    ${macroData.filter(m => m.count).map((m, i) => {
+      const selc = pipelineMacroSel === m.key;
+      return `<span onclick="pipelineSelectMacro('${jsq(m.key)}')" style="cursor:pointer;font-size:11px;color:${selc ? 'var(--dk-hi)' : 'var(--dk-mut)'};display:inline-flex;align-items:center;gap:5px">
+        <span style="width:9px;height:9px;border-radius:2px;background:var(${macroCols[i % macroCols.length]})"></span>${escH(m.key)} <span class="dk-num" style="color:var(--dk-dim)">${m.count}</span>${m.stuck ? ` <span class="dk-warn-n" style="font-size:10px">${m.stuck}⚠</span>` : ''}</span>`;
+    }).join('')}
   </div>`;
 
-  // KPIs.
-  const activeCount  = active.length;
-  const longestWait  = active.length ? active[0].dwell : null;
-  const stuckCount   = active.filter(a => (a.dwell||0) > PIPELINE_STUCK_DAYS).length;
-  const activeNow    = distribution['Active'] || 0;
-
-  const banner = source === 'sample'
-    ? `<div style="background:rgba(255,170,0,.12);border:1px solid var(--amber);border-radius:4px;padding:9px 12px;margin-bottom:14px;font-size:12px;color:var(--amber);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-         <span>⚠️ <b>SAMPLE DATA</b> — a preview of the design, not real drivers. Connect the onboarding stage log to see live numbers.</span>
-         <button class="save-btn" style="padding:4px 10px;font-size:11px" onclick="setPipelineMode('live')">Show live data</button>
-       </div>`
-    : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-         <span>🟢 Live · synced from the onboarding sheet</span>
-         <span><button class="save-btn" style="padding:4px 10px;font-size:11px;background:var(--bg-card);color:var(--text);border:1px solid var(--border)" onclick="setPipelineMode('sample')">View sample</button>
-         <button class="save-btn" style="padding:4px 10px;font-size:11px;background:var(--bg-card);color:var(--text);border:1px solid var(--border)" onclick="pipelineRefresh()">↻ Refresh</button></span>
-       </div>`;
-
-  const kpi = (label, val, sub, color) =>
-    `<div class="akpi" style="border-left-color:${color}"><div class="akpi-label">${label}</div><div class="akpi-value">${val}</div><div class="akpi-delta flat">${sub}</div></div>`;
-
-  // Stage distribution (active stages, in pipeline order).
-  const distMax = Math.max(1, ...PIPELINE_STAGES.filter(s=>!PIPELINE_TERMINAL.has(s)).map(s=>distribution[s]||0));
-  const distHtml = PIPELINE_STAGES.filter(s=>!PIPELINE_TERMINAL.has(s)).map(st => {
-    const c = distribution[st]||0, pct = Math.round(c/distMax*100);
-    return `<div style="display:flex;align-items:center;gap:10px">
-      <div style="width:150px;flex-shrink:0;font-size:11px;color:var(--text)">${st}<div style="font-size:9px;color:var(--text-muted)">${PIPELINE_STAGE_OWNER[st]||''}</div></div>
-      <div style="flex:1;background:rgba(255,255,255,.04);border-radius:3px;height:22px;position:relative;overflow:hidden">
-        <div style="height:100%;width:${c?Math.max(pct,6):0}%;background:var(--accent,#56BEF0);opacity:.8;border-radius:3px"></div>
-        <div style="position:absolute;inset:0;display:flex;align-items:center;padding:0 9px;font-size:11px;color:var(--text)"><b>${c}</b></div>
-      </div></div>`;
-  }).join('');
-  const terminalHtml = PIPELINE_STAGES.filter(s=>PIPELINE_TERMINAL.has(s)).map(st =>
-    `<span style="font-size:11px;color:var(--text-muted);white-space:nowrap">${st}: <b style="color:var(--text)">${distribution[st]||0}</b></span>`).join('<span style="color:var(--border)">·</span>');
-
-  // Bottlenecks — avg dwell per stage.
-  const dwellHtml = dwellRows.length ? dwellRows.map((r,i) => {
-    const pct = Math.round(r.avg/maxAvg*100);
-    const col = i===0 ? 'var(--red)' : i<3 ? 'var(--amber)' : 'var(--green)';
-    return `<div style="display:flex;align-items:center;gap:10px">
-      <div style="width:150px;flex-shrink:0;font-size:11px;color:var(--text)">${r.stage}</div>
-      <div style="flex:1;background:rgba(255,255,255,.04);border-radius:3px;height:22px;position:relative;overflow:hidden">
-        <div style="height:100%;width:${Math.max(pct,4)}%;background:${col};opacity:.8;border-radius:3px"></div>
-        <div style="position:absolute;inset:0;display:flex;align-items:center;padding:0 9px;font-size:11px;color:var(--text)"><b>${pplDays(r.avg)}</b> <span style="color:var(--text-muted);margin-left:6px">avg · ${pplDays(r.med)} median · n=${r.n}</span></div>
-      </div></div>`;
-  }).join('') : `<div style="font-size:12px;color:var(--text-muted);padding:6px 2px">No completed stage transitions logged yet — dwell averages appear once drivers start moving between stages.</div>`;
-
-  // Stuck longest right now.
-  const stuckRows = active.slice(0,15).map(a => {
-    const over = (a.dwell||0) > PIPELINE_STUCK_DAYS;
-    return `<tr style="border-top:1px solid var(--border)">
-      <td style="padding:6px 9px;font-size:12px;color:var(--text)">${a.name}</td>
-      <td style="padding:6px 9px;font-size:12px;color:var(--text-muted)">${a.stage}</td>
-      <td style="padding:6px 9px;font-size:12px;color:var(--text-muted)">${a.owner}</td>
-      <td style="padding:6px 9px;font-size:12px;text-align:right;font-weight:700;color:${over?'var(--red)':'var(--text)'}">${pplDays(a.dwell)}</td></tr>`;
-  }).join('');
-  const stuckHtml = active.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
-      <thead><tr style="background:rgba(0,0,0,.15)">
-        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Driver</th>
-        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Stage</th>
-        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Owner</th>
-        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Waiting</th>
-      </tr></thead><tbody>${stuckRows}</tbody></table></div>`
-    : `<div style="font-size:12px;color:var(--text-muted);padding:6px 2px">No drivers currently in the active pipeline.</div>`;
-
-  // Owner load.
-  const ownerHtml = Object.keys(ownerMap).sort((a,b)=>ownerMap[b].n-ownerMap[a].n).map(o => {
-    const m = ownerMap[o], avg = m.k ? m.sum/m.k : null;
-    return `<div class="akpi" style="border-left-color:#56BEF0"><div class="akpi-label">${o}</div><div class="akpi-value">${m.n}</div><div class="akpi-delta flat">avg wait ${pplDays(avg)}</div></div>`;
-  }).join('') || `<div style="font-size:12px;color:var(--text-muted)">No active-pipeline drivers.</div>`;
-
-  return banner + `
-    <div class="analytics-kpi-row" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
-      ${kpi('In pipeline', activeCount, 'not yet Active', '#56BEF0')}
-      ${kpi('Stuck &gt; '+PIPELINE_STUCK_DAYS+'d', stuckCount, 'need a nudge', stuckCount?'var(--red)':'var(--green)')}
-      ${kpi('Longest wait', pplDays(longestWait), 'in current stage', '#f59e0b')}
-      ${kpi('Active now', activeNow, 'reached Active', 'var(--green)')}
-      ${kpi('Typical → Active', medianTTA==null ? '—' : pplDays(medianTTA), medianTTA==null ? 'builds as new leads finish' : `median of ${ttaVals.length} tracked`, '#8b5cf6')}
-    </div>
-
-    <div class="chart-card" style="margin-bottom:16px">
-      <div class="chart-card-title">🪜 Funnel — where leads are lost <span style="font-size:11px;color:var(--text-muted);font-weight:400">· tracked movement since logging began</span></div>
-      <div style="display:flex;flex-direction:column;gap:7px;margin-top:8px">${funnelHtml}</div>
-    </div>
-
-    <div class="chart-card" style="margin-bottom:16px">
-      <div class="chart-card-title">📈 Weekly flow — leads in vs activated <span style="font-size:11px;color:var(--text-muted);font-weight:400">· last 6 weeks</span></div>
-      ${flowHtml}
-    </div>
-
-    <div class="chart-card" style="margin-bottom:16px">
-      <div class="chart-card-title">🐌 Where drivers get stuck — average days per stage</div>
-      <div style="display:flex;flex-direction:column;gap:7px;margin-top:8px">${dwellHtml}</div>
-    </div>
-
-    <div class="chart-card" style="margin-bottom:16px">
-      <div class="chart-card-title">Who's in the pipeline right now</div>
-      <div style="display:flex;flex-direction:column;gap:7px;margin-top:8px">${distHtml}</div>
-      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap;align-items:center"><span style="font-size:9px;color:var(--text-muted);letter-spacing:.05em">OUTCOMES</span>${terminalHtml}</div>
-    </div>
-
-    <div class="chart-card" style="margin-bottom:16px">
-      <div class="chart-card-title">👥 Load by owner <span style="font-size:11px;color:var(--text-muted);font-weight:400">· active drivers per queue</span></div>
-      <div class="analytics-kpi-row" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-top:8px">${ownerHtml}</div>
-    </div>
-
-    <div class="chart-card">
-      <div class="chart-card-title">⏳ Stuck longest right now <span style="font-size:11px;color:var(--text-muted);font-weight:400">· top 15 · red = over ${PIPELINE_STUCK_DAYS} days</span></div>
-      <div style="margin-top:8px">${stuckHtml}</div>
+  // Stuck list — the selected macro's drivers, else all active (dwell desc). Click → A1.
+  const selMacro = pipelineMacroSel ? macroData.find(m => m.key === pipelineMacroSel) : null;
+  const listShown = (selMacro ? selMacro.list : active).slice().sort((a, b) => (b.dwell || 0) - (a.dwell || 0));
+  const stuckRows = listShown.slice(0, 40).map(a => {
+    const over = (a.dwell || 0) > PIPELINE_STUCK_DAYS;
+    return `<div class="dk-row click" onclick="pipelineOpenDriver('${jsq(a.name)}')">
+      <span class="k">${escH(a.name)} <span style="color:var(--dk-dim)">· ${escH(a.stage)}</span></span>
+      <span class="v"><span style="color:var(--dk-mut)">${escH(a.owner)}</span> · <b style="color:${over ? 'var(--dk-danger)' : 'var(--dk-text)'}">${pplDays(a.dwell)}</b></span>
     </div>`;
+  }).join('') || `<div style="color:var(--dk-dim);font-size:12px;padding:4px">No drivers in the active pipeline.</div>`;
+  const stuckTitle = selMacro ? `${selMacro.key} · owner ${selMacro.owner}` : 'Stuck longest — all stages';
+  const stuckMeta  = selMacro ? `${selMacro.count} in stage · ${selMacro.stuck} over SLA · <span style="cursor:pointer;color:var(--dk-info)" onclick="pipelineSelectMacro('${jsq(selMacro.key)}')">clear ✕</span>`
+                              : `${active.length} active · ${stuckN} over ${PIPELINE_STUCK_DAYS}d`;
+  const stuckCard = `<div class="dk-card"><div class="dk-card-t"><span class="t">${escH(stuckTitle)}</span><span class="go">${stuckMeta}</span></div>${stuckRows}</div>`;
+
+  // ── 8-week flow: leads-in (bars) vs activated (bars + trend line), dir=ltr island ──
+  const WEEK = 7 * DAY;
+  const weekStart = t => { const d = new Date(t); const dow = (d.getDay() + 6) % 7; d.setHours(0, 0, 0, 0); return d.getTime() - dow * DAY; };
+  const funnelLog = (log || []).filter(r => r.from_stage !== '(baseline)');
+  const flowByWeek = {};
+  funnelLog.forEach(r => { const t = Date.parse(r.changed_at); if (isNaN(t)) return;
+    if (r.from_stage === '(new)') { const w = weekStart(t); (flowByWeek[w] = flowByWeek[w] || { inN: 0, act: 0 }).inN++; }
+    else if (r.to_stage === 'Active') { const w = weekStart(t); (flowByWeek[w] = flowByWeek[w] || { inN: 0, act: 0 }).act++; } });
+  const thisWeek = weekStart(now), weeks = [];
+  for (let i = 7; i >= 0; i--) { const w = thisWeek - i * WEEK; weeks.push({ w, ...(flowByWeek[w] || { inN: 0, act: 0 }) }); }
+  const flowMax = Math.max(1, ...weeks.map(x => Math.max(x.inN, x.act)));
+  const wkLabel = w => w === thisWeek ? 'now' : new Date(w).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  const CW = 640, CH = 108, base = CH - 20, slot = CW / weeks.length, plot = base - 12;
+  const barsSvg = weeks.map((x, i) => {
+    const cx = i * slot + slot / 2, inH = x.inN / flowMax * plot, acH = x.act / flowMax * plot;
+    return `<rect x="${(cx - 13).toFixed(1)}" y="${(base - inH).toFixed(1)}" width="11" height="${Math.max(inH, x.inN ? 2 : 0).toFixed(1)}" rx="1.5" style="fill:var(--dk-info);opacity:.75"/>`
+      + `<rect x="${(cx + 2).toFixed(1)}" y="${(base - acH).toFixed(1)}" width="11" height="${Math.max(acH, x.act ? 2 : 0).toFixed(1)}" rx="1.5" style="fill:var(--dk-brand);opacity:.85"/>`
+      + `<text x="${cx.toFixed(1)}" y="${CH - 5}" text-anchor="middle" style="font:600 8px var(--dk-mono);fill:var(--dk-dim)">${wkLabel(x.w)}</text>`
+      + `<text x="${cx.toFixed(1)}" y="${(base - Math.max(inH, acH) - 4).toFixed(1)}" text-anchor="middle" style="font:600 8px var(--dk-mono);fill:var(--dk-mut)">${x.inN}·${x.act}</text>`;
+  }).join('');
+  const linePts = weeks.map((x, i) => `${(i * slot + slot / 2 + 7.5).toFixed(1)},${(base - x.act / flowMax * plot).toFixed(1)}`).join(' ');
+  const flowSvg = `<div style="direction:ltr;overflow-x:auto"><svg viewBox="0 0 ${CW} ${CH}" width="100%" height="${CH}" preserveAspectRatio="xMidYMid meet" style="min-width:420px;display:block">
+    <line x1="0" y1="${base}" x2="${CW}" y2="${base}" style="stroke:var(--dk-line);stroke-width:1"/>${barsSvg}
+    <polyline points="${linePts}" style="fill:none;stroke:var(--dk-brand);stroke-width:1.5;opacity:.5"/></svg></div>`;
+  const flowLegend = `<div style="display:flex;gap:14px;margin-block-start:8px;font-size:11px;color:var(--dk-mut)">
+    <span><span style="display:inline-block;width:9px;height:9px;background:var(--dk-info);border-radius:2px;vertical-align:-1px"></span> leads in</span>
+    <span><span style="display:inline-block;width:9px;height:9px;background:var(--dk-brand);border-radius:2px;vertical-align:-1px"></span> activated</span>
+    <span style="color:var(--dk-dim)">tracked transitions only — weeks before logging began read 0</span>
+  </div>`;
+
+  // ── Trust strip (sheet-link freshness). "Refresh mirror now" = F5, wired in S5. ──
+  const stagesTs = (snapshot || []).reduce((m, r) => { const t = Date.parse(r.synced_at); return isNaN(t) ? m : Math.max(m, t); }, 0) || null;
+  const tsChip = (label, ts) => {
+    if (!ts) return `<span>${label} <span style="color:var(--dk-dim)">— never</span></span>`;
+    const stale = (now - ts) / DAY > 2;
+    const when = new Date(ts).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return `<span>${label} <span style="color:${stale ? 'var(--dk-warn)' : 'var(--dk-mut)'}">${when} ${stale ? '⚠' : '✓'}</span></span>`;
+  };
+  const trust = `<div class="dk-card"><div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-family:var(--dk-mono);font-size:11px;color:var(--dk-mut)">
+    ${tsChip('MIRROR', pipelineMirrorTs)}${tsChip('STAGES', stagesTs)}
+    <button class="dk-btn sm" disabled title="On-demand sheet → mirror sync — wired in S5 (F5)" style="opacity:.5;margin-inline-start:auto">⟳ Sync sheet now</button>
+    <button class="dk-btn sm" onclick="pipelineRefresh()" title="Re-read the latest synced data from Supabase">↻ Reload</button>
+  </div></div>`;
+
+  // ── Deck chrome ──
+  const header = dkDeckHeader({ title: 'Onboarding', context: 'where drivers get stuck between Fleet Check and Active',
+    status: dkStatusChip(),
+    actions: source === 'sample'
+      ? `<button class="dk-btn sm" onclick="setPipelineMode('live')">Show live data</button>`
+      : `<button class="dk-btn sm" onclick="setPipelineMode('sample')">View sample</button><button class="dk-btn sm" onclick="pipelineRefresh()">↻ Refresh</button>` });
+  const rail = dkAlertRail(dkAlertRegistry(['blocked', 'stale']));
+  const sampleBanner = source === 'sample'
+    ? `<div class="dk-rail"><div class="dk-alert warn"><span class="n">▲</span><span><b>Sample data</b> — a preview of the design, not real drivers. Connect the onboarding stage log to see live numbers.</span></div></div>`
+    : '';
+  const strip = `<div class="dk-strip">
+    <div class="dk-stat"><div class="l">In pipeline</div><div class="v">${active.length}</div></div>
+    <div class="dk-stat${stuckN ? ' warn' : ''}"><div class="l">Stuck &gt; ${PIPELINE_STUCK_DAYS}d</div><div class="v">${stuckN}</div></div>
+    <div class="dk-stat brand"><div class="l">Activated · 7d</div><div class="v">${act7.size}</div></div>
+    <div class="dk-stat${lost7.size ? ' danger' : ''}"><div class="l">Lost · 7d</div><div class="v">${lost7.size}</div></div>
+  </div>`;
+
+  return `<div class="dk"><div class="dk-shell" style="padding-block:2px 8px">
+    ${header}${rail}${sampleBanner}${strip}
+    ${dkBulk('Pipeline funnel', active.length)}
+    <div class="dk-card"><div style="font-size:11px;color:var(--dk-mut);margin-block-end:8px">Drivers by macro stage — click a segment to see who's stuck there.</div>${segBar}${legend}</div>
+    ${stuckCard}
+    ${dkBulk('Flow · 8 weeks')}
+    <div class="dk-card"><div class="dk-card-t"><span class="t">Leads in vs activated</span><span class="go">last 8 weeks</span></div>${flowSvg}${flowLegend}</div>
+    ${dkBulk('Sheet link')}
+    ${trust}
+  </div></div>`;
 }
 
 // Deterministic synthetic data so the "sample" preview is stable + shows realistic
@@ -11184,9 +11252,9 @@ function renderAmbassadors() {
     refreshAmbassadorList()
       .then(() => ambAutoFillFromSheet())
       .then(r => { if (r && (r.ambSet || r.natSet)) renderAmbassadorsView(); })
-      // Build-155: also prime the stage snapshot so the per-ambassador "sheet: N leads
-      // · N active · N lost" funnel lines can render, then repaint once it's cached.
-      .then(() => fetchStageSnapshot())
+      // Build-155 + S3: prime the stage snapshot (per-ambassador lead funnel) AND the
+      // stage log (the LOG's recent →Active activations), then repaint once cached.
+      .then(() => Promise.all([fetchStageSnapshot(), fetchStageLog()]))
       .then(() => renderAmbassadorsView())
       .catch(()=>{});
   }
@@ -11207,18 +11275,21 @@ function renderAmbassadorsView() {
     .concat(allNames.map(n => { const p = profiles[driverKey(n)]; const tag = p&&p.ambassador?` · 🎖 ${p.ambassador}`:''; return `<option value="${n.replace(/"/g,'&quot;')}">${n}${tag}</option>`; })).join('');
   const monthOpts = (months.length ? months : [monthKey]).map(m => `<option value="${m}" ${m===monthKey?'selected':''}>${monthLabel(m)}</option>`).join('');
 
-  const toolbar = `
-    <div style="padding:16px 4px 8px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">
-      <div style="font-size:18px;font-weight:800">🎖 Ambassadors</div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <select id="ambMonthSel" onchange="setAmbMonth(this.value)" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg)">${monthOpts}</select>
-        <button class="save-btn" onclick="ambPullFromSheet()" title="Match dashboard drivers to the onboarding sheet and fill ambassador + nationality where empty">⇅ Sync from sheet</button>
-        <select id="ambAssignPicker" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);min-width:200px">${pickerOpts}</select>
-        <button class="save-btn" onclick="ambAssignFromPicker()">Assign / Edit</button>
-        <input type="file" id="ambFileInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleAmbassadorFile(this.files[0])">
-        <button class="save-btn" style="background:var(--bg-card);color:var(--text-muted);border:1px solid var(--border)" onclick="document.getElementById('ambFileInput').click()" title="Bulk-assign ambassadors from the Excel template">⬆ Excel</button>
-      </div>
-    </div>`;
+  const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escA = s => escH(s).replace(/"/g, '&quot;');
+  const jsq  = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const inpCss = 'background:var(--dk-s3);border:1px solid var(--dk-line2);color:var(--dk-text);border-radius:7px;height:30px;padding:0 10px;font-family:var(--dk-sans);font-size:12px;box-sizing:border-box';
+  const header = dkDeckHeader({ title: 'Ambassadors',
+    context: `roster · attribution worklists · recent activations — ${monthLabel(monthKey)}`,
+    status: dkStatusChip(),
+    actions: `<select onchange="setAmbMonth(this.value)" style="${inpCss}" title="Month">${monthOpts}</select>
+      <button class="dk-btn sm" onclick="ambPullFromSheet()" title="Match dashboard drivers to the onboarding sheet and fill ambassador + nationality where empty">⇅ Sync from sheet</button>` });
+  const controls = `<div class="dk-filterbar"><div class="dk-fgroup" style="flex:1;min-width:220px"><span class="lb">Assign</span>
+    <select id="ambAssignPicker" style="${inpCss};flex:1;min-width:180px">${pickerOpts}</select>
+    <button class="dk-btn sm" onclick="ambAssignFromPicker()">Assign / Edit</button>
+    <input type="file" id="ambFileInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleAmbassadorFile(this.files[0])">
+    <button class="dk-btn sm" onclick="document.getElementById('ambFileInput').click()" title="Bulk-assign from the Excel template">⬆ Excel</button>
+  </div></div>`;
 
   // Every driver WITH an ambassador (model no longer required — the new system uses nationality).
   const assigned = [];
@@ -11247,8 +11318,11 @@ function renderAmbassadorsView() {
   unassignedEarners.sort((a, b) => b.net - a.net);
 
   if (!assigned.length && !unassignedEarners.length) {
-    el.innerHTML = toolbar +
-      `<div class="empty-state"><div class="empty-icon">🎖</div><div class="empty-title">No ambassadors assigned yet</div><div class="empty-sub">Click <b>⇅ Sync from sheet</b> to auto-fill ambassadors from the onboarding sheet, or pick a driver above → set their Ambassador + Nationality → Save.</div></div>`;
+    el.innerHTML = `<div class="dk"><div class="dk-shell" style="padding-block:2px 8px">${header}${controls}
+      <div class="dk-card" style="align-items:center;text-align:center;padding:34px 20px;color:var(--dk-mut)">
+        <div style="font-size:26px">🎖</div><div style="font-size:15px;font-weight:600;color:var(--dk-text)">No ambassadors assigned yet</div>
+        <div style="font-size:12px">Click <b>⇅ Sync from sheet</b> to auto-fill from the onboarding sheet, or pick a driver above → set Ambassador + Nationality → Save.</div>
+      </div></div></div>`;
     return;
   }
 
@@ -11261,169 +11335,150 @@ function renderAmbassadorsView() {
   const totalOnPace  = assigned.filter(a=>a.net>=5000||a.proj>=5000).length;
   const needsConfirm = assigned.filter(a => !a.nationality || !a.profile.nationalityConfirmed);
 
-  // Build-155: KPI cards are clickable — scroll/drill to what they count.
-  const kcard = (kind, label, valueHtml, active, hint) => `
-    <div class="kpi-card" onclick="ambKpiClick('${kind}')" title="${hint}" style="cursor:pointer;${active?'border-color:var(--bolt-green);box-shadow:inset 0 0 0 1px var(--bolt-green)':''}">
-      <div class="kpi-card-label">${label}</div><div class="kpi-card-value">${valueHtml}</div></div>`;
-  let html = toolbar + `
-    <div style="display:flex;flex-wrap:wrap;gap:12px;padding:4px 4px 14px">
-      ${kcard('ambassadors','Ambassadors', String(groupList.length), false, 'Jump to the ambassador cards')}
-      ${kcard('captains','Captains referred', String(assigned.length), false, 'Show all captains (clears filters)')}
-      ${kcard('onpace','On pace ≥5k', `<span style="color:var(--green)">${totalOnPace}</span>`, ambRowFilter==='onpace', 'Filter tables to on-pace captains only')}
-      ${kcard('owed','Owed · '+monthLabel(monthKey), `<span style="color:var(--bolt-green)">${fmt(totalOwed)}<span class="kpi-card-unit"> SAR</span></span>`, ambRowFilter==='owed', 'Filter tables to captains with a bonus owed')}
-      ${kcard('unassigned','Unassigned earners', `<span style="color:${unassignedEarners.length?'var(--amber)':'var(--text-muted)'}">${unassignedEarners.length}</span>`, false, 'Jump to the unassigned-earners worklist')}
+  // ── S3 · shared engine + slipping + lead-funnel + activations (computed once) ──
+  const incData  = incentiveTotalsFor(monthKey);            // authoritative, override-aware
+  const incByAmb = {}; incData.refs.forEach(g => { incByAmb[g.name.toLowerCase()] = g; });
+  const slippingByAmb = {}; let slippingTotal = 0;
+  try {
+    const R = computeRosterForMonth('');                    // "slipping now" = current pace, same signal as the A3 rail
+    if (R && R.current) { const W = computeTrailingWindows();
+      R.current.forEach(d => { if (d.blocked) return;
+        const w = W.map[d.key];
+        const paceCollapse = w && w.priorDays >= 3 && w.priorNet >= 800 && w.recentNet < w.priorNet * 0.5;
+        const tierSlip = R.projectable && !d.idle && netTierBand(d.net) > d.band;
+        if (paceCollapse || tierSlip) { const a = (getCourierProfile(d.name) && getCourierProfile(d.name).ambassador || '').trim().toLowerCase();
+          if (a) { slippingByAmb[a] = (slippingByAmb[a] || 0) + 1; slippingTotal++; } }
+      });
+    }
+  } catch (e) {}
+  const snapById = {}; (stageSnapshotCache || []).forEach(r => { if (r.driver_id) snapById[r.driver_id] = r.current_stage; });
+  const ambById = {}, sheetStats = {};
+  (Array.isArray(sheetAmbassadorSyncCache) ? sheetAmbassadorSyncCache : []).forEach(s => {
+    if (s.id) ambById[s.id] = s.ambassador;
+    if (!s.ambassador) return;
+    const k = s.ambassador.toLowerCase(); const o = (sheetStats[k] = sheetStats[k] || { leads:0, active:0, lost:0, pipe:0 });
+    o.leads++; const st = snapById[s.id];
+    if (st === 'Active') o.active++; else if (PIPELINE_LOSS.has(st)) o.lost++; else if (st) o.pipe++;
+  });
+  const funnelLine = name => { const s = sheetStats[String(name).toLowerCase()]; if (!s) return '';
+    return `<div style="font-size:10px;color:var(--dk-dim);margin-block-start:3px">sheet: ${s.leads} lead${s.leads!==1?'s':''} · <span style="color:var(--dk-brand)">${s.active} active</span>${s.pipe?` · ${s.pipe} in pipeline`:''}${s.lost?` · <span style="color:var(--dk-danger)">${s.lost} lost</span>`:''}</div>`; };
+  // recent activations — stage-log → Active, attributed via the sheet sync (real timestamps only)
+  const activations = (stageLogCache || []).filter(r => r.to_stage === 'Active' && r.changed_at)
+    .map(r => ({ name: r.name || r.driver_id || '—', amb: ambById[r.driver_id] || '', t: Date.parse(r.changed_at) }))
+    .filter(r => !isNaN(r.t)).sort((a, b) => b.t - a.t).slice(0, 12);
+  const totalIncSar = incData.totals.grandSar;
+  const rowKeep = r => ambRowFilter === 'onpace' ? (r.net >= 5000 || r.proj >= 5000) : ambRowFilter === 'owed' ? r.payout.owed > 0 : true;
+
+  let html = `<div class="dk"><div class="dk-shell" style="padding-block:2px 8px">${header}${controls}
+    <div class="dk-strip">
+      <div class="dk-stat"><div class="l">Ambassadors</div><div class="v">${groupList.length}</div></div>
+      <div class="dk-stat"><div class="l">Captains referred</div><div class="v">${assigned.length}</div></div>
+      <div class="dk-stat"><div class="l">On pace ≥5k</div><div class="v">${totalOnPace}</div></div>
+      <div class="dk-stat brand"><div class="l">Incentive owed · ${monthLabel(monthKey)}</div><div class="v">${fmt(Math.round(totalIncSar))}<small> SAR</small></div></div>
+      <div class="dk-stat${unassignedEarners.length ? ' warn' : ''}"><div class="l">Unassigned earners</div><div class="v">${unassignedEarners.length}</div></div>
+      <div class="dk-stat${slippingTotal ? ' warn' : ''}"><div class="l">Slipping now</div><div class="v">${slippingTotal}</div></div>
     </div>`;
-  if (ambRowFilter) html += `<div style="margin:0 4px 12px;padding:8px 12px;border:1px solid var(--bolt-green);border-radius:6px;background:rgba(0,255,179,.05);font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <span>Showing only <b>${ambRowFilter==='onpace'?'captains on pace ≥5k':'captains with a bonus owed'}</b> in every table below.</span>
-      <button class="save-btn" style="padding:3px 10px;font-size:11px" onclick="ambKpiClick('${ambRowFilter}')">✕ Clear filter</button></div>`;
+  html += dkBulk('Worklists', unassignedEarners.length + needsConfirm.length);
+  if (!unassignedEarners.length && !needsConfirm.length)
+    html += `<div class="dk-card" style="color:var(--dk-mut);font-size:12px">No attribution gaps — every earner has an ambassador and a confirmed nationality. ✓</div>`;
   if (unassignedEarners.length) {
     const wrows = unassignedEarners.map(u => {
-      const safe = u.name.replace(/'/g, "\\'");
       const foreign = lookupForeignName(u.name);
       const sug = u.suggestion;
       const opts = ['<option value="">— assign —</option>']
-        .concat(AMBASSADOR_LIST.map(a => `<option value="${a}"${sug && sug.ambassador === a ? ' selected' : ''}>${a}</option>`)).join('');
+        .concat(AMBASSADOR_LIST.map(a => `<option value="${escA(a)}"${sug && sug.ambassador === a ? ' selected' : ''}>${escH(a)}</option>`)).join('');
       const sugCell = sug
-        ? `<span style="font-size:11px;color:var(--text-muted)">sheet: <b style="color:var(--text)">${sug.ambassador}</b> · ${sug.confidence === 'high' ? 'phone' : 'name'} match${sug.confidence === 'medium' ? ' · <span style="color:var(--amber)">verify</span>' : ''}</span>
-           <button class="save-btn" style="padding:2px 9px;font-size:11px" onclick="setDriverAmbassador('${safe}','${sug.ambassador.replace(/'/g, "\\'")}')">✓ Use</button>`
-        : `<span style="font-size:11px;color:var(--text-muted)">—</span>`;
-      return `<tr style="border-top:1px solid var(--border)">
-        <td style="padding:6px 10px"><span style="font-weight:600">${u.name}</span>${foreign ? `<span style="color:var(--text-muted);font-size:11px"> (${foreign})</span>` : ''}</td>
-        <td style="padding:6px 10px;text-align:right;font-family:var(--mono)">${fmt(u.net)}</td>
-        <td style="padding:6px 10px"><select onchange="setDriverAmbassador('${safe}',this.value)" style="padding:2px 6px;font-size:11px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--text);min-width:150px">${opts}</select></td>
-        <td style="padding:6px 10px">${sugCell}</td>
-      </tr>`;
+        ? `sheet <b style="color:var(--dk-text)">${escH(sug.ambassador)}</b> · ${sug.confidence === 'high' ? 'phone' : 'name'}${sug.confidence === 'medium' ? ' · <span style="color:var(--dk-warn)">verify</span>' : ''}
+           <button class="dk-btn sm" onclick="setDriverAmbassador('${jsq(u.name)}','${jsq(sug.ambassador)}')">✓ Use</button>`
+        : `<span style="color:var(--dk-dim)">—</span>`;
+      return `<div class="dk-row" style="gap:10px;align-items:center">
+        <span class="k" style="flex:1;min-width:120px">${escH(u.name)}${foreign ? ` <span style="color:var(--dk-dim)">${escH(foreign)}</span>` : ''}</span>
+        <span class="dk-num">${fmt(Math.round(u.net))}</span>
+        <select onchange="setDriverAmbassador('${jsq(u.name)}',this.value)" style="${inpCss};min-width:150px">${opts}</select>
+        <span style="font-size:11px;color:var(--dk-mut)">${sugCell}</span>
+      </div>`;
     }).join('');
-    html += `<div id="ambWorklist" style="margin:0 4px 14px;background:var(--bg-card2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(255,170,0,.06);flex-wrap:wrap;gap:6px">
-        <div style="font-weight:800;font-size:14px">🎯 Unassigned earners — ${unassignedEarners.length}</div>
-        <div style="font-size:11px;color:var(--text-muted)">earning in ${monthLabel(monthKey)} with no ambassador · assign to start bonus tracking (biggest earners first)</div>
-      </div>
-      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em">
-          <th style="padding:6px 10px">Captain</th><th style="padding:6px 10px;text-align:right">Net (mo)</th><th style="padding:6px 10px">Assign ambassador</th><th style="padding:6px 10px">Sheet suggestion</th>
-        </tr></thead>
-        <tbody>${wrows}</tbody>
-      </table></div>
-    </div>`;
+    html += `<div class="dk-card"><div class="dk-card-t"><span class="t">🎯 Unassigned earners</span><span class="go">${unassignedEarners.length} · biggest first</span></div>
+      <div style="font-size:11px;color:var(--dk-mut)">earning in ${monthLabel(monthKey)} with no ambassador — assign to start bonus tracking</div>${wrows}</div>`;
   }
   if (needsConfirm.length) {
     const wl = needsConfirm.map(a => {
-      const safe = a.name.replace(/'/g,"\\'");
       const assumed = a.nationality && !a.profile.nationalityConfirmed;
-      const sel = `<select onchange="setDriverNationality('${safe}',this.value)" style="padding:2px 6px;font-size:11px;border:1px solid ${a.nationality?'var(--border)':'var(--amber)'};border-radius:5px;background:var(--bg);color:var(--text)">
+      const sel = `<select onchange="setDriverNationality('${jsq(a.name)}',this.value)" style="${inpCss}">
         <option value="" ${!a.nationality?'selected':''}>— set —</option>
         <option value="saudi" ${a.nationality==='saudi'?'selected':''}>Saudi</option>
         <option value="foreigner" ${a.nationality==='foreigner'?'selected':''}>Foreigner</option></select>`;
-      return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap">
-        <span style="min-width:170px;font-size:12px;font-weight:600">${a.name}${assumed?' <span style="color:var(--amber);font-size:10px;font-weight:400">assumed</span>':''}</span>
+      return `<div class="dk-row" style="gap:10px;align-items:center">
+        <span class="k" style="flex:1;min-width:120px">${escH(a.name)}${assumed?' <span style="color:var(--dk-warn);font-size:10px">assumed</span>':''}</span>
         ${sel}
-        ${a.nationality?`<button class="save-btn" style="padding:2px 9px;font-size:11px" onclick="ambConfirmNationality('${safe}')">✓ Confirm</button>`:''}
+        ${a.nationality?`<button class="dk-btn sm" onclick="ambConfirmNationality('${jsq(a.name)}')">✓ Confirm</button>`:''}
       </div>`;
     }).join('');
-    html += `<div style="margin:0 4px 14px;background:rgba(255,170,0,.08);border:1px solid var(--amber);border-radius:8px;padding:10px 14px">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-        <div style="font-weight:700;color:var(--amber)">⚠ Confirm nationality — ${needsConfirm.length} driver${needsConfirm.length===1?'':'s'}</div>
-        <button class="save-btn" style="padding:3px 10px;font-size:11px" onclick="ambAssumeForeigner()">Assume unset = Foreigner</button>
-      </div>
-      <div style="font-size:11px;color:var(--text-muted);margin:4px 0 8px">One-time check per driver — set Saudi/Foreigner, or ✓ Confirm an assumed one. Bonuses aren't final until confirmed.</div>
-      ${wl}
-    </div>`;
+    html += `<div class="dk-card"><div class="dk-card-t"><span class="t">⚠ Confirm nationality</span><span class="go">${needsConfirm.length} driver${needsConfirm.length===1?'':'s'}</span></div>
+      <div style="font-size:11px;color:var(--dk-mut);display:flex;gap:8px;align-items:center;flex-wrap:wrap">One-time check — Saudi/Foreigner. Bonuses aren't final until confirmed.
+        <button class="dk-btn sm" onclick="ambAssumeForeigner()">Assume unset = Foreigner</button></div>${wl}</div>`;
   }
 
-  // Build-155: per-ambassador LEAD FUNNEL from the onboarding sheet — how many leads
-  // each ambassador brought in and where those leads stand now (Active / still in the
-  // pipeline / lost). Reads the two caches other tabs already prime; the sub-line just
-  // stays absent until renderAmbassadors' background fetch fills them.
-  const snapById = {};
-  (stageSnapshotCache || []).forEach(r => { if (r.driver_id) snapById[r.driver_id] = r.current_stage; });
-  const sheetStats = {};                               // ambassador (lowercase) -> funnel counts
-  (Array.isArray(sheetAmbassadorSyncCache) ? sheetAmbassadorSyncCache : []).forEach(s => {
-    if (!s.ambassador) return;
-    const k = s.ambassador.toLowerCase();
-    const o = (sheetStats[k] = sheetStats[k] || { leads:0, active:0, lost:0, pipe:0 });
-    o.leads++;
-    const st = snapById[s.id];
-    if (st === 'Active') o.active++;
-    else if (PIPELINE_LOSS.has(st)) o.lost++;
-    else if (st) o.pipe++;
-  });
-  const funnelLine = name => {
-    const s = sheetStats[String(name).toLowerCase()];
-    if (!s) return '';
-    return `<div style="font-size:10px;color:var(--text-muted);margin-top:3px">sheet: ${s.leads} lead${s.leads!==1?'s':''} · <span style="color:var(--green)">${s.active} active</span>${s.pipe?` · ${s.pipe} in pipeline`:''}${s.lost?` · <span style="color:var(--red)">${s.lost} lost</span>`:''}</div>`;
+  html += dkBulk('Roster', groupList.length);
+  const rc = (v, label) => `<button class="dk-chip${ambRowFilter === v ? ' on' : ''}" onclick="ambKpiClick('${v}')">${label}</button>`;
+  html += `<div class="dk-filterbar"><div class="dk-fgroup"><span class="lb">Filter</span>${rc('onpace','On pace ≥5k')}${rc('owed','Bonus owed')}</div>${ambFilter ? `<button class="dk-filter-clear" onclick="ambSetFilter('${jsq(ambFilter)}')">Clear ${escH(ambFilter)} ✕</button>` : ''}</div>`;
+  const rosterCard = g => {
+    const total = g.rows.length;
+    const activeN = g.rows.filter(r => r.net > 0).length;
+    const activePct = total ? Math.round(activeN / total * 100) : 0;
+    const fleetNet = g.rows.reduce((s, r) => s + r.net, 0);
+    const incSar = (incByAmb[g.name.toLowerCase()] || {}).paidSar || 0;
+    const slip = slippingByAmb[g.name.toLowerCase()] || 0;
+    const sel = ambFilter.toLowerCase() === g.name.toLowerCase();
+    return `<div class="dk-card click" onclick="ambSetFilter('${jsq(g.name)}')"${sel ? ' style="border-color:var(--dk-line2)"' : ''}>
+      <div class="dk-card-t"><span class="t">🎖 ${escH(g.name)}</span><span class="go">${sel ? 'open ▾' : 'drill →'}</span></div>
+      <div class="dk-row"><span class="k">Brought</span><span class="v">${total} · <span style="color:${activePct >= 50 ? 'var(--dk-brand)' : 'var(--dk-mut)'}">${activePct}% active</span></span></div>
+      <div class="dk-row"><span class="k">Fleet net</span><span class="v">${fmt(Math.round(fleetNet))} SAR</span></div>
+      <div class="dk-row"><span class="k">Incentive</span><span class="v" style="color:${incSar > 0 ? 'var(--dk-brand)' : 'var(--dk-dim)'}">${incSar > 0 ? fmt(Math.round(incSar)) + ' SAR' : '—'}</span></div>
+      ${slip ? `<div class="dk-row"><span class="k">Slipping</span><span class="v dk-warn-n">${slip}</span></div>` : ''}
+      ${funnelLine(g.name)}
+    </div>`;
   };
+  const attributed = new Set(groupList.map(g => g.name.toLowerCase()));
+  const zeroCards = AMBASSADOR_LIST.filter(n => !attributed.has(n.toLowerCase())).map(n => {
+    const sel = ambFilter.toLowerCase() === n.toLowerCase();
+    return `<div class="dk-card click" onclick="ambSetFilter('${jsq(n)}')" style="opacity:.6${sel ? ';border-color:var(--dk-line2)' : ''}">
+      <div class="dk-card-t"><span class="t">🎖 ${escH(n)}</span><span class="go">drill →</span></div>
+      <div style="font-size:11px;color:var(--dk-dim)">no captains attributed yet</div>${funnelLine(n)}</div>`;
+  }).join('');
+  html += `<div class="dk-grid">${groupList.map(rosterCard).join('')}${zeroCards}</div>`;
 
-  // Ambassador filter cards — ALL canonical ambassadors, including those with zero
-  // captains attributed (muted), so "where is ambassador X" always has an answer.
-  const card = (label, count, owed, on, active, filterVal, sub) => `
-    <div onclick="ambSetFilter('${String(filterVal).replace(/'/g,"\\'")}')" style="cursor:pointer;min-width:150px;flex:1 1 150px;background:var(--bg-card);border:1px solid ${active?'var(--bolt-green)':'var(--border)'};border-radius:8px;padding:10px 12px;${active?'box-shadow:inset 0 0 0 1px var(--bolt-green)':''}${count||active?'':';opacity:.55'}">
-      <div style="font-weight:700;font-size:13px;margin-bottom:4px">${label}</div>
-      <div style="font-size:11px;color:var(--text-muted)">${count} captain${count===1?'':'s'} · <span style="color:${on?'var(--green)':'var(--text-muted)'}">${on} on pace</span></div>
-      <div style="font-size:12px;font-weight:700;color:${owed>0?'var(--bolt-green)':'var(--text-muted)'};margin-top:3px">${owed>0?'owed '+fmt(owed)+' SAR':'—'}</div>
-      ${sub||''}
+  // Drill — the selected ambassador's drivers (or, with a row filter and no ambassador
+  // selected, all matching drivers across ambassadors). Every row opens the A1 panel
+  // scoped to the tab's month.
+  const drillRow = r => {
+    const foreign = lookupForeignName(r.name);
+    return `<div class="dk-row click" onclick="dkOpenDriver('${jsq(r.name)}','${monthKey}')" title="${escA(r.payout.reason || '')}">
+      <span class="k">${escH(r.name)}${foreign ? ` <span style="color:var(--dk-dim)">${escH(foreign)}</span>` : ''}${r.track.push ? ' <span style="color:var(--dk-warn);font-weight:700">PUSH</span>' : ''}${(r.nationality && !r.profile.nationalityConfirmed) ? ' <span style="color:var(--dk-warn);font-size:10px">assumed</span>' : ''}</span>
+      <span class="v">${fmt(Math.round(r.net))} · <span style="color:${r.track.color}">${escH(r.track.label)}</span>${r.payout.owed > 0 ? ` · <b style="color:var(--dk-brand)">${fmt(Math.round(r.payout.owed))}</b>` : ''}</span>
     </div>`;
-  {
-    html += `<div id="ambFilterCards" style="display:flex;flex-wrap:wrap;gap:10px;padding:0 4px 14px">`;
-    html += card('All ambassadors', assigned.length, totalOwed, totalOnPace, ambFilter==='', '');
-    groupList.forEach(g => { html += card('🎖 '+g.name, g.rows.length, owedOf(g), onPaceOf(g), ambFilter.toLowerCase()===g.name.toLowerCase(), g.name, funnelLine(g.name)); });
-    const attributed = new Set(groupList.map(g => g.name.toLowerCase()));
-    AMBASSADOR_LIST.filter(n => !attributed.has(n.toLowerCase())).forEach(n => {
-      html += card('🎖 '+n, 0, 0, 0, ambFilter.toLowerCase()===n.toLowerCase(), n, funnelLine(n));
-    });
-    html += `</div>`;
+  };
+  if (ambFilter) {
+    const g = groupList.find(x => x.name.toLowerCase() === ambFilter.toLowerCase());
+    if (g) {
+      const rows = g.rows.filter(rowKeep).sort((a, b) => b.net - a.net);
+      html += `<div class="dk-card"><div class="dk-card-t"><span class="t">🎖 ${escH(g.name)} · drivers</span><span class="go">${rows.length}${ambRowFilter ? ' of ' + g.rows.length : ''} · owed ${fmt(Math.round(owedOf(g)))} SAR</span></div>${rows.map(drillRow).join('') || '<div style="color:var(--dk-dim);font-size:12px;padding:4px">none match the filter</div>'}</div>`;
+    } else {
+      const fl = funnelLine(ambFilter);
+      html += `<div class="dk-card" style="color:var(--dk-mut);font-size:12px">No captains attributed to <b>${escH(ambFilter)}</b> yet${fl ? ' — sheet leads:' + fl : '.'} Attribute via the 🎯 worklist or ⇅ Sync from sheet.</div>`;
+    }
+  } else if (ambRowFilter) {
+    const rows = assigned.filter(rowKeep).sort((a, b) => b.net - a.net);
+    html += `<div class="dk-card"><div class="dk-card-t"><span class="t">${ambRowFilter === 'onpace' ? 'On pace ≥5k' : 'Bonus owed'} · all ambassadors</span><span class="go">${rows.length}</span></div>${rows.map(drillRow).join('') || '<div style="color:var(--dk-dim);font-size:12px;padding:4px">none</div>'}</div>`;
   }
 
-  // Captains table(s) — filtered to the selected ambassador (or all), then to the
-  // KPI row-drill when one is active (Build-155).
-  const shown = ambFilter ? groupList.filter(g=>g.name.toLowerCase()===ambFilter.toLowerCase()) : groupList;
-  if (ambFilter && !shown.length) {
-    const fl = funnelLine(ambFilter);
-    html += `<div style="margin:0 4px 14px;padding:18px;border:1px dashed var(--border);border-radius:10px;text-align:center;color:var(--text-muted);font-size:13px">
-      No captains attributed to <b style="color:var(--text)">${ambFilter}</b> yet${fl ? ' — but the sheet has leads for them:'+fl : '.'}
-      <div style="margin-top:6px;font-size:11px">Attribute drivers in the 🎯 worklist above, or via ⇅ Sync from sheet.</div></div>`;
-  }
-  const rowKeep = r => ambRowFilter==='onpace' ? (r.net>=5000||r.proj>=5000) : ambRowFilter==='owed' ? r.payout.owed>0 : true;
-  const mark5k = Math.round(5000/6000*100);
-  shown.forEach(g => {
-    const keptRows = g.rows.filter(rowKeep);
-    if (ambRowFilter && !keptRows.length) return;      // drill hides empty groups entirely
-    const rows = keptRows.sort((a,b)=> b.net-a.net).map(r => {
-      const safeName = r.name.replace(/'/g,"\\'");
-      const foreign = lookupForeignName(r.name);
-      const natSel = `<select onchange="setDriverNationality('${safeName}',this.value)" style="padding:2px 6px;font-size:11px;border:1px solid ${r.nationality?'var(--border)':'var(--amber)'};border-radius:5px;background:var(--bg);color:${r.nationality?'var(--text)':'var(--amber)'}">
-        <option value="" ${!r.nationality?'selected':''}>— set —</option>
-        <option value="saudi" ${r.nationality==='saudi'?'selected':''}>Saudi</option>
-        <option value="foreigner" ${r.nationality==='foreigner'?'selected':''}>Foreigner</option></select>`;
-      const pct = Math.min(100, Math.round(r.net/6000*100));
-      const bar = `<div style="background:rgba(255,255,255,.05);border-radius:3px;height:14px;position:relative;width:120px">
-        <div style="height:100%;width:${pct}%;background:${r.track.color};opacity:.75;border-radius:3px"></div>
-        <div style="position:absolute;left:${mark5k}%;top:-2px;bottom:-2px;border-left:1px dashed var(--text-muted)" title="5,000"></div></div>`;
-      return `<tr style="border-top:1px solid var(--border)">
-        <td style="padding:7px 10px"><span style="font-weight:600">${r.name}</span>${foreign?`<span style="color:var(--text-muted);font-size:11px"> (${foreign})</span>`:''}${r.track.push?'<span style="color:var(--amber);font-size:11px;font-weight:700"> · PUSH</span>':''}</td>
-        <td style="padding:7px 10px">${natSel}${(r.nationality && !r.profile.nationalityConfirmed)?'<span style="color:var(--amber);font-size:10px"> assumed</span>':''}</td>
-        <td style="padding:7px 10px;text-align:right;font-family:var(--mono)">${fmt(r.net)}</td>
-        <td style="padding:7px 10px">${bar}</td>
-        <td style="padding:7px 10px;font-size:11px;color:${r.track.color};font-weight:600">${r.track.label}</td>
-        <td style="padding:7px 10px;text-align:right;font-weight:700;color:${r.payout.owed>0?'var(--bolt-green)':'var(--text-muted)'}" title="${(r.payout.reason||'').replace(/"/g,'&quot;')}">${fmt(r.payout.owed)}</td>
-        <td style="padding:7px 10px;text-align:center"><button class="save-btn" style="padding:3px 8px;font-size:11px" onclick="ambEditDriver('${safeName}')">Edit</button></td>
-      </tr>`;
-    }).join('');
-    html += `
-      <div style="background:var(--bg-card2);border:1px solid var(--border);border-radius:10px;margin:0 4px 14px;overflow:hidden">
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(0,255,179,.06)">
-          <div style="font-weight:800;font-size:14px">🎖 ${g.name}</div>
-          <div style="font-size:12px;color:var(--text-muted)">${keptRows.length}${ambRowFilter?' of '+g.rows.length:''} captain${g.rows.length>1?'s':''} · owed <b style="color:var(--bolt-green)">${fmt(owedOf(g))} SAR</b></div>
-        </div>
-        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em">
-            <th style="padding:6px 10px">Captain</th><th style="padding:6px 10px">Nationality</th><th style="padding:6px 10px;text-align:right">Net (mo)</th><th style="padding:6px 10px">Progress to 6k</th><th style="padding:6px 10px">On track</th><th style="padding:6px 10px;text-align:right">Amb owed</th><th></th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table></div>
-      </div>`;
-  });
-
+  // ── LOG · recent activations (real →Active events from the stage-log, per ambassador) ──
+  html += dkBulk('Recent activations', activations.length);
+  html += activations.length
+    ? `<div class="dk-slip">${activations.map(a => { const when = new Date(a.t).toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+        return `<div class="dk-row click" onclick="dkOpenDriver('${jsq(a.name)}','${monthKey}')"><span class="k">${escH(a.name)} <span style="color:var(--dk-brand)">→ Active</span>${a.amb ? ` <span style="color:var(--dk-mut)">· 🎖 ${escH(a.amb)}</span>` : ''}</span><span class="v" style="color:var(--dk-mut)">${when}</span></div>`; }).join('')}</div>`
+    : `<div class="dk-card" style="color:var(--dk-mut);font-size:12px">No activation events yet — fills in as the onboarding stage-log records drivers reaching <b>Active</b>.</div>`;
+  html += `</div></div>`;
   el.innerHTML = html;
 }
 
@@ -12341,7 +12396,7 @@ function renderAnalytics() {
     status: dkStatusChip(),
     actions: `<button class="dk-btn" onclick="openChaseList()">📋 Chase list</button>`
   });
-  const rail = dkAlertRail(dkAlertRegistry(['blocked', 'slipping', 'stale']));
+  const rail = dkAlertRail(dkAlertRegistry(['blocked', 'slipping', 'onboarding-stuck', 'amb-slipping', 'stale']));
   const strip = `<div class="dk-strip">
     ${statBox(`${t('withActivity')} view`, totalDrivers, 'all')}
     ${statBox('Active · had trips', activeCount, 'active')}
@@ -12991,6 +13046,28 @@ function dkAlertRegistry(only) {
   }
   if (on('slipping')) { const slip = dkTodaySlipping(R, computeTrailingWindows());
     if (slip.count) out.push({ src:'slipping', cls:'warn', n:slip.count, txt:t('slipping'), go:"todayGo('blocks')" }); }
+  // S3 · Onboarding contributes "stuck > SLA" — reads the stage-snapshot cache other tabs
+  // prime; an async source, so it contributes nothing until loaded (never blocks the rail).
+  if (on('onboarding-stuck') && Array.isArray(stageSnapshotCache) && stageSnapshotCache.length) {
+    const now = Date.now(), DAY = 86400000;
+    const stuck = stageSnapshotCache.filter(r => {
+      if (!r.current_stage || PIPELINE_TERMINAL.has(r.current_stage)) return false;
+      const ts = Date.parse(r.entered_at); return !isNaN(ts) && (now - ts) / DAY > PIPELINE_STUCK_DAYS;
+    }).length;
+    if (stuck) out.push({ src:'onboarding-stuck', cls:'warn', n:stuck, txt:'stuck in onboarding', go:"todayGo('pipeline')" });
+  }
+  // S3 · Ambassadors contributes "ambassadors slipping" — ambassadors with ≥1 driver slipping
+  // now (same signal as 'slipping'), so the command deck flags who to nudge.
+  if (on('amb-slipping')) {
+    const W = computeTrailingWindows(), ambs = new Set();
+    (R.current || []).forEach(d => { if (d.blocked) return;
+      const w = W.map[d.key];
+      const paceCollapse = w && w.priorDays >= 3 && w.priorNet >= 800 && w.recentNet < w.priorNet * 0.5;
+      const tierSlip = R.projectable && !d.idle && netTierBand(d.net) > d.band;
+      if (paceCollapse || tierSlip) { const a = (getCourierProfile(d.name) && getCourierProfile(d.name).ambassador || '').trim(); if (a) ambs.add(a.toLowerCase()); }
+    });
+    if (ambs.size) out.push({ src:'amb-slipping', cls:'warn', n:ambs.size, txt:'ambassadors slipping', go:"todayGo('ambassadors')" });
+  }
   return out;
 }
 
