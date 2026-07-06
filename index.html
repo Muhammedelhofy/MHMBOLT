@@ -1254,6 +1254,98 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 .dk-slip .dk-row { border-block-start: 1px solid var(--dk-line); border-radius: 0; padding-block: 6px; }
 .dk-slip .dk-row:first-child { border-block-start: none; }
 
+/* ── A2 · filter / sort / date bar (config-driven, one component everywhere) ── */
+.dk-filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+                border: 1px solid var(--dk-line); border-radius: 10px; background: var(--dk-s1);
+                padding: 9px 12px; }
+.dk-fgroup { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.dk-fgroup > .lb { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+                   color: var(--dk-dim); margin-inline-end: 2px; white-space: nowrap; }
+.dk-chip { all: unset; box-sizing: border-box; cursor: pointer; font-family: var(--dk-sans); font-size: 12px;
+           color: var(--dk-mut); background: var(--dk-s3); border: 1px solid transparent; border-radius: 999px;
+           padding: 3px 11px; white-space: nowrap; transition: color var(--dk-tf), border-color var(--dk-tf), background var(--dk-tf); }
+.dk-chip:hover { color: var(--dk-text); }
+.dk-chip.on { color: var(--dk-brand); border-color: rgba(61,219,174,.35); background: var(--dk-brand-tint); }
+.dk-chip.mono { font-family: var(--dk-mono); font-size: 11px; }
+/* tier pills reused as filters — dim until active, colour when on */
+.dk-tier.filt { cursor: pointer; opacity: .5; transition: opacity var(--dk-tf); }
+.dk-tier.filt.on, .dk-tier.filt:hover { opacity: 1; }
+/* multi-select dropdown (nationality / ambassador) */
+.dk-drop { position: relative; }
+.dk-drop > summary { list-style: none; cursor: pointer; font-size: 12px; color: var(--dk-mut);
+                     background: var(--dk-s3); border: 1px solid transparent; border-radius: 999px;
+                     padding: 3px 11px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.dk-drop > summary::-webkit-details-marker { display: none; }
+.dk-drop[open] > summary, .dk-drop > summary:hover { color: var(--dk-text); }
+.dk-drop > summary .cnt { font-family: var(--dk-mono); font-size: 10px; color: var(--dk-brand); }
+.dk-drop-menu { position: absolute; z-index: 60; inset-block-start: calc(100% + 5px); inset-inline-start: 0;
+                min-width: 180px; max-height: 260px; overflow: auto; background: var(--dk-s2);
+                border: 1px solid var(--dk-line2); border-radius: 8px; padding: 6px;
+                box-shadow: 0 12px 32px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 2px; }
+.dk-drop-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dk-text);
+                padding: 5px 8px; border-radius: 6px; cursor: pointer; }
+.dk-drop-item:hover { background: var(--dk-s3); }
+.dk-drop-item .bx { width: 13px; height: 13px; border: 1px solid var(--dk-mut); border-radius: 3px; flex: none;
+                    display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: var(--dk-brand); }
+.dk-drop-item.on .bx { border-color: var(--dk-brand); background: var(--dk-brand-tint); }
+.dk-filter-clear { all: unset; cursor: pointer; font-size: 11px; color: var(--dk-dim); margin-inline-start: auto;
+                   padding: 3px 8px; border-radius: 6px; }
+.dk-filter-clear:hover { color: var(--dk-danger); }
+
+/* ── DECK table (label headers + sort arrows, 34px rows, click→panel) ── */
+.dk-tablewrap { border: 1px solid var(--dk-line); border-radius: 10px; overflow: hidden; background: var(--dk-s1); }
+.dk-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.dk-table thead th { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+                     color: var(--dk-mut); text-align: start; padding: 9px 12px; background: var(--dk-s1);
+                     border-block-end: 1px solid var(--dk-line2); white-space: nowrap; position: sticky; top: 0; }
+.dk-table thead th.srt { cursor: pointer; user-select: none; }
+.dk-table thead th.srt:hover { color: var(--dk-text); }
+.dk-table thead th .ar { color: var(--dk-brand); margin-inline-start: 3px; }
+.dk-table thead th.num, .dk-table tbody td.num { text-align: end; font-family: var(--dk-mono); direction: ltr; unicode-bidi: isolate; }
+.dk-table tbody tr { border-block-start: 1px solid var(--dk-line); transition: background var(--dk-tf); }
+.dk-table tbody tr:first-child { border-block-start: none; }
+.dk-table tbody tr.click { cursor: pointer; }
+.dk-table tbody tr.click:hover { background: var(--dk-s2); }
+.dk-table tbody td { padding: 7px 12px; color: var(--dk-text); vertical-align: middle; height: 34px; box-sizing: border-box; }
+.dk-table td .sub { color: var(--dk-dim); font-size: 11px; }
+.dk-table td.name { font-weight: 600; color: var(--dk-hi); }
+.dk-amb { font-size: 11px; color: var(--dk-info); background: rgba(88,166,255,.10); border: 1px solid rgba(88,166,255,.22);
+          border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.dk-amb.none { color: var(--dk-dim); background: transparent; border-color: var(--dk-line); }
+.dk-statechip { font-size: 10px; font-weight: 600; letter-spacing: .04em; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.dk-statechip.blocked { color: var(--dk-danger); background: var(--dk-danger-tint); border: 1px solid rgba(255,92,122,.3); }
+.dk-statechip.idle { color: var(--dk-warn); background: var(--dk-warn-tint); border: 1px solid rgba(255,176,32,.3); }
+.dk-statechip.left { color: var(--dk-dim); background: transparent; border: 1px solid var(--dk-line); }
+.dk-statechip.active { color: var(--dk-brand); background: var(--dk-brand-tint); border: 1px solid rgba(61,219,174,.3); }
+
+/* ── worklist row (Blocks unblock queue: full reason, expandable) ── */
+.dk-work { display: flex; flex-direction: column; }
+.dk-work-row { border-block-start: 1px solid var(--dk-line); padding: 11px 14px; display: grid;
+               grid-template-columns: 1fr auto; gap: 4px 14px; align-items: center; }
+.dk-work-row:first-child { border-block-start: none; }
+.dk-work-row .who { font-weight: 600; color: var(--dk-hi); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dk-work-row .meta { grid-column: 1 / -1; font-size: 11px; color: var(--dk-mut); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.dk-work-row .reason { grid-column: 1 / -1; font-size: 12px; color: var(--dk-text); line-height: 1.5;
+                       background: var(--dk-s2); border-inline-start: 2px solid var(--dk-danger); border-radius: 5px;
+                       padding: 7px 10px; margin-block-start: 2px; }
+.dk-work-row .stake { font-family: var(--dk-mono); font-weight: 700; color: var(--dk-warn); white-space: nowrap; direction: ltr; unicode-bidi: isolate; }
+.dk-work-row .acts { display: flex; gap: 6px; grid-column: 1 / -1; margin-block-start: 4px; flex-wrap: wrap; }
+
+/* ── mini divisions inside deck cards (Analytics ▲/▼ lists) ── */
+.dk-mini { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 4px;
+           font-size: 12px; border-radius: 5px; cursor: pointer; }
+.dk-mini:hover { background: var(--dk-s2); }
+.dk-mini .nm { color: var(--dk-text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dk-mini .rt { font-family: var(--dk-mono); font-size: 11px; white-space: nowrap; direction: ltr; unicode-bidi: isolate; }
+
+/* ── A1 · driver panel bulkhead treatment (scoped to the modal; simple section
+   dividers become DECK bulkheads — LABEL ────── — while the flex ones with inline
+   controls are left alone so their right-side widgets keep their layout) ── */
+.modal-body .section-label { color: var(--dk-mut); border-bottom-color: var(--dk-line); }
+.modal-body .section-label:not([style*="flex"]) { display: flex; align-items: center; gap: 10px; border-bottom: none; padding-bottom: 0; }
+.modal-body .section-label:not([style*="flex"])::after { content: ''; flex: 1; height: 1px; background: var(--dk-line); }
+.modal-driver-meta .dk-tier { vertical-align: middle; }
+
 /* ── entrance: one breath, then still ── */
 @keyframes dk-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .dk-shell > * { animation: dk-in var(--dk-t) var(--dk-ease) backwards; }
@@ -3014,7 +3106,9 @@ function driverPanelActions(d) {
   </div>`;
 }
 
-function openModal(id, periodFilter) {
+function openModal(id, periodFilter, ctx) {
+  // ctx.monthFilter (A1 contract) lets the calling tab scope the panel to its
+  // selected month — the #9 fix "pick a month → the driver window shows THAT period".
   // Find the driver in currentDrivers first; if missing (e.g. they didn't work on
   // the latest uploaded day), scan all history for the most recent entry for them.
   let d = (currentDrivers||[]).find(x => x.driverId===id || driverKey(x.name)===driverKey(id));
@@ -3034,6 +3128,16 @@ function openModal(id, periodFilter) {
   const projected = pInfo && pInfo.end.day>0 && pInfo.end.day<pInfo.daysInMonth
     ? Math.round(monthly/pInfo.end.day*pInfo.daysInMonth) : monthly;
   const gap = Math.max(0, effTarget - monthly);
+  // A1 · the bonus-tier lens — read from computeRosterForMonth (the SAME projection engine
+  // Captains / Analytics / Blocks use) so the panel's tier matches those tabs exactly.
+  // Filled if already banked at that floor, hollow if only projected. Blocked/idle → none.
+  let tierLensPill = '';
+  if (typeof dkTierPill === 'function' && typeof computeRosterForMonth === 'function') {
+    const _er = computeRosterForMonth('');
+    const _ed = _er ? _er.drivers.find(x => x.key === driverKey(d.name)) : null;
+    if (_er && _er.projectable && _ed && !_ed.idle && !_ed.blocked)
+      tierLensPill = dkTierPill(_ed.band, { hollow: _ed.band > _er.bandOf(_ed.net), title: `net ${fmt(Math.round(_ed.net))} · projected ${fmt(_ed.proj)} SAR (${_er.periodLabel})` });
+  }
   let paceText='', paceColor='var(--text-muted)';
   if (pInfo && effTarget > 0) {
     const exp = effTarget*(pInfo.end.day/pInfo.daysInMonth);
@@ -3055,7 +3159,8 @@ function openModal(id, periodFilter) {
   // opens on June). The user can still change it inside the card; if that month has no
   // data for this driver the body renderer falls back to the full history automatically.
   modalPeriodFilter = periodFilter || null;
-  modalMonthFilter = (typeof sumMonthFilter !== 'undefined' && sumMonthFilter && sumMonthFilter !== 'all') ? sumMonthFilter : 'all';
+  const _ctxMonth = ctx && ctx.monthFilter && ctx.monthFilter !== 'all' ? ctx.monthFilter : null;
+  modalMonthFilter = _ctxMonth || ((typeof sumMonthFilter !== 'undefined' && sumMonthFilter && sumMonthFilter !== 'all') ? sumMonthFilter : 'all');
   modalCtx = { d, s, target, effTarget, pInfo, monthly, pct, fillCls, projected, gap, paceText, paceColor, fullHistory };
 
   const modalForeignName = lookupForeignName(d.name);
@@ -3063,7 +3168,7 @@ function openModal(id, periodFilter) {
     <div class="modal-avatar">${d.name[0].toUpperCase()}</div>
     <div>
       <div class="modal-driver-name">${d.name}${modalForeignName ? `<span class="d-foreign" style="font-size:13px;margin-left:6px;">→ ${modalForeignName}</span>` : ''}</div>
-      <div class="modal-driver-meta"><span class="tier ${tc}" style="margin-right:6px">${d.tier.englishName}</span>${d.boltState && d.boltState !== 'active' ? `<span class="status-badge" style="background:rgba(255,68,102,.15);color:var(--red);border:1px solid rgba(255,68,102,.4);margin-right:6px;font-size:9px">${d.boltState.toUpperCase()}</span>` : ''}${d.phone||''}${d.email?' · '+d.email:''}${d.vehiclePlate?' · '+d.vehiclePlate:''}</div>
+      <div class="modal-driver-meta">${tierLensPill ? tierLensPill + ' ' : ''}<span class="tier ${tc}" style="margin-right:6px">${d.tier.englishName}</span>${d.boltState && d.boltState !== 'active' ? `<span class="status-badge" style="background:rgba(255,68,102,.15);color:var(--red);border:1px solid rgba(255,68,102,.4);margin-right:6px;font-size:9px">${d.boltState.toUpperCase()}</span>` : ''}${d.phone||''}${d.email?' · '+d.email:''}${d.vehiclePlate?' · '+d.vehiclePlate:''}</div>
       ${firstSeenStr ? `<div style="font-size:10px;color:var(--text-dim);margin-top:3px">First seen ${firstSeenStr}</div>` : ''}
       ${driverPanelActions(d)}
     </div>
@@ -3194,7 +3299,7 @@ function renderModalBody() {
     </div>` : ''}
     <div class="kpi-grid-modal">
       <div class="kpi-card"><div class="kpi-card-label">Hours Online</div><div class="kpi-card-value">${agg.hours>0?agg.hours.toFixed(1):'0'}<span class="kpi-card-unit"> h</span></div></div>
-      <div class="kpi-card"><div class="kpi-card-label">Orders Done</div><div class="kpi-card-value">${agg.orders}</div></div>
+      <div class="kpi-card"><div class="kpi-card-label">Trips</div><div class="kpi-card-value">${agg.orders}</div></div>
       <div class="kpi-card ${agg.acceptance>0&&agg.acceptance<s.flagAccRed?'flag-red':agg.acceptance>0&&agg.acceptance<s.flagAccAmber?'flag-amber':agg.acceptance>0?'flag-green':''}">
         <div class="kpi-card-label">Acceptance <span style="opacity:.6">eff.${multiDay?' avg':''}</span></div>
         <div class="kpi-card-value">${agg.acceptance>0?Math.round(agg.acceptance)+'%':'—'}</div>
@@ -3249,7 +3354,7 @@ function renderModalBody() {
     </div>
     ${rows.length>=1?`
     <table class="day-table">
-      <thead><tr><th>Date</th><th class="td-r">Orders</th><th class="td-r">Hours</th><th class="td-r">Net SAR</th><th class="td-r">Accept</th><th class="td-r">Rating</th><th class="td-r">Bonus ★</th></tr></thead>
+      <thead><tr><th>Date</th><th class="td-r">Trips</th><th class="td-r">Hours</th><th class="td-r">Net SAR</th><th class="td-r">Accept</th><th class="td-r">Rating</th><th class="td-r">Bonus ★</th></tr></thead>
       <tbody>
         ${rows.map(h=>`<tr>
           <td>${h.period}</td>
@@ -4808,6 +4913,42 @@ function setCaptainSearch(q) {
 function setSumModelFilter(m) { sumModelFilter = m; renderCaptains(); }
 function setSumFunnelFilter(f) { sumFunnelFilter = f; renderCaptains(); }
 function setSumStatusFilter(v) { sumStatusFilter = v; currentPage = 1; renderCaptains(); }
+// #9 · the DECK deck for Captains — header + shared alert rail + a stat strip that
+// reads the F2 roster truth (getFleetRoster) and labels period counts "with activity
+// in ⟨period⟩", plus the tier ladder (the funnel lens). Replaces the legacy KPI grid.
+function dkCaptainsDeck() {
+  const roster = getFleetRoster().length;
+  const rec = getRosterReconciliation();
+  const sel = (typeof sumMonthFilter !== 'undefined' && sumMonthFilter) ? sumMonthFilter : 'all';
+  const R = computeRosterForMonth(sel === 'all' ? 'all' : sel);
+  const periodLabel = R ? R.periodLabel : '';
+  const active   = R ? R.current.filter(d => !d.idle).length : 0;
+  const net      = R ? R.current.reduce((s, d) => s + d.net, 0) : 0;
+  const projBonus= (R && R.projectable) ? R.current.reduce((s, d) => s + (d.idle ? 0 : d.companyBonus), 0) : null;
+  const blocked  = R ? R.blockedCount : 0;
+  const bandCounts = [0, 0, 0, 0];
+  if (R && R.projectable) R.current.forEach(d => { if (!d.blocked && !d.idle) bandCounts[d.band]++; });
+  const header = dkDeckHeader({
+    title: 'Captains',
+    context: `${roster} on the roster · ${periodLabel}`,
+    status: dkStatusChip(),
+    actions: `<button class="dk-btn" onclick="exportBlockLogCSV()" title="Export the current block report">⬇ Block report</button>`
+  });
+  const rail = dkAlertRail(dkAlertRegistry(['blocked', 'slipping', 'stale']));
+  const ladder = (R && R.projectable) ? `<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
+      ${dkTierPill(3, { hollow: true, count: bandCounts[3] })}${dkTierPill(2, { hollow: true, count: bandCounts[2] })}${dkTierPill(1, { hollow: true, count: bandCounts[1] })}${dkTierPill(0, { count: bandCounts[0] })}
+    </div>` : `<div class="v">—</div>`;
+  const strip = `<div class="dk-strip">
+    <div class="dk-stat"><div class="l">Fleet roster</div><div class="v">${roster}</div>${rec ? `<div class="d">= ${rec.portal} portal + ${rec.deactivated} deact.</div>` : ''}</div>
+    <div class="dk-stat"><div class="l">${t('withActivity')} ${periodLabel}</div><div class="v">${active}</div></div>
+    <div class="dk-stat"><div class="l">Net · ${periodLabel}</div><div class="v">${fmt(Math.round(net))}<small> SAR</small></div></div>
+    <div class="dk-stat brand"><div class="l">${t('projBonus')}</div><div class="v">${projBonus != null ? '+' + fmt(projBonus) : '—'}<small>${projBonus != null ? ' SAR' : ''}</small></div></div>
+    <div class="dk-stat" style="grid-column:span 2;min-width:230px"><div class="l">${t('tierLadder')}</div>${ladder}</div>
+    <div class="dk-stat${blocked ? ' danger' : ''}"><div class="l">${t('blocked')}</div><div class="v">${blocked}</div></div>
+  </div>`;
+  return `<div class="dk"><div class="dk-shell" style="padding-block:2px 8px">${header}${rail}${strip}</div></div>`;
+}
+
 function renderCaptains() {
   const el = document.getElementById('captainsContent');
   if (!el) return;
@@ -4909,7 +5050,7 @@ function renderCaptains() {
     <span class="compare-kpi-label">KPI:</span>
     <select class="kpi-select" onchange="setCompareKPI(this.value)">
       <option value="netEarnings"   ${compareKPI==='netEarnings'  ?'selected':''}>Net Earnings</option>
-      <option value="orders"        ${compareKPI==='orders'       ?'selected':''}>Orders</option>
+      <option value="orders"        ${compareKPI==='orders'       ?'selected':''}>Trips</option>
       <option value="hoursOnline"   ${compareKPI==='hoursOnline'  ?'selected':''}>Hours Online</option>
       <option value="acceptance"    ${compareKPI==='acceptance'   ?'selected':''}>Acceptance %</option>
       <option value="grossEarnings" ${compareKPI==='grossEarnings'?'selected':''}>Gross Earnings</option>
@@ -4940,24 +5081,15 @@ function renderCaptains() {
     ['hrs',    'Hours'],
     ['accept', 'Acceptance %'],
     ['util',   'Utilisation %'],
-    ['rides',  'Orders'],
+    ['rides',  'Trips'],
     ['dist',   'Distance'],
     ['name',   'Captain (A–Z)'],
-    ['model',  'Model'],
-    ['funnel', 'Referral'],
-    ['combo',  'Model + Referral'],
   ];
   const filterSortBar = captainView === 'captain' ? `
     <div class="cap-controls">
       <div class="cap-ctl">
         <span class="cap-ctl-label">Filter</span>
-        <span class="cap-ctl-sub">Model</span>
-        <button class="sort-btn ${sumModelFilter==='all'?'active':''}" onclick="setSumModelFilter('all')" style="padding:2px 7px">All</button>
-        ${['S','F','R'].map(m=>`<span class="model-badge model-${m}" onclick="setSumModelFilter(sumModelFilter==='${m}'?'all':'${m}')" style="cursor:pointer;opacity:${resolveModelDisplay(sumModelFilter)===m||sumModelFilter==='all'?1:.35};transition:opacity .15s" title="Filter model ${m}">${m}</span>`).join('')}
-        <span class="cap-ctl-sub cap-ctl-gap">Ref</span>
-        <button class="sort-btn ${sumFunnelFilter==='all'?'active':''}" onclick="setSumFunnelFilter('all')" style="padding:2px 7px">All</button>
-        ${['N','M','Y','H'].map(f=>`<span class="funnel-badge funnel-${f}" onclick="setSumFunnelFilter(sumFunnelFilter==='${f}'?'all':'${f}')" style="cursor:pointer;opacity:${sumFunnelFilter===f||sumFunnelFilter==='all'?1:.35};transition:opacity .15s" title="Filter referral ${f}">${f}</span>`).join('')}
-        <span class="cap-ctl-sub cap-ctl-gap">Status</span>
+        <span class="cap-ctl-sub">Status</span>
         <button class="sort-btn ${sumStatusFilter==='all'?'active':''}"     onclick="setSumStatusFilter('all')"     style="padding:2px 7px" title="All captains">All</button>
         <button class="sort-btn ${sumStatusFilter==='current'?'active':''}" onclick="setSumStatusFilter('current')" style="padding:2px 7px" title="The whole fleet except captains who left (absent from your latest update)">Current</button>
         <button class="sort-btn ${sumStatusFilter==='left'?'active':''}"    onclick="setSumStatusFilter('left')"    style="padding:2px 7px;${sumStatusFilter==='left'?'background:rgba(255,68,102,.18);border-color:rgba(255,68,102,.5);color:var(--red)':''}" title="Only captains who left the fleet">Left Fleet</button>
@@ -4991,6 +5123,7 @@ function renderCaptains() {
   else if (captainView === 'day') innerHtml = buildFleetDayTable(selected);
 
   el.innerHTML = `
+    ${dkCaptainsDeck()}
     <div style="display:flex;align-items:center;gap:0;margin-bottom:14px;flex-wrap:wrap;row-gap:8px;">
       <div class="ctrl-group" style="border-left:none;padding-left:0;padding-right:12px">
         <div class="view-toggle">
@@ -5005,25 +5138,6 @@ function renderCaptains() {
       ${filterSortBar}
       ${searchBar}
     </div>
-    ${kpiCardsHtml ? `<div class="summary-grid" style="margin-bottom:16px">${kpiCardsHtml}</div>` : ''}
-    ${(()=>{
-      const openBlocks = getBlockLog().filter(e => !e.dateUnblocked);
-      if (!openBlocks.length) return '';
-      // Dedupe by driverKey — a driver with multiple unresolved rows (sync identity
-      // drift) must count ONCE. This is the fix for the banner showing 49 (rows) when
-      // the Blocks tab correctly showed 20 (unique drivers). Keep first display name.
-      const uniq = new Map();
-      for (const e of openBlocks) { const k = driverKey(e.driverName); if (!uniq.has(k)) uniq.set(k, e.driverName); }
-      const blockedNames = [...uniq.values()];
-      const names = blockedNames.join(' · ');
-      return `<div style="background:rgba(255,68,102,.08);border:1px solid rgba(255,68,102,.35);border-radius:3px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-        <div>
-          <div style="color:var(--red);font-weight:700;font-size:12px;letter-spacing:.05em;margin-bottom:4px">⛔ ${blockedNames.length} DRIVER${blockedNames.length>1?'S':''} CURRENTLY BLOCKED ON BOLT</div>
-          <div style="font-size:11px;color:var(--text-muted)">${names}</div>
-        </div>
-        <button onclick="exportBlockLogCSV()" style="background:rgba(255,68,102,.15);color:var(--red);border:1px solid rgba(255,68,102,.35);border-radius:2px;padding:5px 12px;font-size:11px;cursor:pointer;font-weight:700;white-space:nowrap;letter-spacing:.04em">⬇ EXPORT BLOCK REPORT</button>
-      </div>`;
-    })()}
     <div id="captainsInner">${innerHtml}</div>`;
 
   if (captainView === 'compare') renderCompareView(comparePool);
@@ -5597,7 +5711,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
     const displayName = foreign || c.name;
     const isBlocked = blockedKeys.has(driverKey(c.name)) || !!getCourierProfile(c.name)?.blocked;
     const hasLeft = departedKeys.has(driverKey(c.name)) && !blockedKeys.has(driverKey(c.name));
-    const badge = modelBadge(c.name) + funnelBadge(c.name)
+    const badge = dkAmbTag(c.name)   // #9 retag: ambassador-name tag replaces MODEL/REF letters
       + (isBlocked ? `<span style="display:inline-flex;align-items:center;font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;margin-left:4px;background:rgba(255,68,102,.15);border:1px solid rgba(255,68,102,.4);color:var(--red);letter-spacing:.06em">🚫 BLOCKED</span>` : '')
       + (hasLeft ? `<span class="left-badge">LEFT FLEET</span>` : '');
     const nameHTML = foreign
@@ -5676,6 +5790,14 @@ function buildCourierSummaryTable(entries, searchFilter) {
       ? `${fmt(c.net)} <span style="font-size:10px;color:var(--green);font-weight:600" title="Net includes ${fmt(c.campaign)} SAR Bolt bonus">★${fmt(c.campaign)}</span>`
       : `${fmt(c.net)}`;
 
+    // #9 · tier pill (the funnel lens). tier.band = projected month's tier; a band the
+    // driver hasn't yet BANKED renders hollow, a banked one filled. — when no activity.
+    const _tf = bonusTiers();
+    const _bankedBand = c.net >= _tf[2] ? 3 : c.net >= _tf[1] ? 2 : c.net >= _tf[0] ? 1 : 0;
+    const tierPillHtml = (c.net > 0 && target > 0)
+      ? dkTierPill(tier.band, { hollow: tier.band > _bankedBand, title: gapTitle.replace(/"/g, '&quot;') })
+      : `<span class="dk-tier t0">—</span>`;
+
     return `<tr class="driver-row${hasLeft?' left-row':''}" style="cursor:pointer;${isBlocked?'opacity:.55;background:rgba(255,68,102,.04)':''}" ${clickAttr}>
       <td><div class="driver-cell">
         <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:rgba(0,212,255,.6);min-width:22px;text-align:right;flex-shrink:0;text-shadow:0 0 8px rgba(0,212,255,.5)">${idx+1}</span>
@@ -5683,6 +5805,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
       </div></td>
       <td class="td-r"><span style="font-family:var(--mono);font-weight:700;color:#00D4FF;text-shadow:0 0 8px rgba(0,212,255,.7);font-size:12px">${c.days}d</span></td>
       <td class="td-r">${earningsHtml} <span style="font-size:11px;color:var(--text-muted)">/ ${fmt(c.gross)} gross</span></td>
+      <td class="td-r">${tierPillHtml}</td>
       <td class="td-r">${earnHrOrDash(c.earnHr)}</td>
       <td class="td-r kv">${c.hrs > 0 ? c.hrs.toFixed(1)+'h' : '—'}</td>
       <td class="td-r ${c.accept>0?pctCol(c.accept,80,70):''}">${pctOrDash(c.accept)}${accDropBadge}</td>
@@ -5699,26 +5822,28 @@ function buildCourierSummaryTable(entries, searchFilter) {
 
   return `<div class="table-wrap"><table class="driver-table cap-table">
     <colgroup>
-      <col style="width:20%">
-      <col style="width:6%">
-      <col style="width:13%">
-      <col style="width:9%">
+      <col style="width:18%">
+      <col style="width:5%">
+      <col style="width:11%">
       <col style="width:8%">
-      <col style="width:9%">
       <col style="width:8%">
+      <col style="width:7%">
+      <col style="width:8%">
+      <col style="width:7%">
       <col style="width:6%">
-      <col style="width:9%">
-      <col style="width:12%">
+      <col style="width:8%">
+      <col style="width:14%">
     </colgroup>
     <thead><tr>
       ${cth('Captain','name')}
       ${cth('Days','days','td-r')}
       ${cth('Net SAR','net','td-r')}
+      <th class="td-r" style="white-space:nowrap" title="Projected bonus tier this month (hollow = on pace, filled = already banked)">Tier</th>
       ${cth('Earn/hr','earnhr','td-r')}
       ${cth('Hours','hrs','td-r')}
       ${cth('Accept','accept','td-r')}
       ${cth('Util','util','td-r')}
-      ${cth('Orders','rides','td-r')}
+      ${cth('Trips','rides','td-r')}
       ${cth('Distance','dist','td-r')}
       <th class="${sumCourierSortCol==='target'?'th-sort-active':''}" style="text-align:center;cursor:pointer;user-select:none;white-space:nowrap" onclick="setSumCourierSort('target')" title="Sort by total achieved net vs the ${target?fmt(target):'monthly'} target (not daily pace)">Monthly Target<span style="opacity:${sumCourierSortCol==='target'?1:.25};font-size:9px;margin-left:3px;color:${sumCourierSortCol==='target'?'var(--bolt-green)':'inherit'}">${sumCourierSortCol!=='target'?'⇅':sumCourierSortAsc?'▲':'▼'}</span></th>
     </tr></thead>
@@ -6602,103 +6727,102 @@ function renderBlocks() {
     } catch { return '?'; }
   };
 
-  const driverRows = driverList.map(([name, events]) => {
+  // #5 · the unblock WORKLIST. Currently-blocked drivers first, then sorted by bonus-at-stake
+  // (the number that makes the queue urgent). Full reason — never truncated. Row → A1 panel.
+  const _R = computeRosterForMonth('');
+  const _byKey = {}; if (_R) _R.drivers.forEach(d => { _byKey[d.key] = d; });
+  const _snap = (typeof latestDriverSnapshot === 'function') ? latestDriverSnapshot() : { drivers: [] };
+  const worklist = driverList
+    .map(([name, events]) => ({ name, events, stake: blockAtStake(name, _R, _byKey) }))
+    .sort((a, b) => {
+      const ab = a.events.some(e => !e.dateUnblocked) ? 1 : 0, bb = b.events.some(e => !e.dateUnblocked) ? 1 : 0;
+      if (ab !== bb) return bb - ab;
+      return b.stake.sar - a.stake.sar;
+    });
+  const totalAtStake = worklist.filter(w => w.events.some(e => !e.dateUnblocked)).reduce((s, w) => s + w.stake.sar, 0);
+  const unblocked7d = (() => { const now = Date.now(), keys = new Set();
+    all.forEach(e => { if (!e.dateUnblocked) return; const tt = periodSortKey(e.dateUnblocked);
+      if (!isNaN(tt) && (now - tt) <= 7 * 86400000) keys.add(driverKey(e.driverName)); }); return keys.size; })();
+
+  const driverRows = worklist.map(({ name, events, stake }) => {
     const isCurrentlyBlocked = events.some(e => !e.dateUnblocked);
     const expanded = blocksExpanded.has(name);
-    const latestBlock = events.find(e => !e.dateUnblocked) || events.sort((a,b) => periodSortKey(b.dateBlocked)-periodSortKey(a.dateBlocked))[0];
+    const latestBlock = events.find(e => !e.dateUnblocked) || [...events].sort((a,b) => periodSortKey(b.dateBlocked)-periodSortKey(a.dateBlocked))[0];
     const totalEvents = (all.filter(e => e.driverName === name)).length;
     const driverCat = blockCategoryOf(latestBlock);
-    const sinceDays = isCurrentlyBlocked ? blockEventDays(latestBlock) : 0;
-    const driverTotalDays = events.reduce((s,e)=>s+blockEventDays(e),0);
+    const sinceDays = blockEventDays(latestBlock);
+    const esc = name.replace(/'/g,"\\'");
+    const fullReason = he(stripHtml(latestBlock.reason)) || 'No reason provided';
+    const tierPill = stake.sar > 0 ? dkTierPill(stake.band, { hollow: true, title: `~${fmt(stake.sar)} SAR company bonus at stake (pre-block pace)` }) : '';
+    const sd = _snap.drivers.find(x => driverKey(x.name) === driverKey(name));
+    const vehChip = (sd && sd.vehicleState && sd.vehicleState !== 'active')
+      ? `<span class="dk-statechip idle" title="Vehicle ${sd.vehicleState}${sd.vehiclePlate ? ' · ' + sd.vehiclePlate : ''}">🚗 VEHICLE</span>` : '';
 
-    const eventRows = events
+    const eventRows = [...events]
       .sort((a,b) => periodSortKey(b.dateBlocked) - periodSortKey(a.dateBlocked))
       .map(e => {
         const ongoing = !e.dateUnblocked;
         const days = blockEventDays(e);
         const cat = blockCategoryOf(e), catCol = BLOCK_CAT_COLOR[cat] || BLOCK_CAT_COLOR.Other, isOverride = !!e.category;
-        const catSel = `<select onchange="setBlockCategory('${e.id}', this.value)" title="${isOverride?'Manually set':'Auto-classified from the reason'} — change to re-tag" style="font-size:10px;padding:2px 4px;border:1px solid ${catCol}66;border-radius:4px;background:var(--bg-card);color:${catCol};font-weight:700">
+        const catSel = `<select onchange="setBlockCategory('${e.id}', this.value)" title="${isOverride?'Manually set':'Auto-classified from the reason'} — change to re-tag" style="font-size:10px;padding:2px 4px;border:1px solid ${catCol}66;border-radius:4px;background:var(--dk-s3);color:${catCol};font-weight:700">
             ${BLOCK_CATEGORIES.map(c=>`<option value="${c}" ${cat===c?'selected':''}>${c}</option>`).join('')}
             <option value="">↺ auto</option>
-          </select>${!isOverride?'<span style="font-size:8px;color:var(--text-muted);margin-left:4px">auto</span>':''}`;
-        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
-          <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);white-space:nowrap">${e.dateBlocked}</td>
-          <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);white-space:nowrap">${e.dateUnblocked || '—'}</td>
-          <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);text-align:center">${days}${ongoing?'<span style="font-size:9px;color:var(--red)"> ongoing</span>':''}</td>
-          <td style="padding:6px 10px"><span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;letter-spacing:.05em;background:${ongoing?'rgba(255,68,102,.15)':'rgba(0,255,179,.1)'};color:${ongoing?'var(--red)':'var(--green)'}">${ongoing?'BLOCKED':'RESOLVED'}</span></td>
-          <td style="padding:6px 10px;white-space:nowrap">${catSel}</td>
-          <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);max-width:340px;white-space:normal;line-height:1.4">${he(stripHtml(e.reason))}</td>
+          </select>${!isOverride?'<span style="font-size:8px;color:var(--dk-dim);margin-left:4px">auto</span>':''}`;
+        return `<tr>
+          <td>${he(e.dateBlocked)}</td>
+          <td>${he(e.dateUnblocked || '—')}</td>
+          <td class="num">${days}${ongoing?'<span style="font-size:10px;color:var(--dk-danger)"> ongoing</span>':''}</td>
+          <td><span class="dk-statechip ${ongoing?'blocked':'active'}">${ongoing?'BLOCKED':'RESOLVED'}</span></td>
+          <td style="white-space:nowrap">${catSel}</td>
+          <td style="max-width:340px;white-space:normal;line-height:1.4;color:var(--dk-mut)">${he(stripHtml(e.reason))}</td>
         </tr>`;
       }).join('');
 
-    return `<div style="background:var(--bg-card);border:1px solid ${isCurrentlyBlocked?'rgba(255,68,102,.3)':'rgba(255,255,255,.06)'};border-radius:6px;margin-bottom:8px;overflow:hidden">
-      <div onclick="blocksToggle('${name.replace(/'/g,"\\'")}');renderBlocks()" style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;user-select:none">
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span style="font-weight:700;font-size:13px;color:var(--text)">${name}</span>
-            ${isCurrentlyBlocked ? `<span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:2px;background:rgba(255,68,102,.15);color:var(--red);letter-spacing:.06em;border:1px solid rgba(255,68,102,.3)">BLOCKED</span>` : ''}
-            ${blockCatChip(driverCat, true)}
-          </div>
-          ${isCurrentlyBlocked
-            ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;line-height:1.4"><span style="color:var(--red)">Suspended since ${latestBlock.dateBlocked} · ${sinceDays}d</span> — ${he(stripHtml(latestBlock.reason)).slice(0,90)}</div>`
-            : `<div style="font-size:11px;color:var(--text-muted);margin-top:3px">${totalEvents} past suspension${totalEvents===1?'':'s'} · ${driverTotalDays} day${driverTotalDays===1?'':'s'} total</div>`}
-        </div>
-        <div style="display:flex;align-items:center;gap:16px;flex-shrink:0">
-          <div style="text-align:center">
-            <div style="font-size:18px;font-weight:700;color:${isCurrentlyBlocked?'var(--red)':'var(--text-muted)'}">${totalEvents}</div>
-            <div style="font-size:9px;color:var(--text-muted);letter-spacing:.04em">EVENTS</div>
-          </div>
-          <div style="font-size:16px;color:var(--text-muted);transition:transform .2s;transform:rotate(${expanded?'90':'0'}deg)">›</div>
-        </div>
+    return `<div class="dk-work-row">
+      <div class="who">
+        <span onclick="dkOpenDriver('${esc}')" style="cursor:pointer;text-decoration:underline;text-decoration-color:var(--dk-line2);text-underline-offset:3px">${he(name)}</span>
+        ${isCurrentlyBlocked ? `<span class="dk-statechip blocked">BLOCKED</span>` : `<span class="dk-statechip left">resolved</span>`}
+        ${blockCatChip(driverCat, true)}${vehChip}${tierPill}
       </div>
-      ${expanded ? `<div style="border-top:1px solid rgba(255,255,255,.06);overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse">
-          <thead><tr style="background:rgba(0,0,0,.2)">
-            <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:left;letter-spacing:.05em;font-weight:600;white-space:nowrap">DATE BLOCKED</th>
-            <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:left;letter-spacing:.05em;font-weight:600;white-space:nowrap">DATE UNBLOCKED</th>
-            <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:center;letter-spacing:.05em;font-weight:600">DAYS</th>
-            <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:left;letter-spacing:.05em;font-weight:600">STATUS</th>
-            <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:left;letter-spacing:.05em;font-weight:600">CATEGORY</th>
-            <th style="padding:6px 10px;font-size:9px;color:var(--text-muted);text-align:left;letter-spacing:.05em;font-weight:600">REASON</th>
-          </tr></thead>
-          <tbody>${eventRows}</tbody>
-        </table>
+      <div class="stake">${stake.sar > 0 ? '−' + fmt(stake.sar) + ' SAR' : '—'}<div style="font-size:9px;color:var(--dk-dim);font-weight:400;text-align:end;font-family:var(--dk-sans)">bonus at stake</div></div>
+      <div class="meta">
+        ${isCurrentlyBlocked
+          ? `<span style="color:var(--dk-danger)">since ${he(latestBlock.dateBlocked)} · ${sinceDays}d blocked</span>`
+          : `<span>resolved · ${totalEvents} event${totalEvents===1?'':'s'}</span>`}
+        <span style="cursor:pointer;color:var(--dk-info)" onclick="blocksToggle('${esc}');renderBlocks()">${expanded?'▾':'▸'} history (${totalEvents})</span>
+      </div>
+      <div class="reason">${fullReason}</div>
+      <div class="acts">
+        <button class="dk-btn sm" onclick="dkOpenDriver('${esc}')">Open panel</button>
+        <button class="dk-btn sm" onclick="copyUnblockMsg('${esc}')">Copy unblock msg</button>
+        ${isCurrentlyBlocked ? `<button class="dk-btn sm" onclick="markDriverUnblocked('${esc}')">Mark unblocked</button>` : ''}
+      </div>
+      ${expanded ? `<div style="grid-column:1/-1;margin-block-start:8px;border:1px solid var(--dk-line);border-radius:8px;overflow-x:auto">
+        <table class="dk-table"><thead><tr>
+          <th>Date blocked</th><th>Unblocked</th><th class="num">Days</th><th>Status</th><th>Category</th><th>Reason</th>
+        </tr></thead><tbody>${eventRows}</tbody></table>
       </div>` : ''}
     </div>`;
   }).join('');
 
-  const topName = topDriver ? topDriver.name.replace(/'/g,"\\'") : '';
-  el.innerHTML = `
-    <div style="padding:16px 0 8px">
-      <!-- Summary cards (clickable: each sets a filter) -->
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
-        <div class="blk-stat-card" onclick="blocksFilter='active';blocksDayFilter='all';blocksSearch='';renderBlocks()" title="Show only currently-blocked drivers" style="background:rgba(255,68,102,.08);border:1px solid rgba(255,68,102,.25);border-radius:6px;padding:12px 18px;min-width:120px">
-          <div style="font-size:28px;font-weight:700;color:var(--red)">${blockedDriverNames.length}</div>
-          <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">CURRENTLY BLOCKED</div>
-          ${blockedDriverNames.length ? `<div style="font-size:10px;color:var(--red);margin-top:4px;line-height:1.4">${blockedDriverNames.join(' · ')}</div>` : ''}
-        </div>
-        <div class="blk-stat-card" onclick="blocksFilter='all';blocksDayFilter='all';blocksSearch='';renderBlocks()" title="Show full block history" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:100px">
-          <div style="font-size:28px;font-weight:700;color:var(--text)">${all.length}</div>
-          <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">TOTAL EVENTS</div>
-        </div>
-        <div class="blk-stat-card" onclick="blocksFilter='all';blocksDayFilter='all';blocksSearch='';renderBlocks()" title="Every driver ever blocked" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:100px">
-          <div style="font-size:28px;font-weight:700;color:var(--text)">${allDriverNames.length}</div>
-          <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">DRIVERS AFFECTED</div>
-        </div>
-        <div class="blk-stat-card" title="Total suspension-days across all events (ongoing counted to today)" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:100px">
-          <div style="font-size:28px;font-weight:700;color:var(--text)">${totalDaysSuspended}</div>
-          <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">TOTAL DAYS SUSPENDED</div>
-        </div>
-        <div class="blk-stat-card" title="Average length of a resolved suspension" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:100px">
-          <div style="font-size:28px;font-weight:700;color:var(--text)">${avgDuration!=null?avgDuration:'—'}<span style="font-size:12px;color:var(--text-muted)">${avgDuration!=null?' d':''}</span></div>
-          <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">AVG DURATION</div>
-        </div>
-        ${topDriver ? `<div class="blk-stat-card" onclick="blocksFilter='all';blocksDayFilter='all';blocksCatFilter='all';blocksSearch='${topName}';blocksExpanded.add('${topName}');renderBlocks()" title="Open this driver's block history" style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 18px;min-width:120px">
-          <div style="font-size:14px;font-weight:700;color:var(--amber)">${he(topDriver.name)}</div>
-          <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-top:2px">MOST BLOCKED · ${topDriver.count} events</div>
-        </div>` : ''}
-      </div>
-
+  // #5 · DECK deck — the vanity "TOTAL DAYS SUSPENDED" total is gone; the strip now leads
+  // with the numbers that make the queue urgent (blocked now + bonus at stake).
+  const _header = dkDeckHeader({
+    title: 'Blocks — unblock worklist',
+    context: `${blockedDriverNames.length} blocked now · foreigners must be unblocked to earn → bonus`,
+    status: dkStatusChip(),
+    actions: `<button class="dk-btn" onclick="exportBlockLogCSV()">⬇ Export CSV</button>`
+  });
+  const _rail = dkAlertRail(dkAlertRegistry(['blocked', 'stale']));
+  const _strip = `<div class="dk-strip">
+    <div class="dk-stat${blockedDriverNames.length ? ' danger' : ''}"><div class="l">Blocked now</div><div class="v">${blockedDriverNames.length}</div></div>
+    <div class="dk-stat${vc.vehN ? ' warn' : ''}"><div class="l">Vehicle-blocked</div><div class="v">${vc.vehN || 0}</div></div>
+    <div class="dk-stat"><div class="l">Unblocked · 7d</div><div class="v">${unblocked7d}</div></div>
+    <div class="dk-stat${totalAtStake ? ' warn' : ''}"><div class="l">Bonus at stake</div><div class="v">${fmt(totalAtStake)}<small> SAR</small></div></div>
+  </div>`;
+  el.innerHTML = `<div class="dk">
+    <div class="dk-shell" style="padding-block:2px 10px">${_header}${_rail}${_strip}</div>
+    <div style="padding:2px 0 8px">
       ${vc.html}
 
       <!-- Suspensions by category (Build-166) — click a card to filter, mirrors Bolt's portal -->
@@ -6751,14 +6875,57 @@ function renderBlocks() {
         <button onclick="exportBlockLogCSV()" style="padding:5px 14px;font-size:11px;font-weight:700;border-radius:2px;cursor:pointer;letter-spacing:.04em;border:1px solid rgba(255,255,255,.15);background:transparent;color:var(--text-muted);margin-left:auto">⬇ EXPORT CSV</button>
       </div>
 
-      <!-- Driver list -->
-      ${driverList.length ? driverRows : `<div style="text-align:center;padding:40px 0;color:var(--text-muted);font-size:13px">${q ? 'No results for "'+q+'"' : 'No currently blocked drivers'}</div>`}
-    </div>`;
+      <!-- Unblock worklist (sorted by bonus at stake) -->
+      ${driverList.length
+        ? `<div class="dk-work" style="border:1px solid var(--dk-line);border-radius:10px;background:var(--dk-s1)">${driverRows}</div>`
+        : `<div style="text-align:center;padding:40px 0;color:var(--dk-mut);font-size:13px">${q ? 'No results for "'+q+'"' : 'No currently blocked drivers'}</div>`}
+    </div></div>`;
 }
 
 function blocksToggle(name) {
   if (blocksExpanded.has(name)) blocksExpanded.delete(name);
   else blocksExpanded.add(name);
+}
+
+// #5 · bonus-at-stake — what the company loses while a driver stays blocked. The larger of
+// (projected company bonus if they resumed at this month's working-day pace) and (last
+// month's actual company bonus). Drives the unblock worklist's ordering + the strip total.
+function blockAtStake(name, R, byKey) {
+  if (!R) return { sar: 0, band: 0 };
+  const d = byKey[driverKey(name)];
+  let sar = 0, refNet = 0;
+  if (d && R.projectable) {
+    const pace = d.days > 0 ? d.net / d.days : 0;
+    const proj = Math.round(d.net + pace * R.remWork);
+    const b = bonusFor(proj, R.monthSel);
+    if (b && b.company > sar) { sar = b.company; refNet = proj; }
+  }
+  const [yy, mm] = R.monthSel.split('-').map(Number), pm0 = mm === 1 ? 11 : mm - 2, py = mm === 1 ? yy - 1 : yy;
+  const lastNet = getMonthlyNet(null, name, pm0, py);
+  if (lastNet > 0) { const b = bonusFor(lastNet, R.monthSel); if (b && b.company > sar) { sar = b.company; refNet = lastNet; } }
+  return { sar, band: R.bandOf ? R.bandOf(refNet) : 0 };
+}
+// #5 action · mark a driver's open block-log rows resolved (mirrors the block form's write path).
+function markDriverUnblocked(name) {
+  const log = getBlockLog(), k = driverKey(name), today = _todayPeriodStr();
+  let n = 0;
+  log.forEach(e => { if (driverKey(e.driverName) === k && !e.dateUnblocked) { e.dateUnblocked = today; n++; } });
+  if (!n) { toast('No open block for this driver'); return; }
+  saveBlockLog(log);
+  toast(`✓ Marked ${name} unblocked (${today})`);
+  syncToCloud();
+  renderBlocks();
+}
+// #5 action · copy a WhatsApp-ready unblock request for the team to send Bolt CS.
+function copyUnblockMsg(name) {
+  const hist = getDriverBlockHistory('', name);
+  const open = hist.find(e => !e.dateUnblocked) || hist[0];
+  const since = open ? open.dateBlocked : '';
+  const days = open ? blockEventDays(open) : '';
+  const reason = open ? stripHtml(open.reason) : '';
+  const msg = `Unblock request — ${name}\nBlocked since ${since}${days ? ` (${days}d)` : ''}.\nReason: ${reason}\nPlease review and reinstate so the driver can resume earning. Thanks.`;
+  if (navigator.clipboard) navigator.clipboard.writeText(msg);
+  toast('Unblock message copied');
 }
 
 const _r2 = v => Math.round((v || 0) * 100) / 100;  // round to 2 decimals
@@ -11983,6 +12150,68 @@ function computeTrailingWindows() {
   return { anchor, map };
 }
 
+// #4 · Analytics DECK sections. Each is a bulkhead-labelled block; every driver row
+// drills to the A1 panel (dkOpenDriver), scoped to the selected analytics month.
+function dkAnalyticsTierMovement(R) {
+  if (!R.projectable) return `<div class="dk-card" style="color:var(--dk-mut);font-size:12px">Pick a month above — tier movement compares each driver's projected tier vs last month.</div>`;
+  const [y, mn] = R.monthSel.split('-').map(Number), pm0 = mn === 1 ? 11 : mn - 2, py = mn === 1 ? y - 1 : y;
+  const prevLabel = new Date(py, pm0, 1).toLocaleDateString('en-GB', { month: 'short' });
+  const bandLabel = b => b === 0 ? '<4k' : (R.TIERS[b - 1] / 1000) + 'k';
+  const esc = s => String(s || '').replace(/'/g, "\\'");
+  const ups = [], downs = [], held = [];
+  R.current.forEach(d => {
+    if (d.idle) return;
+    const last = getMonthlyNet(null, d.name, pm0, py);
+    if (last <= 0) return;                       // absent last month → not a "move"
+    const lb = R.bandOf(last);
+    if (d.band > lb) ups.push({ d, lb, tb: d.band });
+    else if (d.band < lb) downs.push({ d, lb, tb: d.band });
+    else held.push(d);
+  });
+  ups.sort((a, b) => (b.tb - b.lb) - (a.tb - a.lb));
+  downs.sort((a, b) => (a.tb - a.lb) - (b.tb - b.lb));
+  const row = (x, arrow, col) => `<div class="dk-mini" onclick="dkOpenDriver('${esc(x.d.name)}','${R.monthSel}')"><span class="nm">${lookupForeignName(x.d.name) || x.d.name}</span><span class="rt" style="color:${col}">${arrow} ${bandLabel(x.lb)}→${bandLabel(x.tb)}</span></div>`;
+  const col2 = (title, list, arrow, col) => `<div class="dk-card"><div class="dk-card-t"><span class="t">${title}</span><span class="go">${list.length}</span></div>${list.length ? list.slice(0, 10).map(x => row(x, arrow, col)).join('') : `<div style="color:var(--dk-dim);font-size:12px;padding:4px">none</div>`}</div>`;
+  return `<div class="dk-grid">
+    ${col2(`▲ Climbed vs ${prevLabel}`, ups, '▲', 'var(--dk-brand)')}
+    ${col2(`▼ Slipped vs ${prevLabel}`, downs, '▼', 'var(--dk-danger)')}
+    <div class="dk-card"><div class="dk-card-t"><span class="t">Held tier vs ${prevLabel}</span><span class="go">${held.length}</span></div><div class="dk-big">${held.length}<small> steady</small></div><div style="font-size:11px;color:var(--dk-mut)">Same bonus tier as last month.</div></div>
+  </div>`;
+}
+function dkAnalyticsPushable(R) {
+  if (!R.projectable) return `<div class="dk-card" style="color:var(--dk-mut);font-size:12px">All-time view — pick a month to see reachable tier pushes.</div>`;
+  const list = R.current.filter(d => d.pushFeasible).sort((a, b) => (b.unlocks - a.unlocks) || (a.pushExtra - b.pushExtra));
+  if (!list.length) return `<div class="dk-card" style="color:var(--dk-mut);font-size:12px">No realistic tier pushes right now — everyone's on track or out of reach.</div>`;
+  const esc = s => String(s || '').replace(/'/g, "\\'");
+  const totalUnlocks = list.reduce((s, d) => s + d.unlocks, 0);
+  const rows = list.map(d => `<tr class="click" onclick="dkOpenDriver('${esc(d.name)}','${R.monthSel}')">
+    <td class="name">${lookupForeignName(d.name) || d.name}${d.accDrop ? ` <span style="color:var(--dk-danger);font-size:10px">↘${d.accDrop}pp</span>` : ''}</td>
+    <td>${dkTierPill(d.band, { hollow: true })} <span style="color:var(--dk-dim)">→</span> ${dkTierPill(R.bandOf(d.nextFloor), { hollow: true })}</td>
+    <td class="num">${fmt(d.proj)}</td>
+    <td class="num" style="color:var(--dk-warn)">+${fmt(d.pushExtra)}/d</td>
+    <td class="num" style="color:var(--dk-brand);font-weight:700">+${fmt(d.unlocks)}</td>
+  </tr>`).join('');
+  return `<div class="dk-tablewrap"><table class="dk-table"><thead><tr>
+      <th>Driver</th><th>Tier now → reaches</th><th class="num">Proj net</th><th class="num">Push</th><th class="num">Unlocks</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>
+    <div style="font-size:11px;color:var(--dk-mut);margin-block-start:6px">Sorted by company bonus unlocked · ${list.length} drivers · <b style="color:var(--dk-brand)">+${fmt(totalUnlocks)} SAR</b> on the table. Reachable within a modest lift of each driver's own work-day pace.</div>`;
+}
+function dkAnalyticsIdleRecovery(R) {
+  const W = computeTrailingWindows();
+  const esc = s => String(s || '').replace(/'/g, "\\'");
+  const recentEarn = k => { const w = W.map[k]; return w ? w.recentNet + w.priorNet : 0; };
+  const idle = R.current.filter(d => d.idle && !d.blocked).map(d => ({ d, v: recentEarn(d.key) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
+  const drops = R.current.filter(d => d.accDrop && !d.blocked).sort((a, b) => (b.accDrop || 0) - (a.accDrop || 0));
+  const recoverable = idle.reduce((s, x) => s + x.v, 0);
+  const idleRows = idle.slice(0, 12).map(x => `<div class="dk-mini" onclick="dkOpenDriver('${esc(x.d.name)}','${R.monthSel}')"><span class="nm">${lookupForeignName(x.d.name) || x.d.name}</span><span class="rt" style="color:var(--dk-warn)">~${fmt(Math.round(x.v))} SAR / 28d</span></div>`).join('') || `<div style="color:var(--dk-dim);font-size:12px;padding:4px">no idle earners to recover</div>`;
+  const dropRows = drops.slice(0, 12).map(d => `<div class="dk-mini" onclick="dkOpenDriver('${esc(d.name)}','${R.monthSel}')"><span class="nm">${lookupForeignName(d.name) || d.name}</span><span class="rt" style="color:var(--dk-danger)">↘ ${d.accDrop}pp acceptance</span></div>`).join('') || `<div style="color:var(--dk-dim);font-size:12px;padding:4px">no acceptance drops</div>`;
+  return `<div class="dk-grid">
+    <div class="dk-card"><div class="dk-card-t"><span class="t">Idle · was earning (recoverable)</span><span class="go">${idle.length}</span></div>
+      <div class="dk-big">${fmt(Math.round(recoverable))}<small> SAR at stake</small></div>${idleRows}</div>
+    <div class="dk-card"><div class="dk-card-t"><span class="t">Acceptance dropping</span><span class="go">${drops.length}</span></div>${dropRows}</div>
+  </div>`;
+}
+
 function renderAnalytics() {
   const el = document.getElementById('analyticsContent');
   if (!el) return;
@@ -12079,7 +12308,7 @@ function renderAnalytics() {
     list.sort((a,b)=>{ const va=f(a),vb=f(b); const c=(typeof va==='string')?va.localeCompare(vb):va-vb; return analyticsDrillAsc?c:-c; });
     const dth=(lbl,col,r)=>{ const on=analyticsDrillSort===col,ar=!on?'⇅':analyticsDrillAsc?'▲':'▼';
       return `<th onclick="setAnalyticsDrillSort('${col}')" style="cursor:pointer;user-select:none;padding:6px 9px;font-size:9px;letter-spacing:.04em;font-weight:600;color:${on?'var(--cyan)':'var(--text-muted)'};text-align:${r?'right':'left'};white-space:nowrap">${lbl} <span style="opacity:${on?1:.3}">${ar}</span></th>`; };
-    const rows = list.length ? list.map(d=>`<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+    const rows = list.length ? list.map(d=>`<tr onclick="dkOpenDriver('${String(d.name).replace(/'/g,"\\'")}','${analyticsMonth}')" style="cursor:pointer;border-bottom:1px solid rgba(255,255,255,.04)" title="Open driver panel">
       <td style="padding:6px 9px;font-size:12px;color:var(--text);font-weight:600">${dn(d)}</td>
       <td style="padding:6px 9px">${statusChip(d)}</td>
       <td style="padding:6px 9px;text-align:right;font-family:var(--mono);font-size:12px;color:${d.orders?'var(--text)':'var(--red)'}">${d.orders}</td>
@@ -12103,65 +12332,58 @@ function renderAnalytics() {
     </div>`;
   }
 
-  el.innerHTML = selectorHtml + `
-    <div style="font-size:11px;color:var(--text-muted);margin:0 0 12px">📅 ${basisNote}</div>
-
-    <div class="analytics-kpi-row" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
-      ${kpi('In view', totalDrivers, '#34D186', 'with activity in period', 'all')}
-      ${kpi('Active', activeCount, '#00D4FF', (totalDrivers?Math.round(activeCount/totalDrivers*100):0)+'% had trips', 'active')}
-      ${kpi('Idle · 0 trips', idleCount, '#f59e0b', 'tap to chase', 'idle')}
-      ${projectable ? kpi('Slow · proj &lt; 4k', slowCount, '#fb7185', 'working, no bonus yet', 'slow') : ''}
-      ${kpi('New ≤14d', newCount, '#8b5cf6', 'recently added', 'new')}
-      ${kpi('Left Fleet', leftCount, '#94a3b8', 'departed', 'left')}
-      <div class="akpi blk-stat-card" onclick="showTab('blocks',document.querySelector('.tab[data-tab=blocks]'));renderBlocks()" style="border-left-color:#ef4444"><div class="akpi-label">Blocked</div><div class="akpi-value">${blockedCount}</div><div class="akpi-delta ${blockedCount?'down':'flat'}">on Bolt →</div></div>
-    </div>
-
-    ${projectable ? `<div class="chart-card" style="margin-bottom:16px">
-      <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
-        <span>Bonus-Tier Pipeline — ${periodLabel} <span style="font-size:11px;color:var(--text-muted);font-weight:400">· projected month-end · click a band</span></span>
-        <span style="font-size:12px;color:var(--bolt-green);font-weight:700">≈ ${fmt(totalCompanyBonus)} SAR company bonus projected <span style="color:var(--text-muted);font-weight:400">(+ ${fmt(totalPartnerBBonus)} Partner B)</span></span>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);letter-spacing:.05em;margin:9px 2px 2px"><span>TIER</span><span>DRIVERS · PROJECTED NET</span><span>COMPANY BONUS</span></div>
+  // #4 · DECK deck + four bulkhead sections (tier movement · pushable · cohort ramp ·
+  // idle & recovery). KPIs become clickable stat instruments; every driver row → A1.
+  const statBox = (label, val, drill, cls) => `<div class="dk-stat${cls ? ' ' + cls : ''}${analyticsDrill === drill ? ' brand' : ''}" onclick="setAnalyticsDrill('${drill}')" style="cursor:pointer" title="Click to list these drivers"><div class="l">${label}</div><div class="v">${val}</div></div>`;
+  const header = dkDeckHeader({
+    title: 'Analytics',
+    context: basisNote,
+    status: dkStatusChip(),
+    actions: `<button class="dk-btn" onclick="openChaseList()">📋 Chase list</button>`
+  });
+  const rail = dkAlertRail(dkAlertRegistry(['blocked', 'slipping', 'stale']));
+  const strip = `<div class="dk-strip">
+    ${statBox(`${t('withActivity')} view`, totalDrivers, 'all')}
+    ${statBox('Active · had trips', activeCount, 'active')}
+    ${statBox('Idle · 0 trips', idleCount, 'idle', idleCount ? 'warn' : '')}
+    ${projectable ? statBox('Slow · proj <4k', slowCount, 'slow', slowCount ? 'warn' : '') : ''}
+    ${statBox('New ≤14d', newCount, 'new')}
+    ${statBox('Left fleet', leftCount, 'left')}
+    <div class="dk-stat${blockedCount ? ' danger' : ''}" onclick="showTab('blocks',document.querySelector('.tab[data-tab=blocks]'));renderBlocks()" style="cursor:pointer" title="Open the unblock worklist"><div class="l">Blocked</div><div class="v">${blockedCount}</div></div>
+  </div>`;
+  const monthRow = `<div class="dk-filterbar"><div class="dk-fgroup"><span class="lb">${t('period')}</span>
+    ${['all', ...months].map(m => { const lbl = m === 'all' ? 'All time' : monthLabel(m); return `<button class="dk-chip mono${analyticsMonth === m ? ' on' : ''}" onclick="setAnalyticsMonth('${m}')">${lbl}</button>`; }).join('')}
+  </div></div>`;
+  // Tier distribution funnel — the "where they are now" half of Tier movement (click a band → list).
+  const pipeline = projectable ? `<div class="dk-card" style="gap:9px">
+      <div class="dk-card-t"><span class="t">Bonus-tier pipeline — ${periodLabel}</span><span class="go" style="color:var(--dk-brand);font-weight:700">≈ +${fmt(totalCompanyBonus)} SAR projected</span></div>
       <div style="display:flex;flex-direction:column;gap:7px">
-        ${buckets.map(b=>{ const pct=Math.round(b.list.length/maxBucket*100); const bonus=b.f==='idle'?0:b.list.reduce((s,d)=>s+d.companyBonus,0); const projNet=b.list.reduce((s,d)=>s+(d.idle?d.net:d.proj),0);
+        ${buckets.map(b => { const pct = Math.round(b.list.length / maxBucket * 100); const bonus = b.f === 'idle' ? 0 : b.list.reduce((s, d) => s + d.companyBonus, 0); const projNet = b.list.reduce((s, d) => s + (d.idle ? d.net : d.proj), 0);
           return `<div onclick="setAnalyticsDrill('${b.f}')" title="Click to list these drivers" style="cursor:pointer;display:flex;align-items:center;gap:10px">
-            <div style="width:88px;flex-shrink:0;font-size:11px;color:var(--text);font-weight:600">${b.label}<div style="font-size:9px;color:var(--text-muted);font-weight:400">${b.sub}</div></div>
-            <div style="flex:1;background:rgba(255,255,255,.04);border-radius:3px;height:28px;position:relative;overflow:hidden">
-              <div style="height:100%;width:${b.list.length?Math.max(pct,7):0}%;background:${b.color};opacity:.85;border-radius:3px;transition:width .3s"></div>
-              <div style="position:absolute;inset:0;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12px;color:var(--text)"><b>${b.list.length}</b>${b.list.length?`<span style="font-size:10px;color:var(--text-muted)">${fmt(projNet)} SAR</span>`:''}</div>
+            <div style="width:88px;flex-shrink:0;font-size:11px;color:var(--dk-text);font-weight:600">${b.label}<div style="font-size:9px;color:var(--dk-dim);font-weight:400">${b.sub}</div></div>
+            <div style="flex:1;background:var(--dk-s3);border-radius:5px;height:28px;position:relative;overflow:hidden">
+              <div style="height:100%;width:${b.list.length ? Math.max(pct, 7) : 0}%;background:${b.color};opacity:.8;border-radius:5px;transition:width .3s"></div>
+              <div style="position:absolute;inset:0;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12px;color:var(--dk-hi)"><b class="dk-num">${b.list.length}</b>${b.list.length ? `<span class="dk-num" style="font-size:10px;color:var(--dk-mut)">${fmt(projNet)} SAR</span>` : ''}</div>
             </div>
-            <div style="width:104px;flex-shrink:0;text-align:right;font-size:11px;font-weight:700;color:${bonus?'var(--bolt-green)':'var(--text-muted)'}">${bonus?'+'+fmt(bonus):'—'}</div>
+            <div class="dk-num" style="width:104px;flex-shrink:0;text-align:end;font-size:11px;font-weight:700;color:${bonus ? 'var(--dk-brand)' : 'var(--dk-dim)'}">${bonus ? '+' + fmt(bonus) : '—'}</div>
           </div>`; }).join('')}
       </div>
-    </div>` : ''}
+    </div>` : '';
 
-    ${projectable ? (pushList.length ? `<div class="chart-card" style="margin-bottom:16px">
-      <div class="chart-card-title">⚡ Realistic pushes — reachable before month-end (${remTotal} day${remTotal!==1?'s':''} left incl. today)</div>
-      <div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse">
-        <thead><tr style="background:rgba(0,0,0,.15)">
-          <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Driver</th>
-          <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Projected</th>
-          <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Now /work-day</th>
-          <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Push +/work-day</th>
-          <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Reaches</th>
-          <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Unlocks</th>
-        </tr></thead><tbody>
-        ${pushList.map(d=>`<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
-          <td style="padding:6px 9px;font-size:12px;font-weight:600;color:var(--text)">${dn(d)}${d.accDrop?` <span style="color:var(--red);font-size:10px">↘${d.accDrop}pp</span>`:''}</td>
-          <td style="padding:6px 9px;text-align:right;font-size:12px;color:var(--text-muted)">${fmt(d.proj)}</td>
-          <td style="padding:6px 9px;text-align:right;font-size:12px;color:var(--text-muted)">${fmt(Math.round(d.avgWork))}</td>
-          <td style="padding:6px 9px;text-align:right;font-size:12px;color:var(--amber);font-weight:700">+${fmt(d.pushExtra)}</td>
-          <td style="padding:6px 9px;text-align:right;font-size:12px;font-weight:700"><span class="${tierTxt(bandOf(d.nextFloor))}">${d.nextFloor/1000}k</span></td>
-          <td style="padding:6px 9px;text-align:right;font-size:12px;color:var(--bolt-green);font-weight:700">+${fmt(d.unlocks)}</td>
-        </tr>`).join('')}
-        </tbody></table></div>
-      <div style="font-size:10px;color:var(--text-muted);margin-top:6px">Shown only when the next tier is within a modest lift of the driver's own work-day pace — never an unrealistic ask.</div>
-    </div>` : `<div class="chart-card" style="margin-bottom:16px;text-align:center;color:var(--text-muted);font-size:13px;padding:18px">${isPastMonth?'Month complete — figures are final.':'No realistic tier pushes right now — everyone is on track or out of reach.'}</div>`) : ''}
-
+  el.innerHTML = `<div class="dk">
+    <div class="dk-shell" style="padding-block:2px 10px">${header}${rail}${strip}</div>
+    ${monthRow}
+    ${dkBulk('Tier movement — distribution now & shifts vs last month')}
+    ${pipeline}
+    ${dkAnalyticsTierMovement(R)}
+    ${dkBulk('Pushable — money on the table')}
+    ${dkAnalyticsPushable(R)}
+    ${dkBulk('Cohort ramp — new-driver activation')}
     <div id="rampCohortCard"></div>
-
-    ${drillHtml || `<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:16px;border:1px dashed var(--border);border-radius:6px">👆 Click a KPI card or a tier band above to list those drivers.</div>`}
-  `;
+    ${dkBulk('Idle & recovery')}
+    ${dkAnalyticsIdleRecovery(R)}
+    ${analyticsDrill ? drillHtml : ''}
+  </div>`;
   renderRampCohort();   // async — fills #rampCohortCard when stage-log data exists (Build-152)
 
   // (Build-119/120: legacy Chart.js charts removed — Analytics is a roster-performance view.)
@@ -12228,7 +12450,7 @@ async function renderRampCohort() {
     else if (ageD <= 3)   { status = chip('JUST ACTIVATED','rgba(0,212,255,.14)','var(--cyan)'); }
     else                  { status = chip('NOT STARTED','rgba(255,170,0,.14)','var(--amber)'); notStarted++; }
     const dispName = m.driverId && known[m.driverId] ? known[m.driverId].name : c.name;
-    return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+    return `<tr onclick="dkOpenDriver('${String(dispName).replace(/'/g,"\\'")}')" style="cursor:pointer;border-bottom:1px solid rgba(255,255,255,.04)" title="Open driver panel">
       <td style="padding:6px 9px;font-size:12px;font-weight:600;color:var(--text)">${he(lookupForeignName(dispName)||dispName)}</td>
       <td style="padding:6px 9px;font-size:11px;color:var(--text-muted);white-space:nowrap">${new Date(c.t).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} · ${ageD}d ago</td>
       <td style="padding:6px 9px;text-align:right;font-family:var(--mono);font-size:12px">${m.driverId ? workDays : '—'}</td>
@@ -12238,21 +12460,14 @@ async function renderRampCohort() {
     </tr>`;
   }).join('');
 
-  host.innerHTML = `<div class="chart-card" style="margin-bottom:16px">
-    <div class="chart-card-title" style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
-      <span>🌱 New-driver ramp — activated in the last ${RAMP_COHORT_DAYS} days (${cohort.length})</span>
-      ${notStarted ? `<span style="font-size:11px;color:var(--amber);font-weight:700">${notStarted} activated but not earning — follow up</span>` : ''}
-    </div>
-    <div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse">
-      <thead><tr style="background:rgba(0,0,0,.15)">
-        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Driver</th>
-        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:left">Activated</th>
-        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Work days since</th>
-        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Net since (SAR)</th>
-        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">/work-day</th>
-        <th style="padding:6px 9px;font-size:9px;font-weight:600;color:var(--text-muted);text-align:right">Status</th>
+  host.innerHTML = `<div class="dk-card" style="gap:8px">
+    <div class="dk-card-t"><span class="t">🌱 Activated in the last ${RAMP_COHORT_DAYS} days · ${cohort.length}</span>
+      ${notStarted ? `<span class="go" style="color:var(--dk-warn);font-weight:700">${notStarted} activated but not earning — follow up</span>` : ''}</div>
+    <div class="dk-tablewrap" style="overflow-x:auto"><table class="dk-table">
+      <thead><tr>
+        <th>Driver</th><th>Activated</th><th class="num">Work days</th><th class="num">Net since</th><th class="num">/work-day</th><th class="num">Status</th>
       </tr></thead><tbody>${rows}</tbody></table></div>
-    <div style="font-size:10px;color:var(--text-muted);margin-top:6px">Activation dates come from the onboarding sheet's stage log; earnings from Bolt data since that day. "Not on Bolt data" = activated in the sheet but never appears in a Bolt report — the ones to chase first.</div>
+    <div style="font-size:10px;color:var(--dk-mut)">Activation dates from the onboarding sheet's stage log; earnings from Bolt data since. "Not on Bolt data" = activated in the sheet but never appears in a Bolt report — chase first.</div>
   </div>`;
 }
 
@@ -12520,6 +12735,15 @@ const DK_T = {
   paceCollapsed:{ en: '14-day pace collapsed',    ar: 'انهارت وتيرة ١٤ يومًا' },
   acceptDrop:   { en: 'acceptance ↘',             ar: 'قبول ↘' },
   tierSlip:     { en: 'tier slip',                ar: 'تراجع فئة' },
+  // A2 filter bar + the S2 DECK tabs (Captains / Blocks / Analytics)
+  period:       { en: 'Period',                   ar: 'الفترة' },
+  allMonths:    { en: 'All',                      ar: 'الكل' },
+  statusLbl:    { en: 'Status',                   ar: 'الحالة' },
+  tierLbl:      { en: 'Tier',                      ar: 'الفئة' },
+  natLbl:       { en: 'Nationality',              ar: 'الجنسية' },
+  ambLbl:       { en: 'Ambassador',               ar: 'السفير' },
+  clearFilters: { en: 'Clear',                    ar: 'مسح' },
+  withActivity: { en: 'with activity in',         ar: 'بنشاط في' },
 };
 function dkLang() { try { return localStorage.getItem('mohm_lang') === 'ar' ? 'ar' : 'en'; } catch (_) { return 'en'; } }
 function t(key) { const e = DK_T[key]; return e ? (e[dkLang()] || e.en) : key; }
@@ -12697,6 +12921,181 @@ function dkTierMoves(R) {
     (downs.length ? `<span style="color:var(--dk-danger)">▼${downs.length}</span> ` : '') + top.join(' · ');
 }
 
+// ═══ A · SHARED DECK COMPONENTS ═════════════════════════════════════════════
+// One driver panel (A1), one filter/sort/date system (A2), one alert rail (A3) —
+// reused by Captains #9, Blocks #5, Analytics #4. Behaviour spec: Part A of
+// BOLT_FINALIZE_TAB_SPECS.md. Months are DERIVED from history (year-proof), never
+// hardcoded; the selected month propagates into the A1 panel (ctx.monthFilter).
+
+// ── shared deck chrome ──
+function dkStatusChip() {
+  const F = dkFreshness();
+  if (!F) return '';
+  return `<span class="dk-status${F.stale ? ' warn' : ''}" title="${t('latestData')}: ${F.pulse.latest}">
+    <span class="dk-dot"></span>DATA ${F.dayShort}${F.timeLabel ? ` · ${F.srcLabel.toUpperCase()} ${F.timeLabel}` : ''} ${F.stale ? '⚠' : '✓'}</span>`;
+}
+function dkDeckHeader(o) {
+  return `<div class="dk-head">
+    <div><div class="dk-title">${o.title}</div>${o.context ? `<div class="dk-context">${o.context}</div>` : ''}</div>
+    <div class="dk-headside">${o.status || ''}${o.actions || ''}</div>
+  </div>`;
+}
+function dkBulk(label, chip) { return `<div class="dk-bulk"><span class="t">${label}</span>${chip != null ? `<span class="c">${chip}</span>` : ''}</div>`; }
+// The 4k/5k/6k tier pill — the business lens, identical on every tab. band 0..3.
+const DK_BAND = { 3:['t6','6K'], 2:['t5','5K'], 1:['t4','4K'], 0:['t0','&lt;4K'] };
+function dkTierPill(band, o) {
+  o = o || {}; const [cls, lbl] = DK_BAND[band] || DK_BAND[0];
+  return `<span class="dk-tier ${cls}${o.hollow ? ' hollow' : ''}"${o.title ? ` title="${o.title}"` : ''}>${lbl}${o.count != null ? ` <b>${o.count}</b>` : ''}</span>`;
+}
+// A driver's tier pill: achieved (banked ≥ floor) renders filled, projected renders hollow.
+function dkDriverTierPill(d, R) {
+  if (!R || !R.projectable || d.idle || d.blocked) return `<span class="dk-tier t0">—</span>`;
+  const banked = R.bandOf(d.net);
+  return dkTierPill(d.band, { hollow: d.band > banked, title: `net ${fmt(Math.round(d.net))} · proj ${fmt(d.proj)}` });
+}
+// #9 · ambassador-name tag — replaces the legacy MODEL S/F/R + REF N/M/Y/H letters
+// everywhere. Reads the driver's tagged ambassador from their profile; dim — when unset.
+function dkAmbTag(name) {
+  const a = (getCourierProfile(name) && getCourierProfile(name).ambassador || '').trim();
+  return a ? `<span class="dk-amb" title="Ambassador: ${a.replace(/"/g, '&quot;')}">${a}</span>`
+           : `<span class="dk-amb none" title="No ambassador tagged">—</span>`;
+}
+
+// ── A1 propagation: open the driver panel scoped to the tab's selected month ──
+function dkOpenDriver(name, monthKey) {
+  openModal(name, null, { monthFilter: (monthKey && monthKey !== 'all') ? monthKey : null });
+}
+
+// ── A3 · alert rail (one renderer + one source registry) ──
+// alerts = [{ cls:'danger'|'warn'|'', n, txt, go }]; renders nothing when calm.
+function dkAlertRail(alerts) {
+  if (!alerts || !alerts.length) return '';
+  return `<div class="dk-rail">${alerts.map(a =>
+    `<div class="dk-alert ${a.cls || ''}"${a.go ? ` onclick="${a.go}"` : ''}><span class="n">${a.n}</span><span>${a.txt}</span>${a.go ? `<span class="go">${t('open')} →</span>` : ''}</div>`).join('')}</div>`;
+}
+// The source registry — each tab shows a subset via `only`. Synchronous sources
+// only (blocked / stale / reconcile / slipping); async ones (onboarding-stuck,
+// cron-failed) are surfaced on Today's onboarding card + Settings System Status.
+function dkAlertRegistry(only) {
+  const want = only ? new Set(only) : null, on = k => !want || want.has(k), out = [];
+  const R = computeRosterForMonth('');
+  if (!R) return out;
+  if (on('blocked') && R.blockedCount) out.push({ src:'blocked', cls:'danger', n:R.blockedCount, txt:t('blockedOnBolt'), go:"todayGo('blocks')" });
+  const F = dkFreshness();
+  if (on('stale') && F && F.stale) out.push({ src:'stale', cls:'warn', n:F.pulse.daysAgo + 'd', txt:t('staleData'), go:"todayGo('settings')" });
+  if (on('reconcile') && R.projectable) {
+    const [y, m] = R.monthSel.split('-').map(Number), pm0 = m === 1 ? 11 : m - 2, py = m === 1 ? y - 1 : y;
+    const prevKey = py + '-' + String(pm0 + 1).padStart(2, '0');
+    if (R.months.includes(prevKey) && typeof isMonthReconciled === 'function' && !isMonthReconciled(prevKey))
+      out.push({ src:'reconcile', cls:'warn', n:monthLabel(prevKey), txt:t('reconcileDue'), go:'todayGoExec(event)' });
+  }
+  if (on('slipping')) { const slip = dkTodaySlipping(R, computeTrailingWindows());
+    if (slip.count) out.push({ src:'slipping', cls:'warn', n:slip.count, txt:t('slipping'), go:"todayGo('blocks')" }); }
+  return out;
+}
+
+// ── A2 · filter / sort / date system ─────────────────────────────────────────
+// Per-tab, in-memory state (survives re-renders, resets on reload). Chip handlers
+// mutate the state in place and call the tab's registered onChange (its re-render).
+const dkFilterState = {};
+function dkFilterDefault() { return { months:new Set(), status:new Set(), tiers:new Set(), nats:new Set(), ambs:new Set(), sort:null, _open:null }; }
+function dkGetFilter(key) { return dkFilterState[key] || (dkFilterState[key] = dkFilterDefault()); }
+function dkFilterActive(st) { return st.months.size || st.status.size || st.tiers.size || st.nats.size || st.ambs.size; }
+
+// Resolve the month selection → a monthSel for computeRosterForMonth + the chosen set.
+// 0 chosen → the tab default (latest month, projection on); 1 → that month; ≥2 → union
+// ('all', projection off — a multi-month projection isn't well-defined). Year-proof:
+// the option list is always the DERIVED `allMonths`, never a hardcoded chip row.
+function dkMonthsResolve(st, allMonths, defMonthSel) {
+  const chosen = allMonths.filter(m => st.months.has(m));
+  if (!chosen.length) { const sel = (defMonthSel && defMonthSel !== '') ? defMonthSel : (allMonths[0] || 'all');
+    return { chosen: allMonths.slice(), sel, single: sel !== 'all' ? sel : null, isDefault:true }; }
+  if (chosen.length === 1) return { chosen, sel: chosen[0], single: chosen[0], isDefault:false };
+  return { chosen, sel:'all', single:null, isDefault:false };
+}
+// config = { key, onChange, months:[{v,label}], status:[{v,label}], tier:bool, nats:[..], ambs:[..] }
+// `host` = the DOM element to render the bar into.
+function dkFilter(host, config) {
+  const st = dkGetFilter(config.key);
+  st._config = config; st._onChange = config.onChange;
+  host.innerHTML = dkFilterHTML(config, st);
+}
+function dkFilterHTML(config, st) {
+  const chip = (group, v, label, on, mono) => `<button class="dk-chip${mono ? ' mono' : ''}${on ? ' on' : ''}" onclick="dkFilterToggle('${config.key}','${group}','${String(v).replace(/'/g, "\\'")}')">${label}</button>`;
+  let groups = '';
+  // months (multi-select chips, derived) + an "All" chip (active when none picked)
+  if (config.months && config.months.length) {
+    const none = st.months.size === 0;
+    groups += `<div class="dk-fgroup"><span class="lb">${t('period') || 'Period'}</span>
+      <button class="dk-chip mono${none ? ' on' : ''}" onclick="dkFilterAll('${config.key}','months')">${t('allMonths') || 'All'}</button>
+      ${config.months.map(m => chip('months', m.v, m.label, st.months.has(m.v), true)).join('')}</div>`;
+  }
+  // status chips
+  if (config.status && config.status.length)
+    groups += `<div class="dk-fgroup"><span class="lb">${t('statusLbl') || 'Status'}</span>${config.status.map(s => chip('status', s.v, s.label, st.status.has(s.v))).join('')}</div>`;
+  // tier pills as filters
+  if (config.tier)
+    groups += `<div class="dk-fgroup"><span class="lb">${t('tierLbl') || 'Tier'}</span>${[3, 2, 1, 0].map(b => {
+      const [cls, lbl] = DK_BAND[b];
+      return `<button class="dk-tier ${cls} filt${st.tiers.has(b) ? ' on' : ''}" onclick="dkFilterToggle('${config.key}','tiers','${b}')">${lbl}</button>`;
+    }).join('')}</div>`;
+  // nationality + ambassador multi-select dropdowns
+  const drop = (group, label, opts) => {
+    if (!opts || !opts.length) return '';
+    const sel = st[group];
+    return `<details class="dk-drop"${st._open === group ? ' open' : ''}>
+      <summary onclick="dkFilterOpen(event,'${config.key}','${group}')">${label}${sel.size ? `<span class="cnt">${sel.size}</span>` : ''}</summary>
+      <div class="dk-drop-menu">${opts.map(o => `<div class="dk-drop-item${sel.has(o) ? ' on' : ''}" onclick="dkFilterToggle('${config.key}','${group}','${String(o).replace(/'/g, "\\'")}')"><span class="bx">${sel.has(o) ? '✓' : ''}</span>${o}</div>`).join('')}</div>
+    </details>`;
+  };
+  let drops = '';
+  drops += drop('nats', t('natLbl') || 'Nationality', config.nats);
+  drops += drop('ambs', t('ambLbl') || 'Ambassador', config.ambs);
+  if (drops) groups += `<div class="dk-fgroup">${drops}</div>`;
+  const clear = dkFilterActive(st) ? `<button class="dk-filter-clear" onclick="dkFilterClear('${config.key}')">${t('clearFilters') || 'Clear'} ✕</button>` : '';
+  return `${groups}${clear}`;
+}
+function dkFilterToggle(key, group, value) {
+  const st = dkGetFilter(key);
+  const val = (group === 'tiers') ? Number(value) : value;
+  if (st[group].has(val)) st[group].delete(val); else st[group].add(val);
+  if (group === 'nats' || group === 'ambs') st._open = group;   // keep the dropdown open while ticking
+  dkFilterEmit(key);
+}
+function dkFilterAll(key, group) { dkGetFilter(key)[group].clear(); dkFilterEmit(key); }
+function dkFilterOpen(ev, key, group) { const st = dkGetFilter(key); st._open = (st._open === group) ? null : group; /* let <details> toggle natively */ }
+function dkFilterClear(key) { const st = dkGetFilter(key); ['months','status','tiers','nats','ambs'].forEach(g => st[g].clear()); st.sort = null; st._open = null; dkFilterEmit(key); }
+function dkFilterSort(key, col) {
+  const st = dkGetFilter(key);
+  if (st.sort && st.sort.col === col) st.sort.asc = !st.sort.asc;
+  else st.sort = { col, asc: false };
+  dkFilterEmit(key);
+}
+function dkFilterEmit(key) { const st = dkGetFilter(key); if (st._onChange) st._onChange(); }
+// Apply the chip filters (status / tier / nationality / ambassador) to a driver list.
+// acc = { status(d)->one of statusOpts.v, nat(d)->string, amb(d)->string } — month
+// scoping is handled upstream by computeRosterForMonth (see dkMonthsResolve).
+function dkFilterApply(rows, key, acc) {
+  const st = dkGetFilter(key);
+  return rows.filter(d => {
+    if (st.status.size && !st.status.has(acc.status ? acc.status(d) : null)) return false;
+    if (st.tiers.size && !st.tiers.has(d.band)) return false;
+    if (st.nats.size && !st.nats.has(acc.nat ? acc.nat(d) : null)) return false;
+    if (st.ambs.size && !st.ambs.has(acc.amb ? acc.amb(d) : null)) return false;
+    return true;
+  });
+}
+// Sort-arrow markup for a DECK table header (only the active column shows an arrow).
+function dkSortArrow(key, col) { const st = dkGetFilter(key); return (st.sort && st.sort.col === col) ? `<span class="ar">${st.sort.asc ? '▲' : '▼'}</span>` : ''; }
+function dkApplySort(rows, key, getters) {
+  const st = dkGetFilter(key);
+  if (!st.sort || !getters[st.sort.col]) return rows;
+  const g = getters[st.sort.col], dir = st.sort.asc ? 1 : -1;
+  return rows.slice().sort((a, b) => { const av = g(a), bv = g(b);
+    if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * dir;
+    return (av - bv) * dir; });
+}
+
 // ═══ TODAY — the DECK exemplar: a daily ACTION cockpit ═══════════════════════
 // Layout contract (every tab converts to this — BOLT_DESIGN_SYSTEM.md §3):
 //   deck header → alert rail → stat strip → DO-NEXT action queue → domain cards.
@@ -12790,8 +13189,7 @@ function renderToday() {
   if (F && F.stale) alerts.push({ cls:'warn', n:F.pulse.daysAgo + 'd', txt:t('staleData'), go:"todayGo('settings')" });
   if (reconDue) alerts.push({ cls:'warn', n:monthLabel(prevKey), txt:t('reconcileDue'), go:'todayGoExec(event)' });
   if (slip.count) alerts.push({ cls:'warn', n:slip.count, txt:t('slipping'), go:'dkToggleSlip(event)' });
-  const rail = alerts.length ? `<div class="dk-rail">${alerts.map(a =>
-    `<div class="dk-alert ${a.cls}" onclick="${a.go}"><span class="n">${a.n}</span><span>${a.txt}</span><span class="go">${t('open')} →</span></div>`).join('')}</div>` : '';
+  const rail = dkAlertRail(alerts);   // A3 · one renderer, shared with the S2 tabs
 
   // ── Stat strip — six instruments ──
   const tierPills = projectable ? `
