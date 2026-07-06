@@ -1,7 +1,7 @@
 # MOHM Fleet Dashboard — Operator Runbook
 
-**Last updated:** 2026-07-04  
-**Version:** v5.1  
+**Last updated:** 2026-07-06  
+**Version:** v5.2  
 **Dashboard URL:** your Vercel production URL (mhmbolt.vercel.app or custom domain)
 
 ---
@@ -42,6 +42,8 @@ You will see:
 - **Bolt API connected** ✓ — Bolt credentials are working
 - **Supabase connected** ✓ — Database is reachable
 - **Last auto-sync: [date/time] — X drivers, Y orders** ✓ — Midnight sync ran successfully
+- **Backups: N, latest [date]** — how many daily backups exist and when the newest one was taken
+  (once the card is updated to show it — the data is already live at `/api/bolt/health`)
 
 If you see a red ✗ on any line, follow the relevant section below.
 
@@ -88,6 +90,19 @@ The next midnight run will resume automatically — you only need to manually sy
 ### Data looks wrong / corrupted
 **Cause:** A bad sync overwrote good data.  
 **Fix:** Contact your technical person to restore from the daily backup (table: `fleet_data_backup` in Supabase, one row per day). Recovery takes 5 minutes.
+**Checking backups exist:** the System Status card's backup line (once wired up — see below) shows
+the count and the latest backup date, read straight from `fleet_data_backup` via `/api/bolt/health`.
+
+---
+
+### A sheet edit isn't showing up on the dashboard yet
+**Cause:** the sheet mirror (DRIVERS/AMBASSADORS tabs → Supabase) only refreshes on the ~00:45
+Riyadh cron, so a same-day edit can take up to a day to appear. The "⇅ Sync from sheet" button on
+the dashboard re-reads that same overnight mirror — it does **not** talk to Google live.
+**Fix (once the "Refresh mirror now" button is wired up — see README's "S5-UI follow-up"):** click
+it to force an immediate re-read of the sheet into Supabase (rate-limited to once per 60 seconds).
+Until that button exists in the UI, the fix is to wait for the nightly cron, or ask your technical
+person to hit `POST /api/bolt/sync-sheet-now` directly with the `DASH_SYNC_KEY`.
 
 ---
 
@@ -124,6 +139,7 @@ All credentials are stored in **Vercel → MHMBOLT project → Environment Varia
 | `SUPABASE_URL` | Database address | Supabase project settings |
 | `SUPABASE_SERVICE_KEY` | Database write access (server only) | Supabase project settings |
 | `SUPABASE_ANON_KEY` | Database read access (browser) | Supabase project settings |
+| `DASH_SYNC_KEY` | Protects the on-demand "refresh sheet mirror now" endpoint — a separate secret from `CRON_SECRET`, so the manual button and the midnight cron can't be triggered with the same leaked key | You set this yourself (pick any long random string) |
 
 **To update a credential:** Vercel → MHMBOLT → Environment Variables → click ··· → Edit → save → Redeploy.
 

@@ -9,6 +9,9 @@
     },
     "api/bolt/sync-sheet.js": {
       "maxDuration": 60
+    },
+    "api/bolt/sync-sheet-now.js": {
+      "maxDuration": 60
     }
   },
   "crons": [

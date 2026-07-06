@@ -24,7 +24,7 @@ module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(204).end();
 
-  const result = { ok: false, bolt: null, supabase: null, lastCron: null };
+  const result = { ok: false, bolt: null, supabase: null, lastCron: null, backups: null };
 
   // ── 1. Bolt API ──────────────────────────────────────────────────────────
   if (!process.env.BOLT_CLIENT_ID || !process.env.BOLT_CLIENT_SECRET) {
@@ -74,6 +74,25 @@ module.exports = async function handler(req, res) {
       }
     } catch (e) {
       result.supabase = { ok: false, error: e.message };
+    }
+
+    // F8: backup visibility — fleet_data_backup is anon-hidden by RLS (by design), so
+    // this is the only way the dashboard can ever show "N backups, latest <date>".
+    // Service key already required above; read-only, additive, never blocks health.ok.
+    try {
+      const url  = `${process.env.SUPABASE_URL}/rest/v1/fleet_data_backup?select=backup_date&order=backup_date.desc&limit=1`;
+      const resp = await withTimeout(fetch(url, { headers: { ...sbHeaders(), Prefer: "count=exact" } }), TIMEOUT_MS);
+      if (resp.ok) {
+        const rows = await resp.json();
+        const range = resp.headers.get("content-range") || "";   // e.g. "0-0/16"
+        const total = Number(range.split("/")[1]);
+        result.backups = { count: Number.isFinite(total) ? total : rows.length, latest: rows[0]?.backup_date || null };
+      } else {
+        const text = await resp.text().catch(() => "");
+        result.backups = { count: null, latest: null, error: `${resp.status} — ${text.slice(0, 120)}` };
+      }
+    } catch (e) {
+      result.backups = { count: null, latest: null, error: e.message };
     }
   }
 

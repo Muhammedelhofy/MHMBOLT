@@ -36,20 +36,24 @@ async function boltAPI(method, path, payload) {
   return resp.json();
 }
 
+// F7/m1: loop on all.length < total (not items.length < limit) — a page smaller than
+// requested no longer ends the pull early; a page count guard bounds worst-case requests
+// if the API ever misreports its total.
+const PAGINATE_MAX_PAGES = 200;
+
 async function paginateAll(path, body, listKey, totalKey) {
   const all = [];
   let offset = 0;
   const limit = 1000;
-  // Safe fallback: start at 0 so the guard `items.length < limit` is the authoritative exit.
-  let total = 0;
-  do {
+  let total = Infinity; // unknown until the first response tells us
+  for (let page = 0; page < PAGINATE_MAX_PAGES; page++) {
     const resp  = await boltAPI("POST", path, { ...body, offset, limit });
     const items = resp.data?.[listKey] ?? [];
     total       = Number(resp.data?.[totalKey] ?? 0) || 0;
     for (const i of items) all.push(i);
-    if (items.length < limit) break;
     offset += items.length;
-  } while (all.length < total);
+    if (items.length === 0 || all.length >= total) break;
+  }
   return all;
 }
 
