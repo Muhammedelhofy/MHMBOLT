@@ -12129,9 +12129,14 @@ function renderToday() {
   const reconDue = R.months.includes(prevKey) && typeof isMonthReconciled === 'function' && !isMonthReconciled(prevKey);
   const noProfile = current.filter(d => d.net > 0 && !Object.prototype.hasOwnProperty.call(profiles, d.key)).length;
 
-  // ── Tier ladder counts — the funnel lens (projected bands, workers only) ──
-  const bandCounts = [0, 0, 0, 0];
-  if (projectable) current.forEach(d => { if (!d.blocked && !d.idle) bandCounts[d.band]++; });
+  // ── Tier ladder counts — Finance-consistent (smTierDetail replicates tierStatusFor
+  // exactly), so Today's 6K/5K/4K/<4K counts match Finance + Star Map byte-for-byte.
+  // Per-driver d.band (run-rate projection) stays untouched for the movers/push
+  // features below (dkTierMoves, easy-wins, needsPush) — only the ladder count moves.
+  const td = projectable ? smTierDetail(monthSel) : null;
+  const bandCounts = td
+    ? [td.below.count, td[4000].achieved + td[4000].projected, td[5000].achieved + td[5000].projected, td[6000].achieved + td[6000].projected]
+    : [0, 0, 0, 0];
 
   // ── Freshness + slipping ──
   const F = dkFreshness();
