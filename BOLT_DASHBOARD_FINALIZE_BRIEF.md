@@ -50,7 +50,7 @@ that is **simple, not cluttered** — applied consistently to every tab. Organiz
 (top-level first, drill on click), kill vanity metrics, make everything actionable.
 - **Remove** the embedded M8 orb + holo/radar/warp/cortex/biometric FX (arch-review C6) — it's redundant
   with the separate M8 product AND it's the exact AI-cliché to kill.
-- **Arabic toggle** (new) — EN/AR switch; high handoff value (Arabic-speaking team).
+- **Arabic toggle** (new) — EN/AR switch for the **dashboard UI itself** (labels/headers/buttons + full RTL; numbers stay Western, Gregorian dates). This is the INTERFACE in Arabic — NOT driver names (the Arabic/EN *name* splits are the separate F6 data quirk). High handoff value (Arabic-speaking team: Omar/Khaled/Egypt). ⚠️ **QUALITY GATE + drop-if-worse (Muhammad 2026-07-06):** a half-done RTL looks worse than English-only, so it ships to a tab ONLY when FULLY clean (every label translated, proper RTL); drop it the moment it degrades a tab. Judge it eyes-on via the ع toggle on Today (:3017) before rolling out. Fable already built it correctly on Today.
 - **Light theme — KEEP it, FIX the colours** (D-2 RESOLVED 2026-07-06, Muhammad: do NOT drop). It's "too white" today. The DECK design language must ship a PROPER LIGHT variant (both modes done well): a warm off-white ground (not glaring white), readable font weight/contrast, and the tier colours (6k gold / 5k violet / 4k steel) adapted for light so they still read as signal. Not a dark-only system.
 - **Alerts** — consistent placement (the Today/command deck + inline per tab).
 
