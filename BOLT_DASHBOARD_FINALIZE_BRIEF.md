@@ -26,7 +26,9 @@ redesign on untrustworthy data is worthless. **Backbone before beauty.**
 
 ## CROSS-CUTTING THREADS (apply to ALL tabs)
 - **A · Mirror accuracy** — reconcile the 87-vs-97 fleet count; account for every excluded row; the whole
-  dashboard reconciles with Bolt.
+  dashboard reconciles with Bolt. ★ LEAD (sheet finalize, 2026-07-06): **junk/test FORM rows inflate the
+  DRIVERS tab** → a known contributor to the 87-vs-97 gap; deleting them + re-checking the count is step 1.
+  Also check the Bolt-API pull completeness (the other half of the gap).
 - **B · Filters / sort / dates** — ONE shared, consistent filter+sort component across all tabs; proper
   dropdowns; select one OR many months/days; ★ **year-proof** (the hardcoded month chips break at 2027);
   filters must propagate into detail panels.
