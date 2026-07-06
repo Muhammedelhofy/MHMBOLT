@@ -12573,9 +12573,14 @@ function smMonthAgg(mk) {
     R.current.forEach(d => {
       agg.net += d.net;
       if (!d.idle) agg.projBonus += d.companyBonus;      // live run-rate projection (== Today)
-      if (!d.blocked && !d.idle) { agg.bands[d.band]++; agg.workers++; }
     });
   }
+  // Tier mix for the growth bars = Finance-consistent (smTierDetail), so I5 agrees with
+  // I1 and a partial early month reflects its Bolt invoice, not the thin daily history.
+  const td = smTierDetail(mk);
+  agg.bands = [td.below.count, td[4000].achieved + td[4000].projected,
+               td[5000].achieved + td[5000].projected, td[6000].achieved + td[6000].projected];  // <4k,4k,5k,6k
+  agg.workers = agg.bands.reduce((s, n) => s + n, 0);
   // Company bonus, INVOICE-AWARE: a closed month reads Bolt's invoice via Finance's
   // computeExecMonth (its tierCompany) — the authoritative final, so early months whose
   // daily-history mirror is partial don't under-report (e.g. May: history Σ=0 but the
@@ -12584,6 +12589,38 @@ function smMonthAgg(mk) {
     ? agg.projBonus
     : Math.round((computeExecMonth(mk) || {}).tierCompany || 0);
   return (_smMonthCache[mk] = agg);
+}
+
+// ── Finance-consistent tier detail (SM-3) ────────────────────────────────────
+// Replicates tierStatusFor's classification EXACTLY (so the counts equal Finance's
+// Executive tier block / Bolt-Bonus table for every month — invoice for a closed
+// month, pace projection for the open one) and additionally collects the per-driver
+// names so the ladder segments stay drillable. Adds a `below` bucket (earning but
+// below-pace) for the pipeline segment. Not memoised across renders (cheap; the deck
+// clears its caches each render).
+function smTierDetail(monthKey) {
+  const st = { 6000:{achieved:0,projected:0,names:[]}, 5000:{achieved:0,projected:0,names:[]},
+               4000:{achieved:0,projected:0,names:[]}, below:{count:0,names:[]} };
+  const imported = boltBonusMonth(monthKey);
+  if (imported) {                                   // closed month → Bolt's invoice is truth
+    Object.values(imported).forEach(d => {
+      if ((+d.gross || 0) <= 0) return;
+      const net = +d.net || 0;
+      const f = net >= 6000 ? 6000 : net >= 5000 ? 5000 : 4000;
+      st[f].achieved++; if (d.name) st[f].names.push(d.name);
+    });
+  } else {                                          // open month → same pace logic as tierStatusFor
+    getDriversInMonth(monthKey).forEach(name => {
+      const income = computeDriverNetForPeriod(name, monthKey);
+      if (income <= 0) return;                       // idle → the roster reconciliation line, not a tier
+      const b = bonusForDriver(name, income, monthKey);
+      const f = b.tierFloor;
+      if (!f) { st.below.count++; st.below.names.push(name); return; }
+      if (income >= f) st[f].achieved++; else st[f].projected++;
+      st[f].names.push(name);
+    });
+  }
+  return st;
 }
 
 // ── Drill overlay (opens OVER the deck; the one soft shadow allowed on overlays) ──
@@ -12598,28 +12635,38 @@ function smShowOverlay(title, bodyHtml) {
 }
 function smCloseOverlay() { const h = document.getElementById('smOverlayHost'); if (h) { h.classList.remove('open'); h.innerHTML = ''; } }
 
-// Scoped driver list for a tier-ladder segment (or the funnel's TIERED chip).
-// band: 3|2|1|0 (tier) · 'idle' · 'blocked' · 'tiered' (bands 1-3). Rows → A1, month-scoped.
-function smLadderDrill(band) {
+// Scoped driver list for a ladder segment. kind:
+//   '6000'|'5000'|'4000'|'below'  → the Finance-consistent tier buckets (smTierDetail)
+//   'tiers'                        → all tiered drivers (funnel's TIERED chip)
+//   'idle'|'blocked'              → the roster reconciliation buckets
+// Rows → A1 driver panel, month-scoped.
+function smLadderDrill(kind) {
   const R = computeRosterForMonth(_smSel);
   if (!R || !R.current) return;
   const jsq = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  let list, title;
-  if (band === 'blocked')      { list = R.current.filter(d => d.blocked); title = 'Blocked drivers'; }
-  else if (band === 'idle')    { list = R.current.filter(d => d.idle && !d.blocked); title = 'Idle drivers'; }
-  else if (band === 'tiered')  { list = R.current.filter(d => !d.idle && !d.blocked && d.band >= 1); title = 'On a tier (4k+)'; }
-  else { const b = Number(band); list = R.current.filter(d => !d.idle && !d.blocked && d.band === b);
-         title = (b === 0 ? '<4k — below pace' : (R.TIERS[b - 1] / 1000) + 'k tier'); }
-  list = list.slice().sort((a, b2) => (b2.proj || b2.net) - (a.proj || a.net));
-  const rows = list.map(d => {
-    const pill = dkDriverTierPill(d, R);
-    const gap = (d.nextFloor && !d.blocked && !d.idle) ? `<span style="color:var(--dk-mut)">+${fmt(d.gapToTier)} to ${d.nextFloor / 1000}k</span>` : '';
-    return `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(d.name)}','${R.monthSel}')">
-      <span class="k">${escH(d.name)} ${pill}</span>
-      <span class="v"><span class="dk-num">${fmt(Math.round(d.proj || d.net))}</span> ${gap}</span></div>`;
-  }).join('') || `<div style="color:var(--dk-dim);font-size:12px;padding:6px">No drivers in this band.</div>`;
-  smShowOverlay(`${escH(title)} · ${list.length} · ${escH(R.periodLabel)}`, rows);
+  const row = (name, net) => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(name)}','${R.monthSel}')">
+    <span class="k">${escH(name)} ${dkTierPill(netTierBand(net))}</span>
+    <span class="v"><span class="dk-num">${fmt(Math.round(net))}</span></span></div>`;
+  let rows, title, count;
+  if (kind === 'idle' || kind === 'blocked') {
+    const list = (kind === 'blocked' ? R.current.filter(d => d.blocked) : R.current.filter(d => d.idle && !d.blocked))
+      .slice().sort((a, b) => (b.proj || b.net) - (a.proj || a.net));
+    title = kind === 'blocked' ? 'Blocked drivers' : 'Idle drivers'; count = list.length;
+    rows = list.map(d => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(d.name)}','${R.monthSel}')">
+      <span class="k">${escH(d.name)} ${dkDriverTierPill(d, R)}</span><span class="v"><span class="dk-num">${fmt(Math.round(d.proj || d.net))}</span></span></div>`).join('');
+  } else {
+    const td = smTierDetail(R.monthSel);
+    let names;
+    if (kind === 'tiers')      { names = [].concat(td[6000].names, td[5000].names, td[4000].names); title = 'On a tier (4k+)'; }
+    else if (kind === 'below') { names = td.below.names.slice(); title = '<4k — below pace'; }
+    else                       { names = (td[Number(kind)] || {}).names || []; title = (Number(kind) / 1000) + 'k tier'; }
+    const enriched = names.map(n => ({ n, net: computeDriverNetForPeriod(n, R.monthSel) })).sort((a, b) => b.net - a.net);
+    count = enriched.length;
+    rows = enriched.map(x => row(x.n, x.net)).join('');
+  }
+  smShowOverlay(`${escH(title)} · ${count} · ${escH(R.periodLabel)}`,
+    rows || `<div style="color:var(--dk-dim);font-size:12px;padding:6px">No drivers in this band.</div>`);
 }
 
 // ═══ THE DECK ════════════════════════════════════════════════════════════════
@@ -12692,50 +12739,43 @@ function smStatStrip(R, roll) {
   </div>`;
 }
 
-// ── I1 · TIER LADDER — fleet-wide distribution (segments == Today's ladder counts) ──
+// ── I1 · TIER LADDER — fleet-wide distribution (tier counts == FINANCE, SM-3) ─────
+// The tier segments + achieved/on-pace chips come from smTierDetail, which replicates
+// Finance's tierStatusFor exactly (invoice for a closed month, pace projection for the
+// open one) — so Star Map never contradicts the Executive tier block. The roster is
+// still fully reconciled on the footer line (active · idle · blocked), and every
+// segment drills to the real drivers, month-scoped.
 function smTierLadder(R) {
   const cur = R.current || [];
-  // Every current driver accounted for exactly once — Σ segments = current.length.
   const blocked = cur.filter(d => d.blocked).length;
   const idle = cur.filter(d => d.idle && !d.blocked).length;
-  const bands = [0, 0, 0, 0];   // <4k, 4k, 5k, 6k (projected band, workers only — same rule as Today)
-  if (R.projectable) cur.forEach(d => { if (!d.blocked && !d.idle) bands[d.band]++; });
-  const total = cur.length;
-  // segment defs high→low then idle/blocked
+  const active = cur.length - blocked - idle;
+  const td = smTierDetail(R.monthSel);
+  const cnt = f => td[f].achieved + td[f].projected;
+  const c6 = cnt(6000), c5 = cnt(5000), c4 = cnt(4000), cb = td.below.count;
+  const barTotal = Math.max(1, c6 + c5 + c4 + cb);
   const segs = [
-    { n: bands[3], bg: 'var(--dk-t6)', k: '3', lbl: '6K' },
-    { n: bands[2], bg: 'var(--dk-t5)', k: '2', lbl: '5K' },
-    { n: bands[1], bg: 'var(--dk-t4)', k: '1', lbl: '4K' },
-    { n: bands[0], bg: 'var(--dk-t0)', k: '0', lbl: '<4K' },
-    { n: idle,     bg: 'var(--dk-s3)', k: 'idle', lbl: 'IDLE' },
-    { n: blocked,  bg: 'var(--dk-danger)', k: 'blocked', lbl: 'BLK' },
+    { n: c6, bg: 'var(--dk-t6)', k: '6000', lbl: '6K' },
+    { n: c5, bg: 'var(--dk-t5)', k: '5000', lbl: '5K' },
+    { n: c4, bg: 'var(--dk-t4)', k: '4000', lbl: '4K' },
+    { n: cb, bg: 'var(--dk-t0)', k: 'below', lbl: '<4K' },
   ].filter(s => s.n > 0);
   // The count rides a small dark chip with light text so it stays legible on every
   // segment colour in BOTH themes (no text-shadow — design-system rule).
-  const bar = total ? `<div class="sm2-seg">${segs.map(s => {
-    const w = Math.max(s.n / total * 100, 5);
+  const bar = (c6 + c5 + c4 + cb) ? `<div class="sm2-seg">${segs.map(s => {
+    const w = Math.max(s.n / barTotal * 100, 6);
     return `<div style="width:${w}%;background:${s.bg}" title="${s.lbl} · ${s.n}" onclick="smLadderDrill('${s.k}')"><span style="background:rgba(9,12,16,.36);color:#F4F7FA;border-radius:4px;padding:0 5px;font-size:11px">${s.n}</span></div>`;
-  }).join('')}</div>` : `<div style="color:var(--dk-dim);font-size:12px">No drivers this period.</div>`;
-  const foot = `Σ ${total} drivers · 6K ${bands[3]} · 5K ${bands[2]} · 4K ${bands[1]} · &lt;4K ${bands[0]} · idle ${idle} · blocked ${blocked}`;
-  // Achieved / on-pace chips — derived from the SAME roster engine that drew the
-  // segments, so the chip counts and the bar never contradict each other. (Per-tier:
-  // among workers projected into that band, "achieved" = banked net already ≥ the floor,
-  // "on pace" = projected there but not yet banked.) NOTE the segments/counts here are
-  // the roster projection (== Today's ladder); Finance's tierStatusFor uses a different
-  // projection at the margins — see the S-SM report's flagged SM-3 note.
-  const st = { 3: { a: 0, o: 0 }, 2: { a: 0, o: 0 }, 1: { a: 0, o: 0 } };
-  cur.forEach(d => {
-    if (d.blocked || d.idle || d.band < 1) return;
-    const floor = R.TIERS[d.band - 1];
-    if (d.net >= floor) st[d.band].a++; else st[d.band].o++;
-  });
-  const chips = `<div style="display:flex;flex-wrap:wrap;gap:8px 14px;margin-block-start:11px">${[3, 2, 1].map(band => {
-    const s = st[band], on = s.o ? ` · <span style="color:var(--dk-dim)">${s.o} on pace</span>` : '';
-    return `<span style="display:inline-flex;align-items:center;gap:6px">${dkTierPill(band)}<span style="font-size:12px;color:var(--dk-mut)">${s.a} achieved${on}</span></span>`;
+  }).join('')}</div>` : `<div style="color:var(--dk-dim);font-size:12px">No earning drivers this period.</div>`;
+  // Roster reconciliation — every current driver still accounted for (idle/blocked drillable).
+  const foot = `<div class="sm2-foot">Roster ${cur.length} · ${active} active · <span style="cursor:pointer;border-block-end:1px dotted var(--dk-dim)" onclick="smLadderDrill('idle')">${idle} idle</span> · <span style="cursor:pointer;border-block-end:1px dotted var(--dk-dim)" onclick="smLadderDrill('blocked')">${blocked} blocked</span> · tiers = Finance</div>`;
+  // Achieved / on-pace chips — Finance's tierStatusFor split (same source as the bar).
+  const chips = `<div style="display:flex;flex-wrap:wrap;gap:8px 14px;margin-block-start:11px">${[[3, 6000], [2, 5000], [1, 4000]].map(([band, floor]) => {
+    const t = td[floor], on = t.projected ? ` · <span style="color:var(--dk-dim)">${t.projected} on pace</span>` : '';
+    return `<span style="display:inline-flex;align-items:center;gap:6px">${dkTierPill(band)}<span style="font-size:12px;color:var(--dk-mut)">${t.achieved} achieved${on}</span></span>`;
   }).join('')}</div>`;
   return `<div class="dk-card">
-    <div class="dk-card-t"><span class="t">Tier ladder</span><span class="go">where the fleet sits on the 4k/5k/6k ladder →</span></div>
-    ${bar}<div class="sm2-foot">${foot}</div>${chips}</div>`;
+    <div class="dk-card-t"><span class="t">Tier ladder</span><span class="go">where earning drivers sit on the 4k/5k/6k ladder →</span></div>
+    ${bar}${foot}${chips}</div>`;
 }
 
 // ── I2 · OPERATION FUNNEL — onboard → activate → earn → tier, with the two leaks ──
@@ -12744,7 +12784,8 @@ function smFunnel(R) {
   const byKey = {}; cur.forEach(d => { byKey[d.key] = d; });
   const activated = cur.length;
   const earning = cur.filter(d => !d.idle).length;
-  const tiered = cur.filter(d => !d.idle && !d.blocked && d.band >= 1).length;
+  const td = smTierDetail(R.monthSel);                 // TIERED == Finance's tier count (SM-3), same as I1
+  const tiered = td[6000].achieved + td[6000].projected + td[5000].achieved + td[5000].projected + td[4000].achieved + td[4000].projected;
   const pt = smPipelineTotals();
   const stake = cur.filter(d => d.blocked).reduce((s, d) => s + (blockAtStake(d.name, R, byKey).sar || 0), 0);
   const pipeSeg = pt
@@ -12754,7 +12795,7 @@ function smFunnel(R) {
     pipeSeg,
     { lbl: 'ACTIVATED', n: activated, go: '' },
     { lbl: 'EARNING', n: earning, go: '' },
-    { lbl: 'TIERED', n: tiered, go: "smLadderDrill('tiered')" },
+    { lbl: 'TIERED', n: tiered, go: "smLadderDrill('tiers')" },
   ];
   const flow = `<div style="display:flex;align-items:stretch;gap:8px;flex-wrap:wrap;margin-block-start:4px">${segs.map((s, i) => `
     <div style="flex:1;min-width:120px;border:1px solid var(--dk-line);border-radius:8px;padding:9px 12px;background:var(--dk-s2);${s.go ? 'cursor:pointer' : ''}"${s.go ? ` onclick="${s.go}"` : ''}>
@@ -12869,7 +12910,7 @@ function smGrowth(R, full) {
     <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--dk-t4);vertical-align:middle"></span> 4k</span>
     <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--dk-t0);vertical-align:middle"></span> &lt;4k</span>
     <span><span style="display:inline-block;width:12px;height:2px;background:var(--dk-brand);vertical-align:middle"></span> company bonus</span></div>
-    <div style="font-size:9px;color:var(--dk-dim);margin-block-start:5px">bars = live tier mix (daily data) · line = company bonus (invoiced final for closed months)</div>`;
+    <div style="font-size:9px;color:var(--dk-dim);margin-block-start:5px">tier mix + company bonus both from Finance (Bolt invoice for closed months)</div>`;
   return `<div class="dk-card${heroCls}">
     <div class="dk-card-t"><span class="t">Growth over time</span><span class="go">tier mix + bonus · click a month</span></div>
     <div dir="ltr" style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;overflow:visible" preserveAspectRatio="xMidYMid meet">${bars}${line}${dots}${labels}</svg></div>
