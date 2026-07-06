@@ -117,6 +117,16 @@ detail panel (pick a month → the driver window shows THAT period). Verify all 
 
 ### #10 · Remove the embedded M8 orb + FX (see Design Language). Recommend REMOVE.
 
+### ★ D-3 REVISED (2026-07-06, Muhammad's call): KEEP BOTH — differentiate, don't remove STAR MAP.
+The two serve DIFFERENT jobs; the old STAR MAP just failed at its job (it was a re-skinned driver list).
+- **TODAY = daily tactical cockpit** — "what do I do NOW": today's alerts, day-over-day, the SAR-priced
+  do-next queue, who slipped/idle today. (Fable already rebuilt it in the DECK language.)
+- **STAR MAP = the REAL high-level COMMAND CENTER** — "how is the whole operation doing": fleet-wide
+  TIER DISTRIBUTION (all drivers across 6k/5k/4k/below), FUNNEL/pipeline health, AMBASSADOR leaderboard,
+  BONUS PROJECTION + trend vs last month, growth over time. Timeframe-selectable (month/all-time).
+  ★ NO driver list — pure strategic instruments; click to drill. This is the high-level view he asked
+  for in Issue #1; rebuild it to actually BE high-level, distinct from Today (zero overlap).
+
 ### #11 · TODAY (strongest tab) → make it the daily ACTION cockpit
 Best-designed tab (alerts, 5 domain cards each OPEN→, tier moves, "easy tier wins worth +7,875"). ★ It's
 already the command view done right → resolves #1 (consolidate STAR MAP into this or differentiate). Turn
