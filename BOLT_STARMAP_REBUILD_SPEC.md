@@ -235,3 +235,8 @@ inventory (§6) · the reuse contract (§7) · rung position after S4 (§8) · t
 | SM-1 | **Cerebro lock** ("7ofy" neural-scan gate, re-locks on every tab switch) | **Delete (Recommended).** It's the exact theatre the DECK kills, it gates nothing Finance/Today don't already show, and the re-lock makes the command centre the hardest tab to glance at. Fallback if you want a gate for over-the-shoulder moments: a plain DECK-styled PIN overlay, session-sticky (unlocks once per load), no theatre. |
 | SM-2 | **Growth chart form** (I5) | **(a) stacked tier-band bars + bonus line (Recommended)** — growth and ladder-mix in one picture; builder may fall back to (b) plain net bars + bonus line eyes-on if (a) is noisy with real data. Say now if you want (b) outright. |
 | SM-3 | **Build timing** | **After S4 (Recommended).** If you want it sooner, it can follow S3 with I1/I4 reading the engine directly and a TODO to re-point at `tierStatusFor` — works, but creates the two-sources window this finalize exists to close. |
+
+### ✅ MUHAMMAD'S DECISIONS — LOCKED (2026-07-06) — BUILD TO THESE, not the recommendations above
+- **SM-1 = KEEP the "7ofy" Cerebro lock.** Muhammad OVERRODE the "delete" recommendation — the lock STAYS. (Restyle it to fit DECK if it's easy, but do NOT remove the passcode gate. Keep the `_starmapUnlocked` gate behavior.)
+- **SM-2 = (a) stacked tier-band bars + bonus line** (as recommended; builder's eyes-on fallback to (b) allowed only if (a) is genuinely noisy on real data).
+- **SM-3 = build AFTER S4** (as recommended — reads `tierStatusFor`, no two-sources window).
