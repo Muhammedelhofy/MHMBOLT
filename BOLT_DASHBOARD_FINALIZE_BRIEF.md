@@ -138,8 +138,15 @@ CLICKABLE → the affected drivers → act/fix (feeds the detail panel + ambassa
 2. **GOOGLE SHEET finalize** — Opus·high, SEPARATE session, coordinated via the shared data contract
    (sheet columns the dashboard reads). Audit the Apps Script; map + smooth the Form → CALL LIST →
    DRIVERS → sync funnel; clean the stale sheet refs; handoff-proof it. Nationality auto-sync already shipped.
-   - ✅ **Live master sheet = `17-GCTaqEiCvCrcCrDvBm9DcCtljPcAJ3RpJTBkAJs0s`** (matches sync-sheet.js +
-     Form MASTER_ID). The `1leCVYn…` / `1toHLYi…` refs in ops-master.gs/ops-template.gs are STALE → clean them.
+   - ✅ **Live master sheet = `17-GCTaqEiCvCrcCrDvBm9DcCtljPcAJ3RpJTBkAJs0s`** (Bolt_Activation_Master —
+     matches sync-sheet.js + Form MASTER_ID).
+   - ⚠️ **CORRECTION (2026-07-06, verified against live Drive by the sheet-finalize session): DO NOT
+     REPOINT/clean `1leCVYn…` or `1toHLYi…`.** They are NOT stale copies — they are **live, separate Bolt-
+     owned exchange sheets**: `1toHLYi…` = "Bolt support VIP" (Bolt BLOCK team; `syncBlockSheet`, 10-min),
+     `1leCVYn…` = "شيت الاستعلام" (Bolt CS team; `syncCSSheet`, 10-min). The automation reads/writes them to
+     run the block + transfer funnel. Repointing them to the master would DESTROY the Block/CS funnel. My
+     earlier "stale → clean" note was WRONG. See `BOLT_SHEET_FINALIZE_REPORT.md` + the ⚠ DO-NOT-REPOINT
+     banner now in the code. The sheet finalize is DONE (comments/docs only, zero column/function changes).
 
 **Sequence:** Fable dashboard-design ∥ Opus sheet-finalize (parallel now — use the Fable window); then
 Opus dashboard-execution on a verified-clean sheet.
