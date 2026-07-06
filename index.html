@@ -659,119 +659,6 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 /* ── Rank badges: only 1/2/3 visible, rest invisible ── */
 .rank-badge.rank-n { display:none; }
 
-/* ── Star Map nav bar ── */
-.sm-nav-bar  { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
-.sm-back-btn { font-family:var(--mono); font-size:11px; padding:6px 12px; border:1px solid rgba(0,212,255,.2); border-radius:2px; background:transparent; color:var(--text-muted); cursor:pointer; letter-spacing:.06em; transition:all .15s; }
-.sm-back-btn:hover { border-color:rgba(0,212,255,.5); color:var(--cyan); }
-
-/* ── Star Map view toggle ── */
-.sm-view-toggle { display:flex; gap:3px; margin-bottom:14px; background:rgba(0,212,255,.04); border:1px solid rgba(0,212,255,.12); border-radius:3px; padding:3px; width:fit-content; }
-.sm-vt-btn { font-family:var(--mono); font-size:11px; font-weight:600; padding:6px 18px; border-radius:2px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; letter-spacing:.08em; transition:all .15s; }
-.sm-vt-btn.active { background:rgba(0,255,179,.12); color:var(--bolt-green); box-shadow:0 0 10px rgba(0,255,179,.15); }
-.sm-vt-btn:hover:not(.active) { color:var(--cyan); }
-
-/* ── Fleet Ops Command Deck ── */
-.sm-ops-header { margin-bottom:16px; }
-.sm-ops-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
-.sm-ops-card {
-  position:relative; border-radius:4px; padding:22px 20px 18px;
-  background:radial-gradient(ellipse at 20% 20%, rgba(255,255,255,.03), #020C18);
-  border:1px solid; cursor:pointer; overflow:hidden;
-  transition:transform .2s, box-shadow .2s;
-}
-.sm-ops-card:hover { transform:translateY(-3px); }
-.sm-ops-card::before { content:''; position:absolute; inset:0; pointer-events:none;
-  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(255,255,255,.008) 3px,rgba(255,255,255,.008) 4px); }
-/* corner brackets */
-.sm-ops-card::after { content:''; position:absolute; top:6px; right:6px; width:12px; height:12px; border-top:1px solid; border-right:1px solid; opacity:.4; border-color:inherit; }
-.sm-ops-card-tl { position:absolute; top:6px; left:6px; width:12px; height:12px; border-top:1px solid; border-left:1px solid; opacity:.4; }
-.sm-ops-letter { font-family:var(--mono); font-size:52px; font-weight:900; line-height:1; margin-bottom:6px; }
-.sm-ops-title  { font-size:13px; font-weight:700; color:var(--text); margin-bottom:2px; }
-.sm-ops-sub    { font-size:11px; color:var(--text-muted); margin-bottom:14px; line-height:1.4; }
-.sm-ops-stats  { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:14px; }
-.sm-ops-stat   { background:rgba(0,0,0,.3); border-radius:2px; padding:6px 4px; text-align:center; }
-.sm-ops-stat-n { font-family:var(--mono); font-size:14px; font-weight:700; }
-.sm-ops-stat-l { font-size:8px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; margin-top:1px; }
-.sm-ops-flow   { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
-.sm-ops-flow-chip { font-size:9px; padding:2px 7px; border-radius:2px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; }
-.sm-ops-enter  { font-family:var(--mono); font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; padding:7px 14px; border-radius:2px; border:1px solid; background:transparent; cursor:pointer; transition:all .15s; width:100%; }
-
-/* ── Solar System planet pulse ── */
-@keyframes sun-pulse { 0%,100%{box-shadow:0 0 30px rgba(255,240,180,.5),0 0 60px rgba(255,200,80,.2)} 50%{box-shadow:0 0 50px rgba(255,240,180,.8),0 0 100px rgba(255,200,80,.4)} }
-/* ── Star Map controls ── */
-.sm-topbar      { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:8px; }
-.sm-title       { font-family:var(--mono); font-size:11px; color:var(--text-muted); letter-spacing:.1em; text-transform:uppercase; }
-.sm-title span  { color:var(--cyan); }
-.sm-controls    { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
-.sm-period-sel  { font-size:11px; padding:4px 8px; }
-.sm-play-btn    { font-family:var(--mono); font-size:11px; padding:5px 12px; border:1px solid rgba(0,255,179,.3); border-radius:2px; background:transparent; color:var(--bolt-green); cursor:pointer; letter-spacing:.06em; transition:all .15s; white-space:nowrap; }
-.sm-play-btn:hover  { background:rgba(0,255,179,.08); box-shadow:var(--glow-green); }
-.sm-play-btn.active { background:rgba(0,255,179,.15); border-color:var(--bolt-green); box-shadow:var(--glow-green); }
-.sm-speed-sel   { font-size:11px; padding:4px 6px; }
-.sm-frame-label { font-family:var(--mono); font-size:10px; color:var(--text-muted); white-space:nowrap; }
-.sm-cat-bar     { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px; min-height:24px; }
-.sm-cat-chip    { font-size:11px; padding:3px 10px; border-radius:2px; border:1px solid rgba(0,212,255,.18); background:transparent; color:var(--text-muted); cursor:pointer; transition:all .12s; user-select:none; }
-.sm-cat-chip:hover   { border-color:rgba(0,212,255,.4); color:var(--text); }
-.sm-cat-chip.active  { font-weight:600; }
-.sm-arm-legend  { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:8px; }
-.sm-arm-dot     { display:flex; align-items:center; gap:5px; font-size:10px; color:var(--text-muted); cursor:pointer; transition:color .12s; }
-.sm-arm-dot:hover { color:var(--text); }
-.sm-arm-dot b   { width:8px; height:8px; border-radius:50%; display:inline-block; flex-shrink:0; }
-.sm-bottom-legend { margin-top:10px; display:flex; gap:16px; flex-wrap:wrap; }
-.sm-bottom-legend span { font-size:10px; color:var(--text-muted); }
-
-/* ── Star Map driver popup circle ── */
-.sm-popup {
-  background:radial-gradient(circle at 35% 35%, #071a30, #010a14);
-  border-radius:50%;
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  text-align:center; padding:0; gap:0;
-  box-shadow:0 0 0 2px rgba(0,212,255,.35), 0 0 50px rgba(0,212,255,.2), 0 0 100px rgba(0,0,0,.95);
-  animation:sm-popup-in .4s cubic-bezier(.17,.67,.35,1.25) forwards;
-  overflow:hidden; flex-shrink:0;
-}
-@keyframes sm-popup-in { from{opacity:0;transform:scale(.3) rotate(-8deg)} to{opacity:1;transform:scale(1) rotate(0)} }
-.sm-popup * { text-align:center; }
-.sm-popup-name { font-family:var(--mono); font-size:11px; color:var(--bolt-green); text-shadow:var(--glow-green); letter-spacing:.04em; line-height:1.4; max-width:90%; word-break:break-word; }
-.sm-popup-stat { font-size:9px; color:var(--text-muted); margin-top:1px; }
-.sm-popup-val  { font-family:var(--mono); font-size:22px; font-weight:700; color:var(--cyan); text-shadow:0 0 14px rgba(0,212,255,.7); line-height:1.1; }
-.sm-popup-close { position:absolute; top:10px; right:14px; cursor:pointer; color:var(--text-muted); font-size:15px; line-height:1; }
-.sm-popup-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px 10px; margin-top:8px; width:78%; }
-.sm-popup-cell { display:flex; flex-direction:column; align-items:center; gap:1px; }
-.sm-popup-cell-val  { font-family:var(--mono); font-size:13px; color:var(--cyan); }
-.sm-popup-cell-lbl  { font-size:8px; color:var(--text-muted); letter-spacing:.06em; text-transform:uppercase; }
-
-/* ── Cinematic Model Info Panel ── */
-.sm-model-overlay { position:fixed; inset:0; z-index:600; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.85); backdrop-filter:blur(4px); }
-.sm-model-overlay.open { display:flex; }
-.sm-model-panel {
-  position:relative; width:min(680px,94vw); background:#020C18;
-  border:1px solid rgba(0,212,255,.2); border-radius:6px;
-  padding:40px 44px; overflow:hidden;
-  animation:sm-model-in .5s cubic-bezier(.17,.67,.35,1.1) forwards;
-  box-shadow:0 0 80px rgba(0,0,0,.9), 0 0 40px rgba(0,212,255,.08);
-}
-@keyframes sm-model-in { from{opacity:0;transform:translateY(30px) scale(.96)} to{opacity:1;transform:none} }
-.sm-model-panel::before { content:''; position:absolute; inset:0; pointer-events:none;
-  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,212,255,.012) 3px,rgba(0,212,255,.012) 4px); }
-.sm-model-letter { font-family:var(--mono); font-size:96px; font-weight:900; line-height:1; margin-bottom:8px; }
-.sm-model-title  { font-size:18px; font-weight:700; color:var(--text); margin-bottom:4px; }
-.sm-model-sub    { font-size:13px; color:var(--text-muted); margin-bottom:18px; line-height:1.5; }
-.sm-model-divider{ height:1px; background:linear-gradient(90deg,transparent,rgba(0,212,255,.3),transparent); margin:18px 0; }
-.sm-model-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:20px; }
-.sm-model-field  { background:rgba(0,212,255,.04); border:1px solid rgba(0,212,255,.1); border-radius:3px; padding:12px 14px; }
-.sm-model-field-label { font-size:9px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.1em; margin-bottom:4px; }
-.sm-model-field-val   { font-family:var(--mono); font-size:14px; font-weight:600; }
-.sm-model-stats  { display:flex; gap:24px; flex-wrap:wrap; }
-.sm-model-stat   { text-align:center; }
-.sm-model-stat-n { font-family:var(--mono); font-size:22px; color:var(--cyan); text-shadow:0 0 10px rgba(0,212,255,.5); }
-.sm-model-stat-l { font-size:9px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.08em; }
-.sm-model-close  { position:absolute; top:14px; right:18px; cursor:pointer; font-size:20px; color:var(--text-muted); transition:color .15s; }
-.sm-model-close:hover { color:var(--text); }
-/* Zoom controls */
-.sm-zoom-bar { position:absolute; bottom:10px; right:12px; display:flex; gap:6px; z-index:2; }
-.sm-zoom-btn { width:28px; height:28px; border-radius:2px; border:1px solid rgba(0,212,255,.2); background:rgba(0,0,0,.6); color:var(--text-muted); font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; backdrop-filter:blur(4px); }
-.sm-zoom-btn:hover { border-color:rgba(0,212,255,.5); color:var(--cyan); }
 
 
 /* ── Signal bars (header) ── */
@@ -923,143 +810,46 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 @keyframes cbr-appear { from{opacity:0;letter-spacing:.55em} to{opacity:1;letter-spacing:.26em} }
 @keyframes cbr-shake  { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)} 40%{transform:translateX(10px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
 
-/* ── Fleet Command Bridge — Sci-Fi Terminal ─────────────── */
-.cmd-bridge {
-  padding:20px 24px 32px;
-  background-image: repeating-linear-gradient(
-    0deg, rgba(0,0,0,.04) 0px, rgba(0,0,0,.04) 1px, transparent 1px, transparent 3px
-  );
-}
-/* ── Telemetry banner (one unified bar, no boxes) ── */
-.cmd-telem {
-  position:relative; overflow:hidden;
-  display:flex; align-items:stretch;
-  border:1px solid rgba(0,212,255,.18);
-  border-radius:2px; margin-bottom:28px;
-  background:rgba(0,212,255,.03);
-}
-.cmd-telem::before {
-  content:''; position:absolute; inset:0;
-  background:linear-gradient(90deg,transparent 0%,rgba(0,212,255,.04) 50%,transparent 100%);
-  animation:cmd-sweep 5s ease-in-out infinite;
-}
-@keyframes cmd-sweep { 0%{transform:translateX(-100%)} 100%{transform:translateX(200%)} }
-.cmd-telem-cell {
-  flex:1; padding:14px 20px; text-align:center;
-  border-right:1px solid rgba(0,212,255,.1);
-  position:relative; z-index:1;
-}
-.cmd-telem-cell:last-child { border-right:none; }
-.cmd-tl { font-family:var(--mono); font-size:8px; letter-spacing:.22em; color:rgba(0,212,255,.45); text-transform:uppercase; margin-bottom:5px; }
-.cmd-tv { font-family:var(--mono); font-size:20px; font-weight:700; line-height:1; }
-.cmd-ts { font-size:10px; color:var(--text-muted); margin-top:4px; letter-spacing:.04em; }
+/* ── Star Map — command-centre instruments (DECK, token-only so light theme works) ── */
+/* Two-column deck rows (collapse to one column on narrow screens). */
+.sm2-grid { display:grid; gap:14px; margin-block-start:12px; }
+.sm2-grid.r1 { grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); }
+.sm2-grid.r3 { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+@media(max-width:860px){ .sm2-grid.r1, .sm2-grid.r3 { grid-template-columns:1fr; } }
 
-/* ── Section divider ── */
-.cmd-divider {
-  font-family:var(--mono); font-size:8px; letter-spacing:.25em;
-  color:rgba(0,212,255,.35); text-transform:uppercase;
-  display:flex; align-items:center; gap:12px; margin-bottom:10px;
-}
-.cmd-divider::after {
-  content:''; flex:1; height:1px;
-  background:linear-gradient(90deg,rgba(0,212,255,.2),transparent);
-}
+/* Timeframe selector — reuses the A2 chip look, single-select. */
+.sm2-tf { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-block-start:10px; }
+.sm2-tf .lb { font-size:11px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--dk-mut); margin-inline-end:2px; }
 
-/* ── Signal matrix rows ── */
-.cmd-matrix { display:flex; flex-direction:column; gap:2px; margin-bottom:28px; }
-.cmd-row {
-  display:grid;
-  grid-template-columns: 26px 200px 1fr 100px 55px;
-  align-items:center; gap:14px;
-  padding:9px 12px;
-  border:1px solid rgba(0,212,255,.07);
-  border-left:3px solid;
-  background:rgba(0,0,0,.25);
-  cursor:default;
-  transition:background .15s, border-color .15s;
-  position:relative; overflow:hidden;
-}
-.cmd-row::before {
-  content:''; position:absolute; inset:0;
-  background:linear-gradient(90deg,transparent,rgba(0,212,255,.025),transparent);
-  transform:translateX(-100%); transition:transform .4s ease;
-}
-.cmd-row:hover { background:rgba(0,212,255,.05); border-color:rgba(0,212,255,.22); }
-.cmd-row:hover::before { transform:translateX(100%); }
-.cmd-row.t3 { border-left-color:var(--bolt-green); }
-.cmd-row.t2 { border-left-color:var(--cyan); }
-.cmd-row.t1 { border-left-color:var(--amber); }
-.cmd-row.t0 { border-left-color:var(--red); }
-.cmd-row.tb { border-left-color:rgba(255,68,102,.3); opacity:.6; }
+/* I4 hero — the one corner-tick accent on the page (two hairline brackets). */
+.sm2-hero { position:relative; }
+.sm2-hero::before, .sm2-hero::after { content:''; position:absolute; width:9px; height:9px; opacity:.75; pointer-events:none; }
+.sm2-hero::before { top:7px; left:7px; border-top:1px solid var(--dk-brand); border-left:1px solid var(--dk-brand); }
+.sm2-hero::after  { bottom:7px; right:7px; border-bottom:1px solid var(--dk-brand); border-right:1px solid var(--dk-brand); }
+.sm2-xl { font-family:var(--dk-mono); font-size:30px; font-weight:700; line-height:1; color:var(--dk-hi); font-variant-numeric:tabular-nums; }
 
-.cmd-rank { font-family:var(--mono); font-size:10px; color:rgba(0,212,255,.28); text-align:right; }
-.cmd-name-block { min-width:0; }
-.cmd-name { font-family:var(--mono); font-weight:700; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.cmd-acct { font-size:10px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* Segmented / flow bars (I1 ladder, I2 funnel) — inline widths, this is chrome. */
+.sm2-seg { display:flex; height:34px; border-radius:8px; overflow:hidden; border:1px solid var(--dk-line); background:var(--dk-s2); }
+.sm2-seg > div { display:flex; align-items:center; justify-content:center; color:#0C1116; font-family:var(--dk-mono); font-size:12px; font-weight:700; min-width:0; cursor:pointer; transition:opacity var(--dk-tf); border-inline-end:1px solid var(--dk-bg); }
+.sm2-seg > div:last-child { border-inline-end:none; }
+.sm2-seg > div:hover { opacity:.82; }
+.sm2-foot { font-family:var(--dk-mono); font-size:11px; color:var(--dk-dim); margin-block-start:7px; font-variant-numeric:tabular-nums; }
+.sm2-leak { display:flex; gap:8px; flex-wrap:wrap; margin-block-start:9px; }
+.sm2-leakchip { font-size:11px; padding:3px 9px; border-radius:999px; border:1px solid var(--dk-line2); background:var(--dk-s2); cursor:pointer; display:inline-flex; gap:6px; align-items:center; }
+.sm2-leakchip b { font-family:var(--dk-mono); font-variant-numeric:tabular-nums; }
 
-.cmd-bar-col { position:relative; }
-.cmd-bar-track { height:5px; background:rgba(255,255,255,.06); border-radius:1px; overflow:hidden; margin-bottom:3px; }
-.cmd-bar-fill {
-  height:100%; border-radius:1px;
-  animation:cmd-bar-in .9s cubic-bezier(.22,1,.36,1) forwards;
-  width:0;
-}
-@keyframes cmd-bar-in { to { width:var(--w); } }
-.cmd-bar-fill.t3 { background:linear-gradient(90deg,rgba(0,255,179,.5),var(--bolt-green)); box-shadow:0 0 6px rgba(0,255,179,.5); }
-.cmd-bar-fill.t2 { background:linear-gradient(90deg,rgba(0,212,255,.5),var(--cyan)); }
-.cmd-bar-fill.t1 { background:linear-gradient(90deg,rgba(245,158,11,.4),var(--amber)); }
-.cmd-bar-fill.t0 { background:linear-gradient(90deg,rgba(255,68,102,.3),var(--red)); }
-.cmd-bar-fill.tb { background:rgba(255,68,102,.3); }
-.cmd-bar-label { font-family:var(--mono); font-size:9px; color:rgba(0,212,255,.3); letter-spacing:.05em; }
+/* Leaderboard rows (I3). */
+.sm2-rank { font-family:var(--dk-mono); font-size:11px; color:var(--dk-dim); min-width:20px; text-align:end; }
 
-.cmd-sar { font-family:var(--mono); font-weight:700; font-size:13px; text-align:right; white-space:nowrap; }
-.cmd-badges { display:flex; gap:3px; justify-content:flex-end; flex-wrap:wrap; }
-
-/* ── Transmission alerts ── */
-.cmd-transmissions { display:flex; flex-direction:column; gap:4px; }
-.cmd-tx {
-  font-family:var(--mono); font-size:11px; letter-spacing:.04em;
-  padding:9px 14px; border-radius:2px; border:1px solid;
-  display:grid; grid-template-columns:auto 1fr; gap:10px; align-items:start;
-}
-.cmd-tx.critical { border-color:rgba(255,68,102,.35); background:rgba(255,68,102,.04); color:var(--text); }
-.cmd-tx.warning  { border-color:rgba(245,158,11,.3);  background:rgba(245,158,11,.03); }
-.cmd-tx.info     { border-color:rgba(0,212,255,.18);  background:rgba(0,212,255,.025); color:rgba(0,212,255,.75); }
-.cmd-tx-tag  { font-size:9px; letter-spacing:.15em; padding:1px 6px; border-radius:1px; white-space:nowrap; margin-top:1px; }
-.cmd-tx.critical .cmd-tx-tag { background:rgba(255,68,102,.2); color:var(--red); }
-.cmd-tx.warning  .cmd-tx-tag { background:rgba(245,158,11,.15); color:var(--amber); }
-.cmd-tx.info     .cmd-tx-tag { background:rgba(0,212,255,.1);   color:var(--cyan); }
-.cmd-tx-body { line-height:1.5; }
-.cmd-tx-sub  { font-size:10px; opacity:.55; margin-top:1px; }
-
-.cmd-row { cursor:pointer; }
-.cmd-row.selected { background:rgba(0,212,255,.07) !important; border-color:rgba(0,212,255,.4) !important; }
-
-/* Captain briefing panel */
-.cmd-briefing {
-  position:relative; overflow:hidden;
-  border:1px solid rgba(0,212,255,.22);
-  background:rgba(0,8,20,.55);
-  padding:16px 20px;
-  margin-bottom:20px;
-}
-.cmd-briefing::before {
-  content:''; position:absolute; top:0; left:0; right:0; height:1px;
-  background:linear-gradient(90deg,transparent,rgba(0,212,255,.6),var(--bolt-green),rgba(0,212,255,.6),transparent);
-  box-shadow:0 0 8px rgba(0,212,255,.35);
-}
-.cmd-brief-name { font-family:var(--mono); font-size:16px; font-weight:700; letter-spacing:.06em; }
-.cmd-brief-stats { display:grid; grid-template-columns:repeat(6,1fr); border-top:1px solid rgba(0,212,255,.1); margin-top:14px; }
-.cmd-brief-stat  { padding:10px 0; text-align:center; border-right:1px solid rgba(0,212,255,.08); }
-.cmd-brief-stat:last-child { border-right:none; }
-.cmd-brief-sv { font-family:var(--mono); font-size:18px; font-weight:700; }
-.cmd-brief-sl { font-family:var(--mono); font-size:8px; letter-spacing:.15em; color:rgba(0,212,255,.38); text-transform:uppercase; margin-top:3px; }
-
-@media(max-width:860px){
-  .cmd-row { grid-template-columns:26px 1fr 1fr 80px; }
-  .cmd-row > .cmd-badges { display:none; }
-  .cmd-brief-stats { grid-template-columns:repeat(3,1fr); }
-}
+/* Drill overlay — opens OVER the deck (the one soft shadow allowed on overlays). */
+#smOverlayHost { position:fixed; inset:0; z-index:400; display:none; }
+#smOverlayHost.open { display:block; }
+.sm2-ov-back { position:absolute; inset:0; background:rgba(6,10,14,.55); }
+.sm2-ov-card { position:absolute; inset-inline-end:0; inset-block:0; width:min(440px,92vw); background:var(--dk-s1); border-inline-start:1px solid var(--dk-line2); box-shadow:0 12px 32px rgba(0,0,0,.5); padding:16px 18px; overflow:auto; }
+.sm2-ov-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-block-end:10px; }
+.sm2-ov-head .t { font-size:15px; font-weight:600; color:var(--dk-hi); }
+.sm2-ov-close { cursor:pointer; color:var(--dk-mut); font-size:18px; line-height:1; background:none; border:none; }
+.sm2-ov-close:hover { color:var(--dk-hi); }
 
 /* ── Mobile layout (≤ 600px) ── */
 @media(max-width:600px){
@@ -1476,88 +1266,15 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
   </div>
 </div>
 
-<!-- Star Map Panel -->
+<!-- Star Map Panel — the strategic command centre (D-3 rebuild). Aggregates only:
+     NO driver list, NO action buttons on the surface (boundary rules, spec §1). The
+     "7ofy" Cerebro lock still gates entry (SM-1, kept). Every number reuses an existing
+     engine — the deck recomputes nothing. -->
 <div id="starmap" class="panel">
-  <!-- Navigation bar (shown in galaxy/ops views) -->
-  <div class="sm-nav-bar" id="smNavBar" style="display:flex">
-    <div class="sm-view-toggle">
-      <button id="smBtnCommand" class="sm-vt-btn active" onclick="smSwitchView('home')">🖥 COMMAND</button>
-      <button id="smBtnGalaxy"  class="sm-vt-btn"       onclick="smSwitchView('galaxy')">⭐ GALAXY</button>
-      <button id="smBtnOps"     class="sm-vt-btn"       onclick="smSwitchView('ops')">🛸 SOLAR</button>
-    </div>
+  <div id="starmapContent">
+    <div class="empty-state"><div class="empty-icon">🛰</div><div class="empty-title">Loading command centre…</div><div class="empty-sub">Fleet-wide instruments load once data is ready.</div></div>
   </div>
-
-  <!-- ── HOME VIEW — Fleet Command Bridge ── -->
-  <div id="smHomeView">
-    <div id="smCommandView"></div>
-  </div>
-
-  <!-- ── GALAXY VIEW ── -->
-  <div id="smGalaxyView">
-    <div class="sm-topbar">
-      <div class="sm-title">FLEET STAR MAP &nbsp;—&nbsp; <span id="smPeriodLabel">No data</span></div>
-      <div class="sm-controls">
-        <select id="smMonthSel" class="kpi-select sm-period-sel" onchange="smOnMonthChange()" style="min-width:110px"></select>
-        <select id="smPeriodSelect" class="kpi-select sm-period-sel" onchange="smOnPeriodChange()" style="min-width:120px"></select>
-        <button id="smPlayBtn" class="sm-play-btn" onclick="smToggleTimeLapse()">▶&nbsp;PLAY</button>
-        <select id="smSpeedSel" class="kpi-select sm-speed-sel" onchange="smSetSpeed(this.value)">
-          <option value="2200">Slow</option>
-          <option value="1200" selected>Normal</option>
-          <option value="500">Fast</option>
-        </select>
-        <span id="smFrameLabel" class="sm-frame-label"></span>
-      </div>
-    </div>
-    <div class="sm-cat-bar"    id="smCatBar"></div>
-    <div class="sm-arm-legend" id="smArmLegend"></div>
-  </div>
-
-  <!-- ── FLEET OPS VIEW ── -->
-  <div id="smOpsView" style="display:none">
-    <div class="sm-ops-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <div>
-        <div class="sm-title">FLEET OPS — SOLAR COMMAND</div>
-        <div style="font-size:10px;color:var(--text-muted);margin-top:3px">Click any planet to enter full model briefing</div>
-      </div>
-      <div style="font-size:10px;color:var(--text-muted);font-family:var(--mono);letter-spacing:.06em" id="smOpsLegend"></div>
-    </div>
-    <div style="position:relative;border:1px solid rgba(0,212,255,.1);border-radius:4px;overflow:hidden;background:#010810">
-      <canvas id="smOpsCanvas" style="display:block;width:100%"></canvas>
-      <div id="smOpsTip" style="position:absolute;display:none;pointer-events:none;background:#030D18;border:1px solid rgba(0,212,255,.3);border-radius:3px;padding:8px 12px;font-size:12px;color:var(--text);font-family:var(--mono);white-space:nowrap;box-shadow:0 0 20px rgba(0,212,255,.2)"></div>
-    </div>
-  </div>
-  <!-- Canvas (galaxy only) -->
-  <div id="smCanvasWrap" style="position:relative;border:1px solid rgba(0,212,255,.1);border-radius:4px;overflow:hidden;background:#010810">
-    <canvas id="starMapCanvas" style="display:block;width:100%;cursor:crosshair"></canvas>
-    <div id="smTooltip" style="position:absolute;display:none;pointer-events:none;background:#030D18;border:1px solid rgba(0,212,255,.3);border-radius:3px;padding:8px 12px;font-size:12px;color:var(--text);font-family:var(--mono);white-space:nowrap;box-shadow:0 0 20px rgba(0,212,255,.2)"></div>
-    <div class="sm-zoom-bar">
-      <button class="sm-zoom-btn" onclick="smZoom(1.4)" title="Zoom in">+</button>
-      <button class="sm-zoom-btn" onclick="smZoom(1/1.4)" title="Zoom out">−</button>
-      <button class="sm-zoom-btn" onclick="smZoomReset()" title="Reset view">⊙</button>
-    </div>
-    <div id="smPlayHint" style="position:absolute;top:10px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:10px;color:rgba(0,255,179,.5);letter-spacing:.1em;pointer-events:none;display:none"></div>
-  </div>
-  <!-- Driver popup -->
-  <div id="smDriverPopup" style="display:none;position:fixed;inset:0;z-index:350;pointer-events:none">
-    <div id="smPopupOverlay" style="position:absolute;inset:0;background:rgba(0,0,0,.5);pointer-events:all" onclick="closeSmPopup()"></div>
-    <div id="smPopupCard" style="position:absolute;pointer-events:all"></div>
-  </div>
-  <!-- Bottom legend -->
-  <div class="sm-bottom-legend">
-    <span><b style="color:var(--text)">Zone</b> = Model (A/B/C/D/E arm)</span>
-    <span><b style="color:var(--text)">Colour</b> = Tier &nbsp;<span style="color:#FFD700">●</span> Gold &nbsp;<span style="color:#C8C8D8">●</span> Silver &nbsp;<span style="color:#C88230">●</span> Bronze &nbsp;<span style="color:#00FFB3">●</span> Active</span>
-    <span><b style="color:var(--text)">Glow</b> = Daily performance vs 200 SAR/day target (6000/month)</span>
-    <span><b style="color:var(--text)">Size</b> = Avg daily net SAR &nbsp;·&nbsp; Click star → driver card</span>
-    <span style="color:rgba(0,255,179,.5)">▶ PLAY = animate through every uploaded day</span>
-  </div>
-</div>
-
-<!-- Cinematic Model Info Panel -->
-<div class="sm-model-overlay" id="smModelOverlay" onclick="smCloseModelPanel(event)">
-  <div class="sm-model-panel" id="smModelPanel">
-    <span class="sm-model-close" onclick="smCloseModelPanel()">✕</span>
-    <div id="smModelContent"></div>
-  </div>
+  <div id="smOverlayHost"></div>
 </div>
 
 <!-- Finance Panel — v2 (Locked Design 2026-05-20) -->
@@ -2215,7 +1932,7 @@ function showTab(id, el) {
     return;
   }
   // Re-lock whenever leaving Star Map
-  if (id !== 'starmap') { _starmapUnlocked = false; smSelectedCaptain = null; }
+  if (id !== 'starmap') { _starmapUnlocked = false; }
   _doShowTab(id, el);
 }
 function _doShowTab(id, el) {
@@ -2229,7 +1946,7 @@ function _doShowTab(id, el) {
   if (id === 'ambassadors') renderAmbassadors();
   if (id === 'incentives') renderIncentivesTab();
   if (id === 'blocks')    renderBlocks();
-  if (id === 'starmap')  smSwitchView('home');
+  if (id === 'starmap')  renderStarMapDeck();
   if (id === 'settings') { loadSysStatus(); renderDataHealth(); }
 }
 
@@ -3589,1078 +3306,6 @@ document.addEventListener('click', e => {
   }
 });
 
-// ════════════════════════════════════════════
-// STAR MAP
-// ════════════════════════════════════════════
-// ════════════════════════════════════════════
-// STAR MAP v2 — Galaxy Arms · Target Rings · Category Auras · Shooting Star · Time-lapse
-// ════════════════════════════════════════════
-let smStars=[], smCanvas=null, smCtx=null, smRAF=null;
-let smCategoryFilter=null, smHighlightModel=null;
-let smTimeLapseActive=false, smTimeLapseIndex=0, smTimeLapseInterval=null, smTimeLapseSpeed=1200;
-let smShooter=null; // {x0,y0,x1,y1,progress,targetIdx}
-let smWarpFrom=[];  // previous star positions for warp animation
-let smWarpT=1;      // 0→1 warp progress (1=done)
-
-const SM_ARMS={
-  'S':{deg:120, rgb:[200,140,60],  label:'S — Salaried'},
-  'F':{deg:0,   rgb:[60,160,120],  label:'F — Foreigner & Saudi'},
-  'R':{deg:240, rgb:[180,70,50],   label:'R — Rent Model'},
-};
-// Legacy aliases so old stored B/C/D profiles still appear in the radar
-SM_ARMS['C']=SM_ARMS['S']; SM_ARMS['B']=SM_ARMS['F']; SM_ARMS['D']=SM_ARMS['R'];
-const SM_CATCOLS={
-  'blaze':[190,50,255], 'grocery':[30,190,255],
-  'flash food':[255,100,20], 'food':[255,150,30],
-  'express':[255,220,0]
-};
-
-function smGetModel(name){
-  try{
-    const p=JSON.parse(localStorage.getItem('khair_driver_profiles')||'{}');
-    return p[(name||'').trim().toLowerCase()]?.model||'S';
-  }catch{return 'C';}
-}
-function smCatRgb(catStr){
-  if(!catStr) return null;
-  const l=catStr.toLowerCase();
-  for(const [k,v] of Object.entries(SM_CATCOLS)) if(l.includes(k)) return v;
-  return null;
-}
-function smBuildDrivers(chosen, history, monthFilter){
-  // Apply month filter first when aggregating
-  const pool = (monthFilter && monthFilter !== 'all')
-    ? history.filter(h => periodMonthLabel(h.period) === monthFilter)
-    : history;
-  if(chosen==='aggregated'){
-    const allNames=[...new Set(pool.flatMap(h=>h.drivers.map(d=>d.name)))];
-    return allNames.map(name=>{
-      let net=0,orders=0,hours=0,accept=0,cnt=0,tier='Active',isActive=false,cats='';
-      pool.forEach(h=>{ const d=h.drivers.find(x=>x.name===name); if(d){net+=d.netEarnings||0;orders+=d.orders||0;hours+=d.hoursOnline||0;accept+=d.acceptance||0;cnt++;tier=d.tier?.englishName||tier;isActive=isActive||!!d.isActive;cats=cats||d.activeCategories||'';} });
-      return {name,netEarnings:net,orders,hoursOnline:hours,acceptance:cnt?accept/cnt:0,tier:{englishName:tier},isActive,activeCategories:cats};
-    });
-  }
-  return [...(pool.find(h=>h.period===chosen)?.drivers||[])];
-}
-function smBuildStars(drivers, W, H){
-  const cx=W/2, cy=H/2;
-  // Each model gets its own orbit ring centered at canvas center
-  // Rings sized to fill the canvas nicely — index 0=innermost
-  const MODEL_KEYS=['A','B','C','D','E'];
-  const minR=Math.min(cx,cy)*0.12;
-  const maxR=Math.min(cx,cy)*0.88;
-  const ringStep=(maxR-minR)/4;
-  const MODEL_RING_R={};
-  MODEL_KEYS.forEach((m,i)=>{ MODEL_RING_R[m]=minR+i*ringStep; });
-
-  const history=getHistory();
-  const daysWorked={};
-  drivers.forEach(d=>{ daysWorked[d.name]=Math.max(1,history.filter(h=>h.drivers.find(x=>x.name===d.name&&x.isActive)).length); });
-  const avgDailyNet=d=>(d.netEarnings||0)/daysWorked[d.name];
-  const maxAvgDaily=Math.max(1,...drivers.map(avgDailyNet));
-  const DAILY_TARGET=200;
-  const byModel={};
-  drivers.forEach(d=>{ const m=smGetModel(d.name); (byModel[m]=byModel[m]||[]).push(d); });
-
-  const stars=[];
-  Object.entries(byModel).forEach(([m,grp])=>{
-    const arm=SM_ARMS[m]||SM_ARMS['S'];
-    const ringR=MODEL_RING_R[m]||MODEL_RING_R['C'];
-    // All drivers in same model share ONE orbit ring, evenly spaced in angle
-    const orbitMs=70000+MODEL_KEYS.indexOf(m)*20000; // very slow — outermost slowest
-    grp.forEach((d,gi)=>{
-      const orbitAngle=(gi/grp.length)*Math.PI*2 + (MODEL_KEYS.indexOf(m)/5)*Math.PI*0.4;
-      const x=cx+Math.cos(orbitAngle)*ringR;
-      const y=cy+Math.sin(orbitAngle)*ringR*0.55; // flatten for depth perspective
-      const tier=d.tier?.englishName||'Active';
-      // Size: tier is primary (Gold > Silver > Bronze > Active), perf fine-tunes ±30%
-      const tierBase=tier==='Gold'?14:tier==='Silver'?10:tier==='Bronze'?7.5:d.isActive?9:4;
-      const size=tierBase*(0.75+0.25*Math.min(1,avgDailyNet(d)/DAILY_TARGET));
-      const perf=Math.min(2,avgDailyNet(d)/DAILY_TARGET);
-      const accept=(d.acceptance||0)/100;
-      const col=tier==='Gold'?[255,210,0]:tier==='Silver'?[192,210,230]:tier==='Bronze'?[200,130,60]:d.isActive?[0,255,179]:[70,90,110];
-      const catRgb=smCatRgb(d.activeCategories||'');
-      stars.push({d,x,y,tx:x,ty:y,size,accept,col,catRgb,model:m,arm,
-        orbitCx:cx,orbitCy:cy,orbitR:ringR,orbitMs,orbitAngle,
-        twinkle:Math.random()*Math.PI*2,burst:0,rank:gi/Math.max(1,grp.length-1),perf,
-        daysWorked:daysWorked[d.name],avgDaily:avgDailyNet(d)});
-    });
-  });
-  return stars;
-}
-function smPopulatePeriodSel(history){
-  const monthSel = document.getElementById('smMonthSel');
-  const daySel   = document.getElementById('smPeriodSelect');
-  if (!monthSel || !daySel) return;
-
-  // Build unique month list (e.g. "Jun 2026") preserving order newest-first
-  const months = [...new Set(history.map(h => periodMonthLabel(h.period)).filter(Boolean))];
-
-  // Populate month dropdown (only if empty to avoid losing selection)
-  if (!monthSel.options.length) {
-    const allOpt = document.createElement('option'); allOpt.value='all'; allOpt.textContent='All Months'; monthSel.appendChild(allOpt);
-    months.forEach(m => { const o=document.createElement('option'); o.value=m; o.textContent=m; monthSel.appendChild(o); });
-  }
-
-  smPopulateDaySel(history);
-}
-function smPopulateDaySel(history){
-  const monthSel = document.getElementById('smMonthSel');
-  const daySel   = document.getElementById('smPeriodSelect');
-  if (!monthSel || !daySel) return;
-  const activeMonth = monthSel.value || 'all';
-  const prevDay     = daySel.value;
-  daySel.innerHTML  = '';
-  const allOpt = document.createElement('option'); allOpt.value='aggregated'; allOpt.textContent='All Days'; daySel.appendChild(allOpt);
-  const filtered = activeMonth === 'all' ? history : history.filter(h => periodMonthLabel(h.period) === activeMonth);
-  filtered.forEach(h => { const o=document.createElement('option'); o.value=h.period; o.textContent=h.period; daySel.appendChild(o); });
-  // Restore previous selection if still valid
-  if (prevDay && [...daySel.options].some(o=>o.value===prevDay)) daySel.value=prevDay;
-}
-function smOnMonthChange(){
-  const history = getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
-  smPopulateDaySel(history);
-  smOnPeriodChange();
-}
-// Helper: convert a period string to a month label like "Jun 2026"
-function periodMonthLabel(period) {
-  if (!period) return '';
-  const mk = periodMonthKey(period); // e.g. "2026-06"
-  if (!mk) return '';
-  const [y, m] = mk.split('-').map(Number);
-  return MONTH_NAMES[m-1] + ' ' + y;
-}
-function smBuildCatBar(drivers){
-  const bar=document.getElementById('smCatBar'); if(!bar) return;
-  const cats=new Set();
-  drivers.forEach(d=>{if(d.activeCategories){d.activeCategories.toLowerCase().split(/[,\s\/]+/).forEach(c=>{ const k=Object.keys(SM_CATCOLS).find(x=>c.includes(x)); if(k) cats.add(k); }); }});
-  if(!cats.size){bar.innerHTML=''; return;}
-  bar.innerHTML='<span style="font-size:10px;color:var(--text-muted);margin-right:4px">Filter:</span>'
-    +[...cats].map(c=>{
-      const rgb=SM_CATCOLS[c];
-      const active=smCategoryFilter===c;
-      return `<span class="sm-cat-chip ${active?'active':''}" style="${active?`background:rgba(${rgb},0.15);border-color:rgba(${rgb},0.6);color:rgb(${rgb})`:`border-color:rgba(${rgb},0.35);color:rgba(${rgb},0.7)`}" onclick="smSetCatFilter('${c}')">${c.toUpperCase()}</span>`;
-    }).join('')
-    +(smCategoryFilter?`<span class="sm-cat-chip" onclick="smSetCatFilter(null)" style="border-color:rgba(255,68,102,.3);color:var(--red)">✕ ALL</span>`:'');
-}
-function smBuildArmLegend(){
-  const el=document.getElementById('smArmLegend'); if(!el) return;
-  el.innerHTML=['S','F','R'].map(k=>{
-    const a=SM_ARMS[k];
-    const active=smHighlightModel===k;
-    const cnt=smStars.filter(s=>resolveModelDisplay(s.model)===k).length;
-    return `<span class="sm-arm-dot" style="${active?`color:rgb(${a.rgb})`:''}">
-      <b style="background:rgb(${a.rgb});${active?'box-shadow:0 0 8px rgba('+a.rgb+',.9)':''}"></b>
-      <span onclick="smToggleArmHighlight('${k}')">${a.label} (${cnt})</span>
-      <span onclick="smOpenModelPanel('${k}')" style="color:rgba(${a.rgb},.7);font-size:9px;margin-left:3px;border:1px solid rgba(${a.rgb},.3);padding:1px 4px;border-radius:2px;cursor:pointer" title="View model details">ℹ</span>
-    </span>`;
-  }).join('');
-}
-function smSetCatFilter(cat){
-  smCategoryFilter = smCategoryFilter===cat ? null : cat;
-  renderStarMap();
-}
-function smToggleArmHighlight(model){
-  smHighlightModel = smHighlightModel===model ? null : model;
-  renderStarMap();
-}
-function smOnPeriodChange(){
-  smTimeLapseActive=false;
-  document.getElementById('smPlayBtn')?.classList.remove('active');
-  clearInterval(smTimeLapseInterval);
-  smTimeLapseInterval=null;
-  renderStarMap();
-}
-function smToggleTimeLapse(){
-  const history=getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
-  if(!history.length) return;
-  smTimeLapseActive=!smTimeLapseActive;
-  const btn=document.getElementById('smPlayBtn');
-  if(smTimeLapseActive){
-    btn?.classList.add('active'); btn && (btn.textContent='⏸ PAUSE');
-    smTimeLapseIndex=0;
-    smTimeLapseInterval=setInterval(smTimeLapseStep, smTimeLapseSpeed);
-    smTimeLapseStep();
-  } else {
-    btn?.classList.remove('active'); btn && (btn.textContent='▶ PLAY');
-    clearInterval(smTimeLapseInterval); smTimeLapseInterval=null;
-  }
-}
-function smSetSpeed(v){ smTimeLapseSpeed=parseInt(v); if(smTimeLapseActive){clearInterval(smTimeLapseInterval);smTimeLapseInterval=setInterval(smTimeLapseStep,smTimeLapseSpeed);} }
-function smTimeLapseStep(){
-  const history=getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
-  if(!history.length) return;
-  smTimeLapseIndex=(smTimeLapseIndex+1)%history.length;
-  const period=history[smTimeLapseIndex].period;
-  const sel=document.getElementById('smPeriodSelect');
-  if(sel) sel.value=period;
-  // Sync month selector to match the timelapse period
-  const mLbl=periodMonthLabel(period);
-  const mSel=document.getElementById('smMonthSel');
-  if(mSel&&mLbl&&[...mSel.options].some(o=>o.value===mLbl)) mSel.value=mLbl;
-  document.getElementById('smFrameLabel').textContent=`${smTimeLapseIndex+1} / ${history.length}`;
-  // Warp: save current positions
-  smWarpFrom=smStars.map(s=>({x:s.x,y:s.y}));
-  smWarpT=0;
-  renderStarMap(true); // skipPopulate
-}
-function smTriggerShootingStar(W, H){
-  const history=getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
-  if(history.length<2||!smStars.length) return;
-  const prev=history[1], curr=history[0];
-  let bestGain=-Infinity, bestName=null;
-  curr.drivers.forEach(d=>{
-    const pd=prev.drivers.find(x=>x.name===d.name);
-    if(pd){ const gain=(d.netEarnings||0)-(pd.netEarnings||0); if(gain>bestGain){bestGain=gain;bestName=d.name;} }
-  });
-  if(!bestName||bestGain<=0) return;
-  const targetIdx=smStars.findIndex(s=>s.d.name===bestName);
-  if(targetIdx<0) return;
-  // Start from random edge
-  const edge=Math.floor(Math.random()*4);
-  const x0=edge===0?Math.random()*W:edge===1?W:edge===2?Math.random()*W:0;
-  const y0=edge===0?0:edge===1?Math.random()*H:edge===2?H:Math.random()*H;
-  smShooter={x0,y0,x1:smStars[targetIdx].x,y1:smStars[targetIdx].y,p:0,targetIdx,bestGain,bestName};
-  setTimeout(()=>{ if(smShooter) showVoicePanel(`<b>☄️ Top gainer: ${bestName}</b><br>+${fmt(bestGain)} SAR vs previous day`); },1200);
-}
-
-function renderStarMap(skipPopulate){
-  const history=getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
-  const sel=document.getElementById('smPeriodSelect');
-  const lbl=document.getElementById('smPeriodLabel');
-  if(!sel||!lbl) return;
-  if(!skipPopulate) smPopulatePeriodSel(history);
-  const chosen=sel.value||'aggregated';
-  const activeMonth=(document.getElementById('smMonthSel')?.value)||'all';
-  const monthLabel=activeMonth!=='all'?activeMonth:'';
-  lbl.textContent=chosen==='aggregated'?(monthLabel?monthLabel+' — All Days':'All Time'):chosen;
-
-  const drivers=smBuildDrivers(chosen, history, activeMonth);
-  if(!drivers.length){ document.getElementById('starMapCanvas')?.getContext('2d')?.clearRect(0,0,9999,9999); return; }
-
-  smCanvas=document.getElementById('starMapCanvas');
-  const W=smCanvas.parentElement.clientWidth||800;
-  const H=Math.max(560,Math.round(W*0.62));
-  smCanvas.width=W; smCanvas.height=H; smCanvas.style.height=H+'px';
-  smCanvas.style.transform=''; // clear any old CSS transform
-  smCtx=smCanvas.getContext('2d');
-  if(!skipPopulate){ smScale=1; smPanX=0; smPanY=0; } // reset zoom on fresh load only
-  smInitCanvasDrag();
-  // Show/hide play hint
-  const hint=document.getElementById('smPlayHint');
-  const hist2=getHistory();
-  if(hint) { hint.style.display=hist2.length>1?'block':'none'; hint.textContent=`▶ PLAY — watch ${hist2.length} days as time-lapse`; }
-
-  const newStars=smBuildStars(drivers,W,H);
-  // Warp: match by name
-  if(smWarpT<1 && smWarpFrom.length){
-    newStars.forEach((s,i)=>{
-      const prev=smWarpFrom[i];
-      if(prev){ s.x=prev.x; s.y=prev.y; s.tx=s.x; s.ty=s.y; }
-    });
-  }
-  smStars=newStars;
-  smBuildCatBar(drivers);
-  smBuildArmLegend();
-
-  // Trigger shooting star on fresh (non-timelapse) load
-  if(!skipPopulate && chosen!=='aggregated') setTimeout(()=>smTriggerShootingStar(W,H),800);
-
-  if(smRAF) cancelAnimationFrame(smRAF);
-  if(!smCanvas._bgStars || smCanvas._bgW!==W){
-    smCanvas._bgStars=Array.from({length:220},()=>({x:Math.random()*W,y:Math.random()*H,r:Math.random()*.9+.1,a:Math.random()*Math.PI*2}));
-    smCanvas._bgW=W;
-  }
-
-  function frame(ts){
-    smCtx.clearRect(0,0,W,H);
-    smCtx.save();
-    smCtx.setTransform(smScale, 0, 0, smScale, smPanX, smPanY);
-
-    // Orbital motion — advance each star's angle and recompute position
-    smStars.forEach(s=>{
-      if(s.orbitMs){ s.orbitAngle+=(Math.PI*2/s.orbitMs)*16; }
-      if(s.orbitCx!==undefined){
-        s.x=s.orbitCx+Math.cos(s.orbitAngle)*s.orbitR;
-        s.y=s.orbitCy+Math.sin(s.orbitAngle)*s.orbitR*0.7;
-      }
-    });
-
-    // Background twinkle stars
-    smCanvas._bgStars.forEach(s=>{ s.a+=0.0015; smCtx.fillStyle=`rgba(180,210,255,${0.08+0.06*Math.sin(s.a)})`; smCtx.beginPath();smCtx.arc(s.x,s.y,s.r,0,Math.PI*2);smCtx.fill(); });
-
-    // Target orbit rings (3 concentric dashed rings)
-    const cx=W/2,cy=H/2;
-    [[0.3,[255,210,0],'>90%'],[0.57,[0,212,255],'60-90%'],[0.83,[255,68,102],'<60%']].forEach(([rPct,rgb,lbl])=>{
-      const r=Math.min(cx,cy)*0.84*rPct+55*(1-rPct);
-      smCtx.strokeStyle=`rgba(${rgb},.18)`; smCtx.lineWidth=1; smCtx.setLineDash([4,8]);
-      smCtx.beginPath();smCtx.arc(cx,cy,r,0,Math.PI*2);smCtx.stroke();
-      smCtx.setLineDash([]);
-    });
-
-    // Draw one orbit ring per model (all share canvas center)
-    const drawnRings=new Set();
-    smStars.forEach(s=>{
-      if(drawnRings.has(s.model)) return; drawnRings.add(s.model);
-      const [ar,ag,ab]=s.arm.rgb;
-      smCtx.strokeStyle=`rgba(${ar},${ag},${ab},0.10)`; smCtx.lineWidth=0.7; smCtx.setLineDash([3,8]);
-      smCtx.beginPath(); smCtx.ellipse(cx,cy,s.orbitR,s.orbitR*0.55,0,0,Math.PI*2); smCtx.stroke();
-      smCtx.setLineDash([]);
-      // Model label at rightmost point of ring
-      smCtx.fillStyle=`rgba(${ar},${ag},${ab},0.45)`; smCtx.font='bold 9px monospace';
-      smCtx.textAlign='left'; smCtx.textBaseline='middle';
-      smCtx.fillText(s.model, cx+s.orbitR+4, cy);
-    });
-    // Galaxy centre glow
-    const gcg=smCtx.createRadialGradient(cx,cy,0,cx,cy,12);
-    gcg.addColorStop(0,'rgba(200,210,255,0.8)'); gcg.addColorStop(1,'transparent');
-    smCtx.fillStyle=gcg; smCtx.beginPath(); smCtx.arc(cx,cy,12,0,Math.PI*2); smCtx.fill();
-
-    // Constellation lines (same-model connections)
-    const modelGroups={};
-    smStars.forEach((s,i)=>(modelGroups[s.model]=modelGroups[s.model]||[]).push(i));
-    Object.entries(modelGroups).forEach(([m,idxs])=>{
-      if(idxs.length<2) return;
-      const arm=SM_ARMS[m]||SM_ARMS['S'];
-      const dimmed=smHighlightModel&&smHighlightModel!==resolveModelDisplay(m);
-      smCtx.strokeStyle=`rgba(${arm.rgb},${dimmed?0.04:0.12})`; smCtx.lineWidth=0.7; smCtx.setLineDash([3,6]);
-      for(let i=0;i<idxs.length-1;i++){
-        const a=smStars[idxs[i]],b=smStars[idxs[i+1]];
-        smCtx.beginPath();smCtx.moveTo(a.x,a.y);smCtx.lineTo(b.x,b.y);smCtx.stroke();
-      }
-      smCtx.setLineDash([]);
-    });
-
-    // Driver stars
-    smStars.forEach((s,i)=>{
-      s.twinkle+=0.035;
-      const filtered = smCategoryFilter && !smCatRgb(s.d.activeCategories||'')?.toString().includes(smCategoryFilter);
-      const dimmed   = (smCategoryFilter&&filtered)||(smHighlightModel&&smHighlightModel!==resolveModelDisplay(s.model));
-      const perf     = s.perf||0;
-      const alpha    = dimmed?0.1 : Math.max(0.12, 0.15+perf*0.5+s.accept*0.2);
-      const glowMult = 1+perf*0.8;
-      const glow     = s.size*glowMult*(1+0.14*Math.sin(s.twinkle))+(s.burst*6);
-      s.burst=Math.max(0,s.burst-0.04);
-      const [r,g,b]  = s.col;
-
-      // Category aura ring (outer)
-      if(s.catRgb&&!dimmed){
-        const [cr,cg,cb]=s.catRgb;
-        smCtx.strokeStyle=`rgba(${cr},${cg},${cb},${0.35+0.2*Math.sin(s.twinkle*1.3)})`;
-        smCtx.lineWidth=1.5; smCtx.beginPath();smCtx.arc(s.x,s.y,glow*2.2+4,0,Math.PI*2);smCtx.stroke();
-      }
-      // Model arm colour ring (mid)
-      const arm=s.arm;
-      smCtx.strokeStyle=`rgba(${arm.rgb},${dimmed?0.04:0.22})`; smCtx.lineWidth=1;
-      smCtx.beginPath();smCtx.arc(s.x,s.y,glow*1.7,0,Math.PI*2);smCtx.stroke();
-      // Glow halo
-      const grad=smCtx.createRadialGradient(s.x,s.y,0,s.x,s.y,glow*2.6);
-      grad.addColorStop(0,`rgba(${r},${g},${b},${alpha})`);
-      grad.addColorStop(0.45,`rgba(${r},${g},${b},${alpha*0.25})`);
-      grad.addColorStop(1,'transparent');
-      smCtx.fillStyle=grad;smCtx.beginPath();smCtx.arc(s.x,s.y,glow*2.6,0,Math.PI*2);smCtx.fill();
-      // Core — brighter for high performers
-      smCtx.fillStyle=`rgba(${r},${g},${b},${dimmed?0.12:Math.min(1,0.4+perf*0.5+s.accept*0.1)})`;
-      smCtx.beginPath();smCtx.arc(s.x,s.y,glow,0,Math.PI*2);smCtx.fill();
-      // Burst on shooting star arrival
-      if(s.burst>0.5){
-        smCtx.strokeStyle=`rgba(${r},${g},${b},${s.burst})`;smCtx.lineWidth=2;
-        smCtx.beginPath();smCtx.arc(s.x,s.y,glow*(3+s.burst*4),0,Math.PI*2);smCtx.stroke();
-      }
-    });
-
-    // Shooting star
-    if(smShooter){
-      smShooter.p+=0.022;
-      if(smShooter.p>=1){
-        if(smShooter.targetIdx>=0 && smStars[smShooter.targetIdx]) smStars[smShooter.targetIdx].burst=1.5;
-        smShooter=null;
-      } else {
-        const e=smShooter.p<0.5?2*smShooter.p*smShooter.p:1-Math.pow(-2*smShooter.p+2,2)/2;
-        const sx=smShooter.x0+(smShooter.x1-smShooter.x0)*e;
-        const sy=smShooter.y0+(smShooter.y1-smShooter.y0)*e;
-        // Tail
-        const tailLen=30; const ex=smShooter.x0+(smShooter.x1-smShooter.x0)*Math.max(0,e-0.08);
-        const ey=smShooter.y0+(smShooter.y1-smShooter.y0)*Math.max(0,e-0.08);
-        const g2=smCtx.createLinearGradient(ex,ey,sx,sy);
-        g2.addColorStop(0,'transparent');g2.addColorStop(1,'rgba(255,255,200,.9)');
-        smCtx.strokeStyle=g2;smCtx.lineWidth=2;smCtx.setLineDash([]);
-        smCtx.beginPath();smCtx.moveTo(ex,ey);smCtx.lineTo(sx,sy);smCtx.stroke();
-        smCtx.fillStyle='rgba(255,255,200,.95)';smCtx.beginPath();smCtx.arc(sx,sy,3,0,Math.PI*2);smCtx.fill();
-      }
-    }
-    smCtx.restore();
-    smRAF=requestAnimationFrame(frame);
-  }
-  smRAF=requestAnimationFrame(frame);
-
-  // Mouse & click — unproject through canvas transform
-  smCanvas.onmousemove=e=>{
-    const {x:mx,y:my}=smUnproject(e.clientX,e.clientY);
-    const tip=document.getElementById('smTooltip');
-    const hit=smStars.find(s=>Math.hypot(s.x-mx,s.y-my)<s.size*2.6+8);
-    if(hit){
-      const fn=lookupForeignName(hit.d.name);
-      const arm=SM_ARMS[hit.model]||{label:'?'};
-      const catRgb=hit.catRgb?`<span style="color:rgb(${hit.catRgb})">● ${hit.d.activeCategories||''}</span><br>`:'';
-      tip.innerHTML=`<b style="color:var(--bolt-green)">${hit.d.name}</b>${fn?`<br><span style="color:var(--bolt-green);font-size:10px">→ ${fn}</span>`:''}
-        <br>${catRgb}Model <b style="color:rgb(${arm.rgb||'0,212,255'})">${hit.model}</b> · Net <b style="color:var(--cyan)">${fmt(hit.d.netEarnings||0)} SAR</b>
-        <br>Orders ${hit.d.orders||0} · Accept ${(hit.d.acceptance||0).toFixed(0)}% · ${(hit.d.hoursOnline||0).toFixed(1)}h`;
-      tip.style.display='block';
-      tip.style.left=Math.min(mx+14,W-250)+'px';
-      tip.style.top=Math.max(my-60,4)+'px';
-      smCanvas.style.cursor='pointer';
-    } else { tip.style.display='none'; smCanvas.style.cursor='crosshair'; }
-  };
-  smCanvas.onmouseleave=()=>{ if(!smDrag) document.getElementById('smTooltip').style.display='none'; };
-  smCanvas.onclick=e=>{
-    if(smDrag) return;
-    const {x:mx,y:my}=smUnproject(e.clientX,e.clientY);
-    const hit=smStars.find(s=>Math.hypot(s.x-mx,s.y-my)<s.size*2.6+10);
-    if(hit) openSmPopup(hit.d,e.clientX,e.clientY,hit.model);
-  };
-}
-
-function openSmPopup(d, cx, cy, model) {
-  const popup=document.getElementById('smDriverPopup');
-  const card =document.getElementById('smPopupCard');
-  const sz=270;
-  const fn=lookupForeignName(d.name);
-  const tier=d.tier?.englishName||'Active';
-  const tierCol=tier==='Gold'?'#FFD700':tier==='Silver'?'#C0C0C0':tier==='Bronze'?'#CD7F32':d.isActive?'var(--bolt-green)':'var(--text-muted)';
-  const m=model||smGetModel(d.name); const arm=SM_ARMS[m]||SM_ARMS['S'];
-  const armCol=`rgb(${arm.rgb})`;
-  const catRgb=smCatRgb(d.activeCategories||'');
-  // Truncate long name to fit circle width
-  // Get days worked + avg daily net (recompute from history)
-  const hist=getHistory();
-  const dw=Math.max(1,hist.filter(h=>h.drivers.find(x=>x.name===d.name&&x.isActive)).length);
-  const sarDay=Math.round((d.netEarnings||0)/dw);
-  const dayPerf=Math.min(1,sarDay/200); // vs 200 SAR/day target
-  const perfPct=Math.round(dayPerf*100);
-  const perfCol=dayPerf>=1?'var(--bolt-green)':dayPerf>=0.6?'var(--amber)':'var(--red)';
-  const dispName=(fn||d.name).length>18?(fn||d.name).slice(0,17)+'…':(fn||d.name);
-  card.innerHTML=`
-    <div class="sm-popup" style="width:${sz}px;height:${sz}px;position:relative;box-shadow:0 0 0 2px ${armCol}50,0 0 50px ${armCol}25,0 0 100px rgba(0,0,0,.95)">
-      <span class="sm-popup-close" onclick="closeSmPopup()" style="position:absolute;top:52px;right:48px;z-index:2">✕</span>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:2px;width:${Math.round(sz*0.7)}px">
-        <div style="font-family:var(--mono);font-size:11px;color:var(--bolt-green);text-shadow:var(--glow-green);letter-spacing:.03em;text-align:center;line-height:1.3;word-break:break-word">${dispName}</div>
-        <div style="font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">
-          <span style="color:${armCol}">Model ${m}</span> &nbsp;·&nbsp; <span style="color:${tierCol}">${tier}</span>
-        </div>
-        ${catRgb?`<div style="font-size:9px;color:rgb(${catRgb})">● ${(d.activeCategories||'').split(',')[0].trim()}</div>`:''}
-        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--cyan);text-shadow:0 0 14px rgba(0,212,255,.7);line-height:1.1;margin-top:1px">${fmt(d.netEarnings||0)}</div>
-        <div style="font-size:8px;color:var(--text-muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px">Net SAR</div>
-        <!-- Daily target progress bar -->
-        <div style="width:90%;height:3px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;margin-bottom:4px">
-          <div style="height:100%;width:${Math.min(100,perfPct)}%;background:${perfCol};border-radius:2px;box-shadow:0 0 4px ${perfCol}"></div>
-        </div>
-        <div style="font-size:8px;color:${perfCol};margin-bottom:3px;letter-spacing:.05em">${fmt(sarDay)} SAR/day &nbsp;·&nbsp; ${perfPct}% of target</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px 8px;width:100%">
-          <div style="text-align:center"><div style="font-family:var(--mono);font-size:12px;color:var(--cyan)">${d.orders||0}</div><div style="font-size:7px;color:var(--text-muted);text-transform:uppercase">Orders</div></div>
-          <div style="text-align:center"><div style="font-family:var(--mono);font-size:12px;color:var(--cyan)">${(d.acceptance||0).toFixed(0)}%</div><div style="font-size:7px;color:var(--text-muted);text-transform:uppercase">Accept</div></div>
-          <div style="text-align:center"><div style="font-family:var(--mono);font-size:12px;color:var(--cyan)">${(d.hoursOnline||0).toFixed(1)}h</div><div style="font-size:7px;color:var(--text-muted);text-transform:uppercase">Hours</div></div>
-          <div style="text-align:center"><div style="font-family:var(--mono);font-size:12px;color:${d.isActive?'var(--bolt-green)':'var(--red)'}">${d.isActive?'ON':'OFF'}</div><div style="font-size:7px;color:var(--text-muted);text-transform:uppercase">Status</div></div>
-          <div style="text-align:center"><div style="font-family:var(--mono);font-size:12px;color:var(--cyan)">${dw}</div><div style="font-size:7px;color:var(--text-muted);text-transform:uppercase">Days</div></div>
-          <div style="text-align:center"><div style="font-family:var(--mono);font-size:12px;color:${perfCol}">${fmt(sarDay)}</div><div style="font-size:7px;color:var(--text-muted);text-transform:uppercase">SAR/Day</div></div>
-        </div>
-      </div>
-    </div>`;
-  // Position near click but keep in viewport
-  const vw=window.innerWidth, vh=window.innerHeight;
-  let left=cx-sz/2, top=cy-sz/2;
-  left=Math.max(10,Math.min(left,vw-sz-10));
-  top =Math.max(10,Math.min(top, vh-sz-10));
-  card.style.left=left+'px'; card.style.top=top+'px';
-  popup.style.display='block';
-  popup.style.pointerEvents='all';
-}
-function closeSmPopup() {
-  const p=document.getElementById('smDriverPopup');
-  if(p){p.style.display='none';p.style.pointerEvents='none';}
-}
-
-// ── Star Map Zoom ──
-// ════════════════════════════════════════════
-// EARTH + SKY — HOME VIEW
-// ════════════════════════════════════════════
-let smHomeRAF=null, smHomeBgStars=null, smHomeHover=null;
-
-function renderSmHomeView(){
-  if(smHomeRAF){ cancelAnimationFrame(smHomeRAF); smHomeRAF=null; }
-  const cv=document.getElementById('smHomeCanvas'); if(!cv) return;
-  const W=cv.parentElement.clientWidth||800;
-  const H=Math.min(600,Math.round(W*0.62));
-  cv.width=W; cv.height=H; cv.style.height=H+'px';
-  const ctx=cv.getContext('2d');
-  const tip=document.getElementById('smHomeTip');
-
-  // Background stars — dense Milky Way style field
-  smHomeBgStars=Array.from({length:480},()=>({
-    x:Math.random()*W, y:Math.random()*H,
-    r:Math.random()<0.05?1.4+Math.random()*.8:Math.random()*.7+.15,
-    a:Math.random()*Math.PI*2,
-    // color bias: mostly blue-white, some warm yellow-white
-    hue:Math.random()<0.15?'255,230,180':'205,215,255'
-  }));
-
-  // Galaxy objects — compact, elegant, like screenshot 3 scale
-  const objs=[
-    { id:'galaxy', x:W*0.27, y:H*0.38, label:'DRIVER GALAXY', subLabel:'All fleet drivers', col:[120,80,200], mode:'galaxy' },
-    { id:'solar',  x:W*0.73, y:H*0.36, label:'SOLAR COMMAND', subLabel:'Fleet model system', col:[210,160,60], mode:'ops'   },
-  ];
-
-  // Mouse hover
-  cv.onmousemove=e=>{
-    const rect=cv.getBoundingClientRect();
-    const mx=(e.clientX-rect.left)*(W/rect.width), my=(e.clientY-rect.top)*(H/rect.height);
-    smHomeHover=objs.find(o=>Math.hypot(o.x-mx,o.y-my)<90);
-    cv.style.cursor=smHomeHover?'pointer':'default';
-    if(tip) tip.textContent=smHomeHover?`Click to enter ${smHomeHover.label}`:'';
-  };
-  cv.onmouseleave=()=>{ smHomeHover=null; cv.style.cursor='default'; if(tip) tip.textContent=''; };
-  cv.onclick=e=>{
-    const rect=cv.getBoundingClientRect();
-    const mx=(e.clientX-rect.left)*(W/rect.width), my=(e.clientY-rect.top)*(H/rect.height);
-    const hit=objs.find(o=>Math.hypot(o.x-mx,o.y-my)<90);
-    if(hit) smSwitchView(hit.mode);
-  };
-
-  function homeFrame(ts){
-    ctx.clearRect(0,0,W,H);
-
-    // Deep space background
-    ctx.fillStyle='#020108'; ctx.fillRect(0,0,W,H);
-
-    // Milky Way nebula clouds — layered soft blobs
-    const nebulas=[
-      {x:W*0.5,y:H*0.38,rx:W*0.38,ry:H*0.28,col:'60,20,120',a:0.12},  // central purple band
-      {x:W*0.35,y:H*0.32,rx:W*0.22,ry:H*0.18,col:'30,15,90',a:0.18},  // left purple-blue
-      {x:W*0.65,y:H*0.42,rx:W*0.25,ry:H*0.16,col:'50,25,100',a:0.14}, // right purple
-      {x:W*0.5,y:H*0.45,rx:W*0.3,ry:H*0.12,col:'20,60,100',a:0.10},   // blue streak
-      {x:W*0.42,y:H*0.5,rx:W*0.18,ry:H*0.10,col:'80,40,30',a:0.08},   // warm brown dust
-    ];
-    nebulas.forEach(n=>{
-      const ng=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,Math.max(n.rx,n.ry));
-      ng.addColorStop(0,`rgba(${n.col},${n.a+0.05})`);
-      ng.addColorStop(0.5,`rgba(${n.col},${n.a*0.5})`);
-      ng.addColorStop(1,'transparent');
-      ctx.save(); ctx.scale(n.rx/Math.max(n.rx,n.ry),n.ry/Math.max(n.rx,n.ry));
-      ctx.translate((n.x*(Math.max(n.rx,n.ry)-n.rx))/Math.max(n.rx,n.ry),(n.y*(Math.max(n.rx,n.ry)-n.ry))/Math.max(n.rx,n.ry));
-      ctx.fillStyle=ng; ctx.beginPath(); ctx.arc(n.x,n.y,Math.max(n.rx,n.ry),0,Math.PI*2); ctx.fill();
-      ctx.restore();
-    });
-    // Simpler nebula approach
-    nebulas.forEach(n=>{
-      const ng=ctx.createEllipse?null:ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,n.rx);
-      const ng2=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,n.rx);
-      ng2.addColorStop(0,`rgba(${n.col},${n.a})`); ng2.addColorStop(1,'transparent');
-      ctx.fillStyle=ng2; ctx.beginPath(); ctx.ellipse(n.x,n.y,n.rx,n.ry,0,0,Math.PI*2); ctx.fill();
-    });
-
-    // Dense star field — blue-white + warm stars
-    smHomeBgStars.forEach(s=>{
-      s.a+=0.0012;
-      const brightness=0.5+0.45*Math.sin(s.a);
-      ctx.fillStyle=`rgba(${s.hue},${brightness*(s.r>1?0.95:0.55)})`;
-      ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
-      // Bright stars get a cross-flare
-      if(s.r>1.2){
-        ctx.strokeStyle=`rgba(${s.hue},${brightness*0.3})`; ctx.lineWidth=0.5;
-        ctx.beginPath(); ctx.moveTo(s.x-6,s.y); ctx.lineTo(s.x+6,s.y); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(s.x,s.y-6); ctx.lineTo(s.x,s.y+6); ctx.stroke();
-      }
-    });
-
-    // Earth horizon — slim arc at very bottom, just enough to set the scene
-    const earthY=H*0.91;
-    const atm=ctx.createLinearGradient(0,earthY-30,0,H);
-    atm.addColorStop(0,'transparent'); atm.addColorStop(0.6,'rgba(15,80,130,.18)'); atm.addColorStop(1,'rgba(20,100,160,.35)');
-    ctx.fillStyle=atm; ctx.fillRect(0,earthY-30,W,H-(earthY-30));
-    ctx.save();
-    const earthR=W*0.72; // smaller Earth
-    const earthCY=earthY+earthR;
-    const ag=ctx.createRadialGradient(W/2,earthCY,earthR*0.97,W/2,earthCY,earthR);
-    ag.addColorStop(0,'rgba(15,60,110,.9)'); ag.addColorStop(0.5,'rgba(18,75,120,.7)'); ag.addColorStop(1,'rgba(10,40,80,.2)');
-    ctx.fillStyle=ag; ctx.beginPath();ctx.arc(W/2,earthCY,earthR,0,Math.PI*2);ctx.fill();
-    const rim=ctx.createRadialGradient(W/2,earthCY,earthR,W/2,earthCY,earthR+12);
-    rim.addColorStop(0,'rgba(40,160,220,.28)'); rim.addColorStop(1,'transparent');
-    ctx.fillStyle=rim; ctx.beginPath();ctx.arc(W/2,earthCY,earthR+12,0,Math.PI*2);ctx.fill();
-    ctx.restore();
-
-    // Draw galaxy objects — large, dramatic
-    objs.forEach(o=>{
-      const hov=smHomeHover===o;
-      const scale=(hov?1.06:1)*0.55; // compact elegant scale
-      ctx.save(); ctx.translate(o.x,o.y); ctx.scale(scale,scale);
-      if(o.id==='galaxy') smDrawHomeGalaxy(ctx,0,0,o.col,ts);
-      else                smDrawHomeSolar(ctx,0,0,o.col,ts);
-      // Label below object
-      const labelY=110;
-      ctx.fillStyle=`rgba(${o.col},${hov?1:0.65})`; ctx.font=`bold ${hov?12:11}px monospace`;
-      ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText(o.label,0,labelY);
-      ctx.fillStyle=`rgba(180,190,210,${hov?0.7:0.35})`; ctx.font='9px monospace';
-      ctx.fillText(o.subLabel,0,labelY+14);
-      if(hov){
-        ctx.fillStyle='rgba(0,212,255,0.6)'; ctx.font='9px monospace';
-        ctx.fillText('→ CLICK TO ENTER',0,labelY+26);
-      }
-      ctx.restore();
-    });
-
-    smHomeRAF=requestAnimationFrame(homeFrame);
-  }
-  smHomeRAF=requestAnimationFrame(homeFrame);
-}
-
-function smDrawHomeGalaxy(ctx, cx, cy, col, ts){
-  // Inspired by screenshot 3 — tight spiral rings with glowing blue-purple tones
-  const t=ts/1000; const ROT=t*0.05;
-  const ARMS=[
-    {col:'130,90,220',lineW:1.0,alpha:0.45,spread:2.0,dotAlpha:0.6},
-    {col:'100,120,255',lineW:0.7,alpha:0.25,spread:2.1,dotAlpha:0.4},
-    {col:'160,110,240',lineW:0.6,alpha:0.18,spread:1.9,dotAlpha:0.3},
-  ];
-  // Outer nebula halo
-  const halo=ctx.createRadialGradient(cx,cy,8,cx,cy,62);
-  halo.addColorStop(0,'rgba(100,60,180,0.22)'); halo.addColorStop(0.5,'rgba(80,50,160,0.08)'); halo.addColorStop(1,'transparent');
-  ctx.fillStyle=halo; ctx.beginPath();ctx.arc(cx,cy,62,0,Math.PI*2);ctx.fill();
-
-  // 2 main tight spiral arms (like screenshot 3)
-  for(let arm=0;arm<2;arm++){
-    const base=(arm/2)*Math.PI*2+ROT;
-    const A=ARMS[arm];
-    // Spiral line — tight, multiple wraps
-    for(let pass=0;pass<2;pass++){
-      ctx.beginPath();
-      for(let i=0;i<100;i++){
-        const p=i/100;
-        const ra=base+p*Math.PI*2.6;
-        const rad=5+p*52;
-        const px=cx+Math.cos(ra)*rad, py=cy+Math.sin(ra)*rad*0.5;
-        if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
-      }
-      ctx.strokeStyle=`rgba(${A.col},${pass===0?A.alpha:A.alpha*0.4})`;
-      ctx.lineWidth=pass===0?A.lineW:A.lineW*2.5; ctx.stroke();
-    }
-    // Star dots sprinkled along arm
-    for(let i=0;i<18;i++){
-      const p=i/18;
-      const ra=base+p*Math.PI*2.6;
-      const rad=6+p*50;
-      const px=cx+Math.cos(ra)*rad, py=cy+Math.sin(ra)*rad*0.5;
-      const twk=0.4+0.45*Math.sin(t*2+i*1.3+arm);
-      ctx.fillStyle=`rgba(${A.col},${twk*A.dotAlpha})`;
-      ctx.beginPath();ctx.arc(px,py,i%5===0?1.2:0.7,0,Math.PI*2);ctx.fill();
-    }
-  }
-  // Core glow — warm white/yellow centre like real galactic bulge
-  const cg=ctx.createRadialGradient(cx,cy,0,cx,cy,12);
-  cg.addColorStop(0,'rgba(255,245,210,0.95)'); cg.addColorStop(0.45,'rgba(160,120,220,0.5)'); cg.addColorStop(1,'transparent');
-  ctx.fillStyle=cg; ctx.beginPath();ctx.arc(cx,cy,12,0,Math.PI*2);ctx.fill();
-}
-
-function smDrawHomeSolar(ctx, cx, cy, col, ts){
-  const [r,g,b]=col; const t=ts/1000;
-  // Outer halo
-  const halo=ctx.createRadialGradient(cx,cy,0,cx,cy,88);
-  halo.addColorStop(0,`rgba(${r},${g},${b},0.12)`); halo.addColorStop(0.6,`rgba(${r},${g},${b},0.04)`); halo.addColorStop(1,'transparent');
-  ctx.fillStyle=halo; ctx.beginPath();ctx.arc(cx,cy,88,0,Math.PI*2);ctx.fill();
-  // 5 orbit rings with planets
-  const orbits=[{r:24,spd:1.4,ps:4.5,pc:'70,130,220'},{r:38,spd:0.9,ps:3.5,pc:'60,160,120'},
-                {r:54,spd:0.6,ps:6.5,pc:'200,140,60'},{r:70,spd:0.4,ps:3,pc:'180,70,50'},{r:84,spd:0.25,ps:3,pc:'190,160,80'}];
-  orbits.forEach((o,i)=>{
-    ctx.strokeStyle=`rgba(${r},${g},${b},0.12)`; ctx.lineWidth=0.6; ctx.setLineDash([4,7]);
-    ctx.beginPath();ctx.ellipse(cx,cy,o.r,o.r*0.42,0,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
-    const pa=t*o.spd*0.25; // slow planet speed
-    const px=cx+Math.cos(pa)*o.r, py=cy+Math.sin(pa)*o.r*0.42;
-    // Planet gradient
-    const pg=ctx.createRadialGradient(px-o.ps*0.3,py-o.ps*0.3,0,px,py,o.ps);
-    pg.addColorStop(0,`rgba(${o.pc},1)`); pg.addColorStop(0.7,`rgba(${o.pc},0.7)`); pg.addColorStop(1,`rgba(${o.pc},0)`);
-    ctx.fillStyle=pg; ctx.beginPath();ctx.arc(px,py,o.ps,0,Math.PI*2);ctx.fill();
-    // Saturn ring on index 2
-    if(i===2){ ctx.save();ctx.translate(px,py);ctx.scale(1,0.25);ctx.strokeStyle=`rgba(${o.pc},0.4)`;ctx.lineWidth=o.ps*0.5;ctx.beginPath();ctx.arc(0,0,o.ps*1.6,0,Math.PI*2);ctx.stroke();ctx.restore(); }
-  });
-  // Sun — bright warm glow
-  for(let sg=0;sg<3;sg++){
-    const sunG=ctx.createRadialGradient(cx,cy,0,cx,cy,10+sg*5);
-    sunG.addColorStop(0,sg===0?'rgba(255,255,220,1)':'rgba(255,200,80,0.2)'); sunG.addColorStop(1,'transparent');
-    ctx.fillStyle=sunG; ctx.beginPath();ctx.arc(cx,cy,10+sg*5,0,Math.PI*2);ctx.fill();
-  }
-  // Sun corona spikes
-  for(let sk=0;sk<10;sk++){
-    const sa=(sk/10)*Math.PI*2+(t*0.2); const sl=14+5*Math.sin(t*0.8+sk*0.9);
-    ctx.strokeStyle=`rgba(255,200,80,${0.12+0.08*Math.sin(t+sk)})`; ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+Math.cos(sa)*sl,cy+Math.sin(sa)*sl*0.6);ctx.stroke();
-  }
-}
-
-// ── Star Map view switching ──
-let smViewMode='home';
-function smSwitchView(mode){
-  smViewMode=mode;
-  const isHome=mode==='home';
-  // Show/hide sections
-  document.getElementById('smHomeView').style.display   = isHome?'':'none';
-  document.getElementById('smGalaxyView').style.display = mode==='galaxy'?'':'none';
-  document.getElementById('smCanvasWrap').style.display = mode==='galaxy'?'':'none';
-  document.getElementById('smOpsView').style.display    = mode==='ops'?'':'none';
-  document.getElementById('smBtnCommand')?.classList.toggle('active', isHome);
-  document.getElementById('smBtnGalaxy')?.classList.toggle('active', mode==='galaxy');
-  document.getElementById('smBtnOps')?.classList.toggle('active', mode==='ops');
-  const leg=document.querySelector('.sm-bottom-legend');
-  if(leg) leg.style.display=mode==='galaxy'?'flex':'none';
-  // Stop animation loops when leaving their views
-  if(mode!=='ops'  && smOpsRAF) { cancelAnimationFrame(smOpsRAF);  smOpsRAF=null; }
-  if(smHomeRAF)                  { cancelAnimationFrame(smHomeRAF); smHomeRAF=null; }
-  if(mode==='galaxy') smOpsPausedModel=null;
-  // Start appropriate view
-  if(isHome)               renderCommandBridge();
-  else if(mode==='ops'){   smOpsPanX=0; smOpsPanY=0; renderSmOpsView(); }
-  else if(mode==='galaxy') renderStarMap();
-}
-
-// ── Canvas coordinate zoom (stars spread apart on zoom) ──
-let smScale=1, smPanX=0, smPanY=0, smDrag=false, smDragLast={x:0,y:0};
-
-function smUnproject(clientX, clientY){
-  if(!smCanvas) return {x:0,y:0};
-  const rect=smCanvas.getBoundingClientRect();
-  const sx=(clientX-rect.left)*(smCanvas.width/rect.width);
-  const sy=(clientY-rect.top)*(smCanvas.height/rect.height);
-  return { x:(sx-smPanX)/smScale, y:(sy-smPanY)/smScale };
-}
-function smZoom(factor, pivotX, pivotY){
-  if(!smCanvas) return;
-  const W=smCanvas.width, H=smCanvas.height;
-  const cx=pivotX??W/2, cy=pivotY??H/2;
-  const worldX=(cx-smPanX)/smScale, worldY=(cy-smPanY)/smScale;
-  smScale=Math.max(0.5,Math.min(8,smScale*factor));
-  smPanX=cx-worldX*smScale;
-  smPanY=cy-worldY*smScale;
-}
-function smZoomReset(){ smScale=1; smPanX=0; smPanY=0; }
-function smInitCanvasDrag(){
-  if(!smCanvas) return;
-  smCanvas.onwheel=e=>{
-    e.preventDefault();
-    const rect=smCanvas.getBoundingClientRect();
-    const sx=(e.clientX-rect.left)*(smCanvas.width/rect.width);
-    const sy=(e.clientY-rect.top)*(smCanvas.height/rect.height);
-    smZoom(e.deltaY<0?1.04:1/1.04, sx, sy);
-  };
-  smCanvas.onmousedown=e=>{
-    if(e.button!==0) return;
-    smDrag=true; smDragLast={x:e.clientX,y:e.clientY};
-    smCanvas.style.cursor='grabbing';
-  };
-  window.addEventListener('mousemove',e=>{
-    if(!smDrag) return;
-    smPanX+=e.clientX-smDragLast.x; smPanY+=e.clientY-smDragLast.y;
-    smDragLast={x:e.clientX,y:e.clientY};
-  });
-  window.addEventListener('mouseup',()=>{ smDrag=false; if(smCanvas) smCanvas.style.cursor='crosshair'; });
-}
-
-// ════════════════════════════════════════════
-// FLEET OPS — SOLAR SYSTEM
-// ════════════════════════════════════════════
-let smOpsRAF=null, smOpsPlanets=[], smOpsCanvas=null, smOpsCtx=null;
-let smOpsPausedModel=null, smOpsWarpDone=false;
-let smOpsPanX=0, smOpsPanY=0, smOpsDrag=false, smOpsDragLast={x:0,y:0};
-
-function renderSmOpsView(){
-  if(smOpsRAF){ cancelAnimationFrame(smOpsRAF); smOpsRAF=null; }
-  smOpsCanvas=document.getElementById('smOpsCanvas'); if(!smOpsCanvas) return;
-  const W=smOpsCanvas.parentElement.clientWidth||800;
-  const H=Math.min(560,Math.round(W*0.58));
-  smOpsCanvas.width=W; smOpsCanvas.height=H; smOpsCanvas.style.height=H+'px';
-  smOpsCtx=smOpsCanvas.getContext('2d');
-  const cx=W/2, cy=H/2;
-
-  // Build planet data
-  const history=getHistory().sort((a,b)=>periodSortKey(b.period)-periodSortKey(a.period));
-  const allDrivers=smBuildDrivers('aggregated',history);
-  const profiles=JSON.parse(localStorage.getItem('khair_driver_profiles')||'{}');
-  const ORBIT_R=[75,120,170,225,285];
-  const ORBIT_MS=[60000,85000,115000,150000,190000]; // very slow drift
-  const PRIMARY_MODELS=['S','F','R']; // iterate only primary codes, not legacy aliases
-  smOpsPlanets=PRIMARY_MODELS.map((m,i)=>{ const arm=SM_ARMS[m];
-    const mDrivers=allDrivers.filter(d=>resolveModelDisplay(profiles[(d.name||'').trim().toLowerCase()]?.model||'S')===m);
-    const totalNet=mDrivers.reduce((a,d)=>a+(d.netEarnings||0),0);
-    const activeCount=mDrivers.filter(d=>d.isActive).length;
-    const avgAccept=mDrivers.length?mDrivers.reduce((a,d)=>a+(d.acceptance||0),0)/mDrivers.length:0;
-    const planetSize = m==='S' ? 19 : 16;
-    return {
-      m, arm, info:SM_MODEL_INFO[m]||{title:m,sub:'',fields:[]},
-      orbitR: Math.min(ORBIT_R[i], Math.min(cx,cy)-planetSize-8),
-      orbitMs: ORBIT_MS[i],
-      angle: (i/5)*Math.PI*2, // stagger initial angles
-      size: planetSize,
-      driverCount: mDrivers.length,
-      activeCount, totalNet, avgAccept,
-      rgb: arm.rgb,
-      x: cx, y: cy, // current screen pos, updated each frame
-    };
-  });
-
-  // Build asteroid belt particles
-  const asteroids=Array.from({length:55},(_,i)=>{
-    const r=ORBIT_R[2]+15+Math.random()*28;
-    const a=(i/55)*Math.PI*2+Math.random()*0.08;
-    return {r,a,size:Math.random()*1.4+0.4,speed:(0.00008+Math.random()*0.00005)*(Math.random()>0.5?1:-1)};
-  });
-
-  // Legend
-  const legEl=document.getElementById('smOpsLegend');
-  if(legEl) legEl.innerHTML=['S','F','R'].map(m=>{ const a=SM_ARMS[m]; return `<span style="color:rgb(${a.rgb});margin-right:10px">⬤ ${m}</span>`; }).join('');
-
-  smOpsWarpDone=false;
-  const warpStart=performance.now();
-
-  function opsFrame(ts){
-    smOpsCtx.clearRect(0,0,W,H);
-    smOpsCtx.save();
-    smOpsCtx.translate(smOpsPanX, smOpsPanY);
-
-    // Nebula background patches
-    smOpsPlanets.forEach(p=>{
-      const ng=smOpsCtx.createRadialGradient(cx,cy,p.orbitR*0.6,cx,cy,p.orbitR*1.15);
-      ng.addColorStop(0,'transparent');
-      ng.addColorStop(0.5,`rgba(${p.rgb},0.025)`);
-      ng.addColorStop(1,'transparent');
-      smOpsCtx.fillStyle=ng; smOpsCtx.fillRect(0,0,W,H);
-    });
-
-    // Warp lines boot animation (first 1.2s)
-    const warpT=Math.min(1,(ts-warpStart)/1200);
-    if(!smOpsWarpDone){
-      smOpsCtx.save();
-      for(let i=0;i<28;i++){
-        const a=(i/28)*Math.PI*2;
-        const len=Math.min(W,H)*0.45*(1-warpT);
-        const x1=cx+Math.cos(a)*(Math.min(cx,cy)*0.5+len);
-        const y1=cy+Math.sin(a)*(Math.min(cx,cy)*0.5*0.55+len*0.55);
-        const g2=smOpsCtx.createLinearGradient(x1,y1,cx,cy);
-        g2.addColorStop(0,'transparent'); g2.addColorStop(1,`rgba(180,220,255,${0.4*(1-warpT)})`);
-        smOpsCtx.strokeStyle=g2; smOpsCtx.lineWidth=0.8;
-        smOpsCtx.beginPath(); smOpsCtx.moveTo(x1,y1); smOpsCtx.lineTo(cx,cy); smOpsCtx.stroke();
-      }
-      smOpsCtx.restore();
-      if(warpT>=1) smOpsWarpDone=true;
-    }
-
-    // Orbit rings (dashed ellipses — 3D perspective tilt)
-    smOpsPlanets.forEach(p=>{
-      smOpsCtx.strokeStyle=`rgba(${p.rgb},0.12)`; smOpsCtx.lineWidth=0.8; smOpsCtx.setLineDash([4,10]);
-      smOpsCtx.beginPath(); smOpsCtx.ellipse(cx,cy,p.orbitR,p.orbitR*0.42,0,0,Math.PI*2); smOpsCtx.stroke();
-      smOpsCtx.setLineDash([]);
-    });
-
-    // Asteroid belt
-    asteroids.forEach(a=>{
-      a.a+=a.speed*16;
-      const ax=cx+Math.cos(a.a)*a.r, ay=cy+Math.sin(a.a)*a.r*0.42;
-      smOpsCtx.fillStyle=`rgba(150,160,180,${0.25+0.15*Math.sin(a.a*3)})`; smOpsCtx.beginPath(); smOpsCtx.arc(ax,ay,a.size,0,Math.PI*2); smOpsCtx.fill();
-    });
-
-    // Update planet angles, compute screen positions, depth-sort
-    smOpsPlanets.forEach(p=>{
-      if(smOpsPausedModel!==p.m) p.angle+=(Math.PI*2/p.orbitMs)*16;
-      p.x=cx+Math.cos(p.angle)*p.orbitR;
-      p.y=cy+Math.sin(p.angle)*p.orbitR*0.42;
-      p.depth=Math.sin(p.angle); // -1=back, +1=front
-    });
-    const sorted=[...smOpsPlanets].sort((a,b)=>a.depth-b.depth);
-
-    sorted.forEach(p=>{
-      const [r,g,b]=p.rgb;
-      const paused=smOpsPausedModel===p.m;
-      const perspScale=0.72+0.28*((p.depth+1)/2); // perspective size
-      const ps=p.size*perspScale*(paused?1.25:1);
-      const col=`rgb(${r},${g},${b})`;
-
-      // Atmospheric glow — vivid, matches planet color
-      const ag=smOpsCtx.createRadialGradient(p.x,p.y,ps*0.6,p.x,p.y,ps*2.6);
-      ag.addColorStop(0,`rgba(${Math.min(255,r+30)},${Math.min(255,g+25)},${Math.min(255,b+20)},0.22)`);
-      ag.addColorStop(0.5,`rgba(${r},${g},${b},0.08)`); ag.addColorStop(1,'transparent');
-      smOpsCtx.fillStyle=ag; smOpsCtx.beginPath(); smOpsCtx.arc(p.x,p.y,ps*2.6,0,Math.PI*2); smOpsCtx.fill();
-
-      // Planet base — solid dark shell
-      smOpsCtx.fillStyle=`rgba(${Math.max(0,r-80)},${Math.max(0,g-80)},${Math.max(0,b-80)},1)`;
-      smOpsCtx.beginPath(); smOpsCtx.arc(p.x,p.y,ps,0,Math.PI*2); smOpsCtx.fill();
-
-      // Jewel-tone vivid surface — strong lit highlight + rich midtone
-      const surf=smOpsCtx.createRadialGradient(p.x-ps*0.42,p.y-ps*0.40,ps*0.02,p.x+ps*0.08,p.y+ps*0.08,ps);
-      surf.addColorStop(0,  `rgba(${Math.min(255,r+100)},${Math.min(255,g+90)},${Math.min(255,b+70)},1.0)`);
-      surf.addColorStop(0.28,`rgba(${Math.min(255,r+40)}, ${Math.min(255,g+35)},${Math.min(255,b+20)},0.95)`);
-      surf.addColorStop(0.65,`rgba(${r},${g},${b},0.85)`);
-      surf.addColorStop(1,  `rgba(${Math.max(0,r-50)},${Math.max(0,g-50)},${Math.max(0,b-40)},0.0)`);
-      smOpsCtx.fillStyle=surf; smOpsCtx.beginPath(); smOpsCtx.arc(p.x,p.y,ps,0,Math.PI*2); smOpsCtx.fill();
-
-      // Inner glow — vivid jewel core
-      const inner=smOpsCtx.createRadialGradient(p.x,p.y,0,p.x,p.y,ps*0.7);
-      inner.addColorStop(0,`rgba(${Math.min(255,r+80)},${Math.min(255,g+70)},${Math.min(255,b+60)},0.35)`);
-      inner.addColorStop(1,'transparent');
-      smOpsCtx.fillStyle=inner; smOpsCtx.beginPath(); smOpsCtx.arc(p.x,p.y,ps,0,Math.PI*2); smOpsCtx.fill();
-
-      // Terminator shadow edge
-      const shad=smOpsCtx.createRadialGradient(p.x+ps*0.3,p.y+ps*0.25,0,p.x+ps*0.3,p.y+ps*0.25,ps*1.0);
-      shad.addColorStop(0,'transparent'); shad.addColorStop(0.5,'transparent'); shad.addColorStop(1,'rgba(0,0,8,0.6)');
-      smOpsCtx.fillStyle=shad; smOpsCtx.beginPath(); smOpsCtx.arc(p.x,p.y,ps,0,Math.PI*2); smOpsCtx.fill();
-
-      // Saturn ring — Model C (wider, two-tone ring)
-      if(p.m==='C'){
-        smOpsCtx.save(); smOpsCtx.translate(p.x,p.y); smOpsCtx.scale(1,0.28);
-        // Outer ring (dimmer)
-        smOpsCtx.strokeStyle=`rgba(${r},${Math.max(0,g-20)},${Math.max(0,b-30)},0.4)`;
-        smOpsCtx.lineWidth=ps*0.28; smOpsCtx.beginPath(); smOpsCtx.arc(0,0,ps*1.7,0,Math.PI*2); smOpsCtx.stroke();
-        // Inner ring (brighter)
-        smOpsCtx.strokeStyle=`rgba(${Math.min(255,r+20)},${Math.min(255,g+10)},${b},0.55)`;
-        smOpsCtx.lineWidth=ps*0.18; smOpsCtx.beginPath(); smOpsCtx.arc(0,0,ps*1.4,0,Math.PI*2); smOpsCtx.stroke();
-        smOpsCtx.restore();
-      }
-
-      // Glow ring if paused
-      if(paused){
-        smOpsCtx.strokeStyle=col; smOpsCtx.lineWidth=2;
-        smOpsCtx.beginPath(); smOpsCtx.arc(p.x,p.y,ps+6,0,Math.PI*2); smOpsCtx.stroke();
-      }
-
-      // Model letter on planet
-      smOpsCtx.fillStyle=`rgba(0,0,0,0.7)`; smOpsCtx.font=`bold ${Math.round(ps*0.8)}px monospace`;
-      smOpsCtx.textAlign='center'; smOpsCtx.textBaseline='middle';
-      smOpsCtx.fillText(p.m,p.x+1,p.y+1);
-      smOpsCtx.fillStyle='rgba(255,255,255,0.9)';
-      smOpsCtx.fillText(p.m,p.x,p.y);
-
-    });
-
-    // Central sun
-    const sunG=smOpsCtx.createRadialGradient(cx,cy,0,cx,cy,28);
-    sunG.addColorStop(0,'rgba(255,255,230,1)'); sunG.addColorStop(0.4,'rgba(255,210,80,.9)'); sunG.addColorStop(1,'transparent');
-    // Corona spikes
-    for(let si=0;si<12;si++){
-      const sa=(si/12)*Math.PI*2+(ts/8000); const sl=22+8*Math.sin(ts/600+si*1.3);
-      smOpsCtx.strokeStyle=`rgba(255,220,100,${0.15+0.1*Math.sin(ts/400+si)})`; smOpsCtx.lineWidth=1.5;
-      smOpsCtx.beginPath(); smOpsCtx.moveTo(cx,cy); smOpsCtx.lineTo(cx+Math.cos(sa)*sl,cy+Math.sin(sa)*sl*0.6); smOpsCtx.stroke();
-    }
-    smOpsCtx.fillStyle=sunG; smOpsCtx.beginPath(); smOpsCtx.arc(cx,cy,28,0,Math.PI*2); smOpsCtx.fill();
-    smOpsCtx.fillStyle='rgba(255,255,255,0.9)'; smOpsCtx.font='bold 9px monospace';
-    smOpsCtx.textAlign='center'; smOpsCtx.textBaseline='middle'; smOpsCtx.fillText('MOHM',cx,cy-3); smOpsCtx.fillText('FLEET',cx,cy+5);
-
-    smOpsCtx.restore();
-    smOpsRAF=requestAnimationFrame(opsFrame);
-  }
-  smOpsRAF=requestAnimationFrame(opsFrame);
-
-  // Drag to pan galaxy
-  smOpsCanvas.onmousedown=e=>{
-    if(e.button!==0) return;
-    smOpsDrag=true; smOpsDragLast={x:e.clientX,y:e.clientY};
-    smOpsCanvas.style.cursor='grabbing';
-  };
-  const smOpsMoveHandler=e=>{
-    if(!smOpsDrag) return;
-    smOpsPanX+=e.clientX-smOpsDragLast.x; smOpsPanY+=e.clientY-smOpsDragLast.y;
-    smOpsDragLast={x:e.clientX,y:e.clientY};
-  };
-  const smOpsUpHandler=()=>{ smOpsDrag=false; if(smOpsCanvas) smOpsCanvas.style.cursor='default'; };
-  smOpsCanvas._moveHandler && window.removeEventListener('mousemove',smOpsCanvas._moveHandler);
-  smOpsCanvas._upHandler   && window.removeEventListener('mouseup',  smOpsCanvas._upHandler);
-  smOpsCanvas._moveHandler=smOpsMoveHandler; smOpsCanvas._upHandler=smOpsUpHandler;
-  window.addEventListener('mousemove',smOpsMoveHandler);
-  window.addEventListener('mouseup',  smOpsUpHandler);
-
-  function opsUnproject(clientX,clientY){
-    const rect=smOpsCanvas.getBoundingClientRect();
-    return { x:(clientX-rect.left)*(W/rect.width)-smOpsPanX, y:(clientY-rect.top)*(H/rect.height)-smOpsPanY };
-  }
-
-  // Click
-  smOpsCanvas.onclick=e=>{
-    if(smOpsDrag) return; // suppress click if was dragging
-    const {x:mx,y:my}=opsUnproject(e.clientX,e.clientY);
-    const hit=smOpsPlanets.find(p=>Math.hypot(p.x-mx,p.y-my)<p.size*1.8+10);
-    if(hit){
-      smOpsPausedModel=smOpsPausedModel===hit.m?null:hit.m;
-      if(smOpsPausedModel) smOpenModelPanel(hit.m);
-    } else smOpsPausedModel=null;
-  };
-  // Hover tooltip
-  smOpsCanvas.onmousemove=e=>{
-    if(smOpsDrag) return;
-    const {x:mx,y:my}=opsUnproject(e.clientX,e.clientY);
-    const tip=document.getElementById('smOpsTip');
-    const hit=smOpsPlanets.find(p=>Math.hypot(p.x-mx,p.y-my)<p.size*1.8+8);
-    if(hit){
-      const col=`rgb(${hit.rgb})`;
-      tip.innerHTML=`<b style="color:${col}">Model ${hit.m}</b> — ${hit.info.title}<br>Drivers: <b>${hit.driverCount}</b> &nbsp;·&nbsp; Active: <b style="color:var(--bolt-green)">${hit.activeCount}</b><br>Total Net: <b style="color:var(--cyan)">${fmt(hit.totalNet)} SAR</b>`;
-      tip.style.display='block'; tip.style.left=Math.min(mx+14,W-240)+'px'; tip.style.top=Math.max(my-60,4)+'px';
-      smOpsCanvas.style.cursor='pointer';
-    } else { tip.style.display='none'; smOpsCanvas.style.cursor='default'; }
-  };
-  smOpsCanvas.onmouseleave=()=>{ document.getElementById('smOpsTip').style.display='none'; };
-}
-
-// ── Cinematic Model Info Panel ──
-const SM_MODEL_INFO={
-  'S':{ title:'Salaried (S)', sub:'Fleet operates everything — driver on fixed salary',
-    desc:'Full employment model. Fleet owns the account and vehicle. Driver receives a fixed monthly salary regardless of earnings. Fleet bears all risk and all upside.',
-    fields:[{l:'Salary',c:'#FF4466',dir:'OUT',d:'Fixed monthly payment to driver'},{l:'Car Cost',c:'#FF4466',dir:'OUT',d:'Vehicle depreciation/rent absorbed by fleet'},{l:'Fleet Earnings',c:'#00FFB3',dir:'IN',d:'All Bolt revenue goes to fleet'}] },
-  'F':{ title:'Foreigner & Saudi (F)', sub:'Driver brings own car, rents the Bolt account',
-    desc:'Driver owns or has arranged their vehicle. Fleet provides the Bolt account only. Lower overhead — one rental stream. Driver has more independence.',
-    fields:[{l:'Account Rent',c:'#00D4FF',dir:'IN',d:'Monthly fee for account access'},{l:'Fleet Cut',c:'#00FFB3',dir:'IN',d:'Optional commission on earnings'}] },
-  'R':{ title:'Rent Model (R)', sub:'Driver owns account & vehicle — pays fleet cut',
-    desc:'Driver owns their own Bolt account and car. Partners with fleet for management, admin, and operational support only. Fleet takes a management cut from earnings.',
-    fields:[{l:'Fleet Cut',c:'#00FFB3',dir:'IN',d:'% of earnings for management services'}] },
-};
-// Legacy key aliases so old B/C/D stored values still open the panel
-SM_MODEL_INFO['B']=SM_MODEL_INFO['F']; SM_MODEL_INFO['C']=SM_MODEL_INFO['S']; SM_MODEL_INFO['D']=SM_MODEL_INFO['R'];
-
-function smOpenModelPanel(m){
-  const info=SM_MODEL_INFO[m]; if(!info) return;
-  const arm=SM_ARMS[m]||SM_ARMS['S'];
-  const col=`rgb(${arm.rgb})`;
-  const colA=`rgba(${arm.rgb},.15)`;
-  // Live stats from current stars
-  const mStars=smStars.filter(s=>s.model===m);
-  const totalNet=mStars.reduce((a,s)=>a+(s.d.netEarnings||0),0);
-  const avgAccept=mStars.length?mStars.reduce((a,s)=>a+(s.d.acceptance||0),0)/mStars.length:0;
-  const el=document.getElementById('smModelContent');
-  el.innerHTML=`
-    <div style="display:flex;align-items:flex-end;gap:18px;margin-bottom:6px">
-      <div class="sm-model-letter" style="color:${col};text-shadow:0 0 40px ${col},0 0 80px ${colA}">${m}</div>
-      <div>
-        <div class="sm-model-title">${info.title}</div>
-        <div class="sm-model-sub">${info.sub}</div>
-      </div>
-    </div>
-    <div style="font-size:13px;color:var(--text-muted);line-height:1.7;margin-bottom:16px">${info.desc}</div>
-    <div class="sm-model-divider"></div>
-    <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">Financial Structure</div>
-    <div class="sm-model-fields">
-      ${info.fields.map(f=>`
-        <div class="sm-model-field" style="border-color:${f.c}22">
-          <div class="sm-model-field-label">${f.l}</div>
-          <div class="sm-model-field-val" style="color:${f.c}">${f.dir==='IN'?'▲ Income':'▼ Cost'}</div>
-          <div style="font-size:10px;color:var(--text-muted);margin-top:3px">${f.d}</div>
-        </div>`).join('')}
-    </div>
-    <div class="sm-model-divider"></div>
-    <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px">Your Fleet — Model ${m} Drivers</div>
-    <div class="sm-model-stats">
-      <div class="sm-model-stat"><div class="sm-model-stat-n" style="color:${col}">${mStars.length}</div><div class="sm-model-stat-l">Drivers</div></div>
-      <div class="sm-model-stat"><div class="sm-model-stat-n">${fmt(totalNet)}</div><div class="sm-model-stat-l">Total Net SAR</div></div>
-      <div class="sm-model-stat"><div class="sm-model-stat-n">${mStars.length?fmt(totalNet/mStars.length):0}</div><div class="sm-model-stat-l">Avg per Driver</div></div>
-      <div class="sm-model-stat"><div class="sm-model-stat-n">${avgAccept.toFixed(0)}%</div><div class="sm-model-stat-l">Avg Acceptance</div></div>
-    </div>`;
-  document.getElementById('smModelOverlay').classList.add('open');
-}
-function smCloseModelPanel(e){
-  if(e&&e.target!==document.getElementById('smModelOverlay')) return;
-  document.getElementById('smModelOverlay')?.classList.remove('open');
-}
 
 // ── Countup animation ──
 function triggerCountUp() {
@@ -13845,245 +12490,449 @@ function dismissCortexAlert(el) {
   setTimeout(() => el.remove(), 320);
 }
 
-// ── Fleet Command Bridge ─────────────────────────────────────────────────────
-let smCommandMonth = '';
-let smSelectedCaptain = null;
+// ═══════════════════════════════════════════════════════════════════════════
+// STAR MAP — the strategic command centre (D-3 rebuild, rung S-SM).
+// AGGREGATES ONLY: no driver list, no action buttons on the surface (§1 boundary
+// rules) — driver names appear only inside a drill overlay. Every number REUSES an
+// existing engine (computeRosterForMonth / bonusFor / tierStatusFor /
+// incentiveTotalsFor / blockAtStake / the stage snapshot) — the deck recomputes
+// nothing. Entry is still gated by the "7ofy" Cerebro lock (SM-1, kept intact).
+// ═══════════════════════════════════════════════════════════════════════════
+let _smSel = '';                 // '' → default (latest month) · a 'YYYY-MM' · or 'all'
+let _smMonthCache = {};          // memoized per-month growth aggregates
+let _smLeaderAll = false;        // I3 "show all" toggle
+function smInvalidate() { _smMonthCache = {}; }          // call on any data refresh
+function smSetSel(sel) { _smSel = sel; _smLeaderAll = false; renderStarMapDeck(); }
+function smToggleLeaderAll() { _smLeaderAll = !_smLeaderAll; renderStarMapDeck(); }
 
-function smSelectCaptain(encoded) {
-  const name = encoded ? decodeURIComponent(encoded) : null;
-  smSelectedCaptain = (smSelectedCaptain && name && driverKey(smSelectedCaptain) === driverKey(name)) ? null : name;
-  renderCommandBridge(); // toggle: clicking same row again closes briefing
-}
-
-function getDriverMonthStats(name, monthKey) {
-  const [y, m] = monthKey.split('-').map(Number);
-  const nk = driverKey(name);
-  let trips = 0, hours = 0, days = 0, accSum = 0, accCount = 0;
-  getHistory().forEach(h => {
-    if (!entryInMonth(h, m - 1, y)) return;
-    const d = (h.drivers||[]).find(x => driverKey(x.name) === nk);
-    if (!d || !d.isActive) return;
-    trips += sN(d.trips);
-    hours += sN(d.hoursOnline);
-    days++;
-    const ar = sN(d.acceptance);
-    if (ar > 0) { accSum += ar; accCount++; }
-  });
-  return { trips, hours, days, acceptance: accCount > 0 ? Math.round(accSum / accCount) : 0 };
-}
-
-function renderCommandBridge() {
-  const el = document.getElementById('smCommandView');
-  if (!el) return;
-  if (!smCommandMonth) smCommandMonth = defaultMonth();
-  const months = getAvailableMonths();
-  if (!months.length) {
-    el.innerHTML = `<div class="cmd-bridge" style="text-align:center;padding:80px;font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:rgba(0,212,255,.4)">[ NO DATA — UPLOAD BOLT CSVs TO ACTIVATE COMMAND BRIDGE ]</div>`;
-    return;
-  }
-  if (!months.includes(smCommandMonth)) smCommandMonth = months[0];
-  const monthKey = smCommandMonth;
-
-  const monthNames = getDriversInMonth(monthKey);
-  if (!monthNames.length) {
-    el.innerHTML = `<div class="cmd-bridge" style="text-align:center;padding:60px;font-family:var(--mono);color:rgba(0,212,255,.35);letter-spacing:.15em">[ NO SIGNALS FOR ${monthLabel(monthKey).toUpperCase()} ]</div>`;
-    return;
-  }
-  const pls = monthNames.map(n => computeDriverPnL(n, monthKey)).sort((a,b) => b.income - a.income);
-
-  // Pending transfers
-  const log = loadTransferLog();
-  const pendingByDriver = {};
-  let totalPending = 0;
-  Object.entries(log).forEach(([date, entries]) => {
-    (entries||[]).forEach(e => {
-      if (computeTransferStatus(e.name, date, log) === 'PENDING' && e.amount > 0) {
-        const k = driverKey(e.name);
-        pendingByDriver[k] = (pendingByDriver[k]||0) + e.amount;
-        totalPending += e.amount;
-      }
-    });
-  });
-
-  const [t1, t2, t3] = bonusTiers();
-  const activePls = pls.filter(p => p.income > 0);
-  const totalNet  = activePls.reduce((s,p) => s + p.income, 0);
-  const totalPnL  = pls.reduce((s,p) => s + p.netPnL, 0);
-  const pendCount = Object.keys(pendingByDriver).length;
-
-  function tc(p) {
-    if (p.profile?.blocked) return 'tb';
-    if (p.income >= t3) return 't3';
-    if (p.income >= t2) return 't2';
-    if (p.income >= t1) return 't1';
-    return 't0';
-  }
-  const tcCol = { t3:'var(--bolt-green)', t2:'var(--cyan)', t1:'var(--amber)', t0:'var(--red)', tb:'rgba(255,68,102,.5)' };
-
-  // ── Captain briefing panel (shown when a row is selected) ─
-  let briefingHTML = '';
-  if (smSelectedCaptain) {
-    const bp = pls.find(x => driverKey(x.name) === driverKey(smSelectedCaptain));
-    if (bp) {
-      const btier  = tc(bp);
-      const bcol   = tcCol[btier];
-      const bpct   = bp.income > 0 ? Math.min(100, Math.round(bp.income / t3 * 100)) : 0;
-      const bfor   = lookupForeignName(bp.name);
-      const bstats = getDriverMonthStats(bp.name, monthKey);
-      const bmodel = bp.model === 'Custom' ? (bp.modelCustom||'Custom') : resolveModelDisplay(bp.model);
-      const bblocks = '▓'.repeat(Math.round(bpct/10)) + '░'.repeat(10 - Math.round(bpct/10));
-      const bspd   = bstats.days > 0 ? Math.round(bp.income / bstats.days) : 0;
-      let bstatus;
-      if (bp.profile?.blocked) bstatus = 'BLOCKED';
-      else if (bp.income === 0) bstatus = 'DARK';
-      else if (bp.income >= t3) bstatus = 'TARGET MET';
-      else if (bp.income >= t2) bstatus = 'CLOSE';
-      else if (bp.income >= t1) bstatus = 'TRACKING';
-      else bstatus = 'BELOW TARGET';
-      briefingHTML = `
-        <div class="cmd-briefing">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">
-            <div>
-              <div style="font-family:var(--mono);font-size:8px;letter-spacing:.22em;color:rgba(0,212,255,.4);margin-bottom:5px">◈ CAPTAIN BRIEFING</div>
-              <div class="cmd-brief-name" style="color:${bcol}">${bp.name}</div>
-              ${bfor ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${bfor}</div>` : ''}
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-              ${bmodel&&bmodel!=='none'?`<span class="${modelBadgeClass(bp.model)}">${bmodel}</span>`:''}
-              <span class="tier" style="color:${bcol};border-color:${bcol}">${bstatus}</span>
-              <button onclick="smSelectCaptain(null)" style="font-family:var(--mono);font-size:9px;letter-spacing:.1em;padding:4px 10px;background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.2);color:rgba(0,212,255,.5);cursor:pointer">✕</button>
-            </div>
-          </div>
-          <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:${bcol}">${fmt(bp.income)}<span style="font-size:11px;color:var(--text-muted);margin-left:6px">SAR NET</span></div>
-          <div style="margin-top:7px">
-            <div style="height:4px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:4px">
-              <div style="height:100%;width:${bpct}%;background:linear-gradient(90deg,rgba(0,255,179,.4),${bcol})"></div>
-            </div>
-            <div style="font-family:var(--mono);font-size:10px;color:${bcol}">${bblocks}&nbsp;&nbsp;${bpct}% of ${fmt(t3)} SAR target</div>
-          </div>
-          <div class="cmd-brief-stats">
-            <div class="cmd-brief-stat"><div class="cmd-brief-sv">${bstats.trips}</div><div class="cmd-brief-sl">Orders</div></div>
-            <div class="cmd-brief-stat"><div class="cmd-brief-sv">${bstats.acceptance}%</div><div class="cmd-brief-sl">Acceptance</div></div>
-            <div class="cmd-brief-stat"><div class="cmd-brief-sv">${bstats.hours.toFixed(1)}</div><div class="cmd-brief-sl">Hours</div></div>
-            <div class="cmd-brief-stat"><div class="cmd-brief-sv">${bstats.days}</div><div class="cmd-brief-sl">Days</div></div>
-            <div class="cmd-brief-stat"><div class="cmd-brief-sv" style="color:${bcol}">${bspd}</div><div class="cmd-brief-sl">SAR / Day</div></div>
-            <div class="cmd-brief-stat"><div class="cmd-brief-sv" style="color:${bcol};font-size:12px">${fmt(bp.netPnL)}</div><div class="cmd-brief-sl">Fleet P&amp;L</div></div>
-          </div>
-        </div>`;
+// ── Shared ambassador roll-up (the interface S3 didn't expose) ───────────────
+// Groups the shared roster by tagged ambassador and joins the shared, override-aware
+// incentive engine for the money — so the leaderboard's "incentive owed" is byte-equal
+// to the Incentives tab. monthSel: 'YYYY-MM' | 'all'. Sorted by fleet-net contribution.
+function ambassadorRollup(monthSel) {
+  const R = computeRosterForMonth(monthSel);
+  if (!R) return { rows: [], R: null, months: [] };
+  const W = computeTrailingWindows();
+  const g = {};
+  const get = name => { const k = name.trim().toLowerCase();
+    return g[k] || (g[k] = { name: name.trim(), key: k, drivers: 0, active: 0, fleetNet: 0, slipping: 0, incSar: 0, incNative: 0, currency: 'SAR' }); };
+  (R.current || []).forEach(d => {
+    const amb = (getCourierProfile(d.name) && getCourierProfile(d.name).ambassador || '').trim();
+    if (!amb) return;
+    const row = get(amb);
+    row.drivers++; if (!d.idle) row.active++; row.fleetNet += d.net;
+    if (!d.blocked) {
+      const w = W.map[d.key];
+      const paceCollapse = w && w.priorDays >= 3 && w.priorNet >= 800 && w.recentNet < w.priorNet * 0.5;
+      const tierSlip = R.projectable && !d.idle && netTierBand(d.net) > d.band;
+      if (paceCollapse || tierSlip) row.slipping++;
     }
-  }
-
-  // ── Signal matrix rows ──────────────────────────────────
-  const rows = pls.map((p, i) => {
-    const tier     = tc(p);
-    const col      = tcCol[tier];
-    const pct      = p.income > 0 ? Math.min(100, Math.round(p.income / t3 * 100)) : 0;
-    const foreign  = lookupForeignName(p.name);
-    const pendAmt  = pendingByDriver[driverKey(p.name)] || 0;
-    const modelLbl = p.model === 'Custom' ? (p.modelCustom||'Custom') : resolveModelDisplay(p.model);
-    const isSel    = smSelectedCaptain && driverKey(smSelectedCaptain) === driverKey(p.name);
-
-    let statusTag;
-    if      (p.profile?.blocked) statusTag = `<span class="tier tier-none" style="color:var(--red);border-color:rgba(255,68,102,.4)">BLOCKED</span>`;
-    else if (p.income === 0)     statusTag = `<span class="tier tier-none">DARK</span>`;
-    else if (p.income >= t3)     statusTag = `<span class="tier tier-active">TARGET</span>`;
-    else if (p.income >= t2)     statusTag = `<span class="tier tier-platinum">CLOSE</span>`;
-    else if (p.income >= t1)     statusTag = `<span class="tier tier-gold">TRACKING</span>`;
-    else                         statusTag = `<span class="tier tier-bronze">BELOW</span>`;
-
-    const pendTag  = pendAmt > 0 ? `<span class="tier" style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);color:var(--amber)">⏳&nbsp;${fmt(pendAmt)}</span>` : '';
-    const modelTag = modelLbl && modelLbl !== 'none' ? `<span class="${modelBadgeClass(p.model)}">${modelLbl}</span>` : '';
-
-    // blocks ▓▓▓░░ visual
-    const filledBlocks = Math.round(pct / 20); // 0-5 blocks
-    const blocks = '▓'.repeat(filledBlocks) + '░'.repeat(5 - filledBlocks);
-
-    return `
-      <div class="cmd-row ${tier}${isSel?' selected':''}" style="animation-delay:${i * 0.03}s" onclick="smSelectCaptain('${encodeURIComponent(p.name)}')">
-        <div class="cmd-rank">${String(i+1).padStart(2,'0')}</div>
-        <div class="cmd-name-block">
-          <div class="cmd-name">${p.name}</div>
-          ${foreign ? `<div class="cmd-acct">${foreign}</div>` : ''}
-        </div>
-        <div class="cmd-bar-col">
-          <div class="cmd-bar-track">
-            <div class="cmd-bar-fill ${tier}" style="--w:${pct}%"></div>
-          </div>
-          <div class="cmd-bar-label"><span style="color:${col};letter-spacing:.04em">${blocks}</span>&nbsp;&nbsp;${pct}% of ${fmt(t3)}</div>
-        </div>
-        <div class="cmd-sar" style="color:${col}">${p.income > 0 ? fmt(p.income) : '—'}<span style="font-size:9px;color:var(--text-muted);margin-left:3px">SAR</span></div>
-        <div class="cmd-badges">${statusTag}${pendTag}${modelTag}</div>
-      </div>`;
-  }).join('');
-
-  // ── Transmission alerts ─────────────────────────────────
-  const alerts = [];
-  pls.filter(p => p.profile?.blocked).forEach(p =>
-    alerts.push({ sev:'critical', tag:'CRITICAL', msg:`${p.name}`, sub:'Captain suspended · zero revenue output' }));
-  pls.filter(p => !p.profile?.blocked && p.income > 0 && p.income < t1).forEach(p =>
-    alerts.push({ sev:'warning', tag:'WARNING', msg:`${p.name} · ${Math.round(p.income/t3*100)}% signal`, sub:`${fmt(p.income)} SAR received · minimum tier threshold ${fmt(t1)} SAR` }));
-  Object.entries(pendingByDriver).forEach(([k, amt]) => {
-    const name = pls.find(p => driverKey(p.name) === k)?.name || k;
-    alerts.push({ sev:'info', tag:'PENDING', msg:`Transfer unconfirmed · ${name}`, sub:`${fmt(amt)} SAR awaiting Bolt confirmation` });
   });
-  const txHTML = alerts.length
-    ? alerts.map(a => `
-        <div class="cmd-tx ${a.sev}">
-          <span class="cmd-tx-tag">${a.tag}</span>
-          <div class="cmd-tx-body">${a.msg}<div class="cmd-tx-sub">${a.sub}</div></div>
-        </div>`).join('')
-    : `<div class="cmd-tx info"><span class="cmd-tx-tag">STATUS</span><div class="cmd-tx-body">ALL SYSTEMS NOMINAL · NO ACTIVE ALERTS</div></div>`;
+  // Money spine — every incentive ref is included (even referrers whose drivers left),
+  // so Σ incSar == incentiveTotalsFor().totals.grandSar exactly.
+  const incMonths = (R.monthSel === 'all') ? R.months : [R.monthSel];
+  incMonths.forEach(mk => { incentiveTotalsFor(mk).refs.forEach(ref => {
+    const row = get(ref.name);
+    row.incSar += ref.paidSar || 0; row.incNative += ref.paidNative || 0;
+    if (ref.currency) row.currency = ref.currency;
+  }); });
+  const rows = Object.values(g).sort((a, b) => b.fleetNet - a.fleetNet || b.incSar - a.incSar);
+  return { rows, R, months: R.months };
+}
 
-  const pnlCol = totalPnL >= 0 ? 'var(--bolt-green)' : 'var(--red)';
-  const monthOpts = months.map(mo => `<option value="${mo}" ${mo===monthKey?'selected':''}>${monthLabel(mo)}</option>`).join('');
+// Drill entry point — open the Ambassadors tab scoped to one ambassador (S3's
+// ambFilter drives the per-ambassador drill; A1 opens from there, month-scoped).
+function openAmbassador(name, monthKey) {
+  ambFilter = name;
+  if (monthKey && monthKey !== 'all') ambMonth = monthKey;
+  todayGo('ambassadors');
+}
 
-  el.innerHTML = `
-    <div class="cmd-bridge">
+// ── I2 pipeline totals — the SAME stage snapshot + SLA constants S3 uses (no
+// re-mapping of the 16 stages). Reads the cache other tabs prime; null until loaded.
+function smPipelineTotals() {
+  if (!Array.isArray(stageSnapshotCache) || !stageSnapshotCache.length) return null;
+  const now = Date.now(), DAY = 86400000;
+  let inPipe = 0, stuck = 0;
+  stageSnapshotCache.forEach(r => {
+    if (!r.current_stage || PIPELINE_TERMINAL.has(r.current_stage)) return;
+    inPipe++;
+    const ts = Date.parse(r.entered_at);
+    if (!isNaN(ts) && (now - ts) / DAY > PIPELINE_STUCK_DAYS) stuck++;
+  });
+  return { inPipe, stuck };
+}
 
-      <!-- Header row -->
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
-        <div style="font-family:var(--mono);font-size:8px;letter-spacing:.28em;color:rgba(0,212,255,.4)">
-          ◈ FLEET COMMAND BRIDGE &nbsp;·&nbsp; NEURAL TELEMETRY ONLINE
-        </div>
-        <select class="kpi-select" onchange="smCommandMonth=this.value;renderCommandBridge()">${monthOpts}</select>
-      </div>
+// ── I5 per-month aggregate (memoized) — bands + net + company bonus, one engine call. ──
+function smMonthAgg(mk) {
+  if (_smMonthCache[mk]) return _smMonthCache[mk];
+  const R = computeRosterForMonth(mk);
+  const agg = { key: mk, net: 0, projBonus: 0, bonus: 0, bands: [0, 0, 0, 0], workers: 0, isCurrent: false };
+  if (R && R.current) {
+    agg.isCurrent = !!R.isCurrentMonth;
+    R.current.forEach(d => {
+      agg.net += d.net;
+      if (!d.idle) agg.projBonus += d.companyBonus;      // live run-rate projection (== Today)
+    });
+  }
+  // Tier mix for the growth bars = Finance-consistent (smTierDetail), so I5 agrees with
+  // I1 and a partial early month reflects its Bolt invoice, not the thin daily history.
+  const td = smTierDetail(mk);
+  agg.bands = [td.below.count, td[4000].achieved + td[4000].projected,
+               td[5000].achieved + td[5000].projected, td[6000].achieved + td[6000].projected];  // <4k,4k,5k,6k
+  agg.workers = agg.bands.reduce((s, n) => s + n, 0);
+  // Company bonus, INVOICE-AWARE: a closed month reads Bolt's invoice via Finance's
+  // computeExecMonth (its tierCompany) — the authoritative final, so early months whose
+  // daily-history mirror is partial don't under-report (e.g. May: history Σ=0 but the
+  // invoice's real company bonus is ~2,992). The current month uses the live projection.
+  agg.bonus = (agg.isCurrent || typeof computeExecMonth !== 'function')
+    ? agg.projBonus
+    : Math.round((computeExecMonth(mk) || {}).tierCompany || 0);
+  return (_smMonthCache[mk] = agg);
+}
 
-      <!-- Unified telemetry banner -->
-      <div class="cmd-telem">
-        <div class="cmd-telem-cell">
-          <div class="cmd-tl">Active Signals</div>
-          <div class="cmd-tv" style="color:var(--cyan)">${activePls.length}<span style="font-size:11px;color:var(--text-muted)"> / ${pls.length}</span></div>
-          <div class="cmd-ts">captains on grid</div>
-        </div>
-        <div class="cmd-telem-cell">
-          <div class="cmd-tl">Fleet Net Output</div>
-          <div class="cmd-tv" style="color:var(--bolt-green)">${fmt(totalNet)}</div>
-          <div class="cmd-ts">SAR · Bolt earnings</div>
-        </div>
-        <div class="cmd-telem-cell">
-          <div class="cmd-tl">Fleet P&amp;L</div>
-          <div class="cmd-tv" style="color:${pnlCol}">${totalPnL>=0?'+':''}${fmt(totalPnL)}</div>
-          <div class="cmd-ts">SAR after all costs</div>
-        </div>
-        <div class="cmd-telem-cell">
-          <div class="cmd-tl">Unconfirmed Transfers</div>
-          <div class="cmd-tv" style="color:${totalPending>0?'var(--amber)':'rgba(0,212,255,.3)'}">${totalPending>0?fmt(totalPending):'——'}</div>
-          <div class="cmd-ts">${pendCount} captain${pendCount!==1?'s':''} pending</div>
-        </div>
-      </div>
+// ── Finance-consistent tier detail (SM-3) ────────────────────────────────────
+// Replicates tierStatusFor's classification EXACTLY (so the counts equal Finance's
+// Executive tier block / Bolt-Bonus table for every month — invoice for a closed
+// month, pace projection for the open one) and additionally collects the per-driver
+// names so the ladder segments stay drillable. Adds a `below` bucket (earning but
+// below-pace) for the pipeline segment. Not memoised across renders (cheap; the deck
+// clears its caches each render).
+function smTierDetail(monthKey) {
+  const st = { 6000:{achieved:0,projected:0,names:[]}, 5000:{achieved:0,projected:0,names:[]},
+               4000:{achieved:0,projected:0,names:[]}, below:{count:0,names:[]} };
+  const imported = boltBonusMonth(monthKey);
+  if (imported) {                                   // closed month → Bolt's invoice is truth
+    Object.values(imported).forEach(d => {
+      if ((+d.gross || 0) <= 0) return;
+      const net = +d.net || 0;
+      const f = net >= 6000 ? 6000 : net >= 5000 ? 5000 : 4000;
+      st[f].achieved++; if (d.name) st[f].names.push(d.name);
+    });
+  } else {                                          // open month → same pace logic as tierStatusFor
+    getDriversInMonth(monthKey).forEach(name => {
+      const income = computeDriverNetForPeriod(name, monthKey);
+      if (income <= 0) return;                       // idle → the roster reconciliation line, not a tier
+      const b = bonusForDriver(name, income, monthKey);
+      const f = b.tierFloor;
+      if (!f) { st.below.count++; st.below.names.push(name); return; }
+      if (income >= f) st[f].achieved++; else st[f].projected++;
+      st[f].names.push(name);
+    });
+  }
+  return st;
+}
 
-      <!-- Captain briefing (appears when a row is clicked) -->
-      ${briefingHTML}
+// ── Drill overlay (opens OVER the deck; the one soft shadow allowed on overlays) ──
+function smShowOverlay(title, bodyHtml) {
+  const host = document.getElementById('smOverlayHost');
+  if (!host) return;
+  host.innerHTML = `<div class="dk"><div class="sm2-ov-back" onclick="smCloseOverlay()"></div>
+    <div class="sm2-ov-card"><div class="sm2-ov-head"><span class="t">${title}</span>
+      <button class="sm2-ov-close" onclick="smCloseOverlay()" title="Close">✕</button></div>
+      ${bodyHtml}</div></div>`;
+  host.classList.add('open');
+}
+function smCloseOverlay() { const h = document.getElementById('smOverlayHost'); if (h) { h.classList.remove('open'); h.innerHTML = ''; } }
 
-      <!-- Signal matrix -->
-      <div class="cmd-divider">CAPTAIN SIGNAL MATRIX &nbsp;·&nbsp; ${activePls.length} ACTIVE</div>
-      <div class="cmd-matrix">${rows}</div>
+// Scoped driver list for a ladder segment. kind:
+//   '6000'|'5000'|'4000'|'below'  → the Finance-consistent tier buckets (smTierDetail)
+//   'tiers'                        → all tiered drivers (funnel's TIERED chip)
+//   'idle'|'blocked'              → the roster reconciliation buckets
+// Rows → A1 driver panel, month-scoped.
+function smLadderDrill(kind) {
+  const R = computeRosterForMonth(_smSel);
+  if (!R || !R.current) return;
+  const jsq = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const row = (name, net) => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(name)}','${R.monthSel}')">
+    <span class="k">${escH(name)} ${dkTierPill(netTierBand(net))}</span>
+    <span class="v"><span class="dk-num">${fmt(Math.round(net))}</span></span></div>`;
+  let rows, title, count;
+  if (kind === 'idle' || kind === 'blocked') {
+    const list = (kind === 'blocked' ? R.current.filter(d => d.blocked) : R.current.filter(d => d.idle && !d.blocked))
+      .slice().sort((a, b) => (b.proj || b.net) - (a.proj || a.net));
+    title = kind === 'blocked' ? 'Blocked drivers' : 'Idle drivers'; count = list.length;
+    rows = list.map(d => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(d.name)}','${R.monthSel}')">
+      <span class="k">${escH(d.name)} ${dkDriverTierPill(d, R)}</span><span class="v"><span class="dk-num">${fmt(Math.round(d.proj || d.net))}</span></span></div>`).join('');
+  } else {
+    const td = smTierDetail(R.monthSel);
+    let names;
+    if (kind === 'tiers')      { names = [].concat(td[6000].names, td[5000].names, td[4000].names); title = 'On a tier (4k+)'; }
+    else if (kind === 'below') { names = td.below.names.slice(); title = '<4k — below pace'; }
+    else                       { names = (td[Number(kind)] || {}).names || []; title = (Number(kind) / 1000) + 'k tier'; }
+    const enriched = names.map(n => ({ n, net: computeDriverNetForPeriod(n, R.monthSel) })).sort((a, b) => b.net - a.net);
+    count = enriched.length;
+    rows = enriched.map(x => row(x.n, x.net)).join('');
+  }
+  smShowOverlay(`${escH(title)} · ${count} · ${escH(R.periodLabel)}`,
+    rows || `<div style="color:var(--dk-dim);font-size:12px;padding:6px">No drivers in this band.</div>`);
+}
 
-      <!-- Transmissions -->
-      <div class="cmd-divider">INCOMING TRANSMISSIONS &nbsp;·&nbsp; ${alerts.length} ITEM${alerts.length!==1?'S':''}</div>
-      <div class="cmd-transmissions">${txHTML}</div>
+// ═══ THE DECK ════════════════════════════════════════════════════════════════
+function renderStarMapDeck() {
+  const el = document.getElementById('starmapContent');
+  if (!el) return;
+  const R = computeRosterForMonth(_smSel);
+  if (!R || !R.months || !R.months.length) {
+    el.innerHTML = `<div class="dk"><div class="dk-shell">${dkDeckHeader({ title: 'Star Map', context: 'the whole operation, at a glance' })}
+      <div class="dk-card" style="text-align:center;padding:36px 20px;color:var(--dk-mut)">
+        <div style="font-size:26px">🛰</div><div style="font-size:15px;font-weight:600;color:var(--dk-text)">No fleet data yet</div>
+        <div style="font-size:12px">Upload a Bolt CSV (or run the sync) — the command instruments light up automatically.</div></div></div></div>`;
+    return;
+  }
+  _smMonthCache = {};                         // fresh growth aggregates every render
+  const isAll = R.monthSel === 'all';
+  const roll = ambassadorRollup(R.monthSel);  // the heaviest join — computed once, threaded down
 
-    </div>`;
+  const header = dkDeckHeader({
+    title: 'Star Map',
+    context: `the whole operation · ${isAll ? 'all time' : R.periodLabel}`,
+    status: dkStatusChip()
+  });
+  const rail = dkAlertRail(dkAlertRegistry(['stale', 'reconcile']));   // trust-only subset (§5)
+
+  const body = `<div class="dk"><div class="dk-shell" style="padding-block:2px 8px">
+    ${header}${rail}
+    ${smTimeframe(R)}
+    ${smStatStrip(R, roll)}
+    ${isAll
+      ? smLifetimeStrip(R)
+      : `<div class="sm2-grid r1">${smBonusHero(R)}${smTierLadder(R)}</div>`}
+    ${smFunnel(R)}
+    ${isAll
+      ? `${smLeaderboard(R, roll)}${smGrowth(R, true)}`
+      : `<div class="sm2-grid r3">${smLeaderboard(R, roll)}${smGrowth(R, false)}</div>`}
+  </div></div>`;
+  el.innerHTML = body;
+
+  // Async: prime the onboarding stage snapshot (I2 funnel + stat strip), repaint once.
+  if (!Array.isArray(stageSnapshotCache) || !stageSnapshotCache.length) {
+    fetchStageSnapshot().then(() => {
+      if (document.getElementById('starmap').classList.contains('active')) renderStarMapDeck();
+    }).catch(() => {});
+  }
+}
+
+// ── Timeframe selector — single-select month + ALL-TIME, A2 chip styling, year-proof ──
+function smTimeframe(R) {
+  const chip = (v, label) => `<button class="dk-chip mono${R.monthSel === v ? ' on' : ''}" onclick="smSetSel('${v}')">${label}</button>`;
+  const months = R.months.map(m => chip(m, monthLabel(m))).join('');
+  return `<div class="sm2-tf"><span class="lb">Timeframe</span>${months}${chip('all', 'ALL-TIME')}</div>`;
+}
+
+// ── Stat strip — roster truth (S1) · active · pipeline · blocked · ambassadors ──
+function smStatStrip(R, roll) {
+  const rec = getRosterReconciliation();
+  const rosterN = getFleetRoster().length;
+  const recTip = rec ? `${rec.total} = ${rec.portal} portal + ${rec.deactivated} deact.` : '';
+  const active = (R.current || []).filter(d => !d.idle && !d.blocked).length;
+  const pt = smPipelineTotals();
+  const ambN = (roll || ambassadorRollup(R.monthSel)).rows.filter(r => r.drivers > 0).length;
+  const activeLbl = R.monthSel === 'all' ? 'Active (all)' : 'Active';
+  return `<div class="dk-strip">
+    <div class="dk-stat" title="${recTip}"><div class="l">Roster</div><div class="v">${rosterN}</div></div>
+    <div class="dk-stat"><div class="l">${activeLbl}</div><div class="v">${active}</div></div>
+    <div class="dk-stat"><div class="l">In pipeline</div><div class="v">${pt ? pt.inPipe : '—'}</div></div>
+    <div class="dk-stat${R.blockedCount ? ' danger' : ''}"><div class="l">Blocked</div><div class="v">${R.blockedCount}</div></div>
+    <div class="dk-stat"><div class="l">Ambassadors</div><div class="v">${ambN}</div></div>
+  </div>`;
+}
+
+// ── I1 · TIER LADDER — fleet-wide distribution (tier counts == FINANCE, SM-3) ─────
+// The tier segments + achieved/on-pace chips come from smTierDetail, which replicates
+// Finance's tierStatusFor exactly (invoice for a closed month, pace projection for the
+// open one) — so Star Map never contradicts the Executive tier block. The roster is
+// still fully reconciled on the footer line (active · idle · blocked), and every
+// segment drills to the real drivers, month-scoped.
+function smTierLadder(R) {
+  const cur = R.current || [];
+  const blocked = cur.filter(d => d.blocked).length;
+  const idle = cur.filter(d => d.idle && !d.blocked).length;
+  const active = cur.length - blocked - idle;
+  const td = smTierDetail(R.monthSel);
+  const cnt = f => td[f].achieved + td[f].projected;
+  const c6 = cnt(6000), c5 = cnt(5000), c4 = cnt(4000), cb = td.below.count;
+  const barTotal = Math.max(1, c6 + c5 + c4 + cb);
+  const segs = [
+    { n: c6, bg: 'var(--dk-t6)', k: '6000', lbl: '6K' },
+    { n: c5, bg: 'var(--dk-t5)', k: '5000', lbl: '5K' },
+    { n: c4, bg: 'var(--dk-t4)', k: '4000', lbl: '4K' },
+    { n: cb, bg: 'var(--dk-t0)', k: 'below', lbl: '<4K' },
+  ].filter(s => s.n > 0);
+  // The count rides a small dark chip with light text so it stays legible on every
+  // segment colour in BOTH themes (no text-shadow — design-system rule).
+  const bar = (c6 + c5 + c4 + cb) ? `<div class="sm2-seg">${segs.map(s => {
+    const w = Math.max(s.n / barTotal * 100, 6);
+    return `<div style="width:${w}%;background:${s.bg}" title="${s.lbl} · ${s.n}" onclick="smLadderDrill('${s.k}')"><span style="background:rgba(9,12,16,.36);color:#F4F7FA;border-radius:4px;padding:0 5px;font-size:11px">${s.n}</span></div>`;
+  }).join('')}</div>` : `<div style="color:var(--dk-dim);font-size:12px">No earning drivers this period.</div>`;
+  // Roster reconciliation — every current driver still accounted for (idle/blocked drillable).
+  const foot = `<div class="sm2-foot">Roster ${cur.length} · ${active} active · <span style="cursor:pointer;border-block-end:1px dotted var(--dk-dim)" onclick="smLadderDrill('idle')">${idle} idle</span> · <span style="cursor:pointer;border-block-end:1px dotted var(--dk-dim)" onclick="smLadderDrill('blocked')">${blocked} blocked</span> · tiers = Finance</div>`;
+  // Achieved / on-pace chips — Finance's tierStatusFor split (same source as the bar).
+  const chips = `<div style="display:flex;flex-wrap:wrap;gap:8px 14px;margin-block-start:11px">${[[3, 6000], [2, 5000], [1, 4000]].map(([band, floor]) => {
+    const t = td[floor], on = t.projected ? ` · <span style="color:var(--dk-dim)">${t.projected} on pace</span>` : '';
+    return `<span style="display:inline-flex;align-items:center;gap:6px">${dkTierPill(band)}<span style="font-size:12px;color:var(--dk-mut)">${t.achieved} achieved${on}</span></span>`;
+  }).join('')}</div>`;
+  return `<div class="dk-card">
+    <div class="dk-card-t"><span class="t">Tier ladder</span><span class="go">where earning drivers sit on the 4k/5k/6k ladder →</span></div>
+    ${bar}${foot}${chips}</div>`;
+}
+
+// ── I2 · OPERATION FUNNEL — onboard → activate → earn → tier, with the two leaks ──
+function smFunnel(R) {
+  const cur = R.current || [];
+  const byKey = {}; cur.forEach(d => { byKey[d.key] = d; });
+  const activated = cur.length;
+  const earning = cur.filter(d => !d.idle).length;
+  const td = smTierDetail(R.monthSel);                 // TIERED == Finance's tier count (SM-3), same as I1
+  const tiered = td[6000].achieved + td[6000].projected + td[5000].achieved + td[5000].projected + td[4000].achieved + td[4000].projected;
+  const pt = smPipelineTotals();
+  const stake = cur.filter(d => d.blocked).reduce((s, d) => s + (blockAtStake(d.name, R, byKey).sar || 0), 0);
+  const pipeSeg = pt
+    ? { lbl: 'PIPELINE', n: pt.inPipe, go: "todayGo('pipeline')" }
+    : { lbl: 'PIPELINE', n: '—', go: "todayGo('pipeline')", muted: true };
+  const segs = [
+    pipeSeg,
+    { lbl: 'ACTIVATED', n: activated, go: '' },
+    { lbl: 'EARNING', n: earning, go: '' },
+    { lbl: 'TIERED', n: tiered, go: "smLadderDrill('tiers')" },
+  ];
+  const flow = `<div style="display:flex;align-items:stretch;gap:8px;flex-wrap:wrap;margin-block-start:4px">${segs.map((s, i) => `
+    <div style="flex:1;min-width:120px;border:1px solid var(--dk-line);border-radius:8px;padding:9px 12px;background:var(--dk-s2);${s.go ? 'cursor:pointer' : ''}"${s.go ? ` onclick="${s.go}"` : ''}>
+      <div style="font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--dk-mut)">${s.lbl}</div>
+      <div class="dk-num" style="font-size:20px;font-weight:700;color:${s.muted ? 'var(--dk-dim)' : 'var(--dk-hi)'}">${s.n}</div>
+    </div>${i < segs.length - 1 ? '<div style="align-self:center;color:var(--dk-dim);font-size:16px">→</div>' : ''}`).join('')}</div>`;
+  const leaks = `<div class="sm2-leak">
+    ${pt && pt.stuck ? `<span class="sm2-leakchip" style="border-color:var(--dk-warn)" onclick="todayGo('pipeline')"><span style="color:var(--dk-warn)">⚠ STUCK &gt;SLA</span> <b>${pt.stuck}</b></span>` : ''}
+    <span class="sm2-leakchip" style="border-color:var(--dk-danger)" onclick="todayGo('blocks')"><span style="color:var(--dk-danger)">⛔ BLOCKED</span> <b>${R.blockedCount}</b>${stake > 0 ? ` · <b>${fmt(Math.round(stake))}</b> SAR at stake` : ''}</span>
+  </div>`;
+  const note = pt ? '' : `<div style="font-size:10px;color:var(--dk-dim);margin-block-start:6px">sheet mirror unavailable — roster-side counts still live</div>`;
+  return `<div class="dk-card" style="margin-block-start:14px">
+    <div class="dk-card-t"><span class="t">Operation funnel</span><span class="go">PIPELINE — LIVE</span></div>
+    ${flow}${leaks}${note}</div>`;
+}
+
+// ── I3 · AMBASSADOR LEADERBOARD — who feeds the funnel (money first) ──
+function smLeaderboard(R, roll) {
+  roll = roll || ambassadorRollup(R.monthSel);
+  const jsq = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const rows = roll.rows;
+  const shown = _smLeaderAll ? rows : rows.slice(0, 5);
+  const money = r => r.currency === 'EGP' ? `${fmt(Math.round(r.incNative))} EGP` : `${fmt(Math.round(r.incSar))} SAR`;
+  const body = shown.map((r, i) => {
+    const actPct = r.drivers ? Math.round(r.active / r.drivers * 100) : 0;
+    return `<div class="dk-row click" onclick="openAmbassador('${jsq(r.name)}','${R.monthSel}')">
+      <span class="k"><span class="sm2-rank">#${i + 1}</span> ${escH(r.name)}${r.slipping ? ` <span class="dk-warn-n" style="font-size:10px" title="${r.slipping} slipping">▾${r.slipping}</span>` : ''}</span>
+      <span class="v"><span style="color:var(--dk-mut)">${r.drivers}d · ${actPct}%</span> · <span class="dk-num">${fmt(Math.round(r.fleetNet))}</span> · <b style="color:${r.incSar > 0 ? 'var(--dk-brand)' : 'var(--dk-dim)'}">${r.incSar > 0 || r.incNative > 0 ? money(r) : '—'}</b></span></div>`;
+  }).join('') || `<div style="color:var(--dk-dim);font-size:12px;padding:6px">No ambassador attribution yet.</div>`;
+  const more = rows.length > 5 ? `<div class="dk-row click" style="justify-content:center;color:var(--dk-info)" onclick="smToggleLeaderAll()">${_smLeaderAll ? 'show top 5 ▲' : `show all ${rows.length} ▾`}</div>` : '';
+  return `<div class="dk-card">
+    <div class="dk-card-t"><span class="t">Ambassador leaderboard</span><span class="go">drivers · active% · fleet net · incentive →</span></div>
+    ${body}${more}</div>`;
+}
+
+// ── I4 · BONUS PROJECTION + TREND — the hero (company money only, invoice-aware) ──
+// Current month: the live projection (== Today's projBonus == Finance's "PROJECTED
+// COMPANY BONUS"). Closed month: the invoiced FINAL (Finance's computeExecMonth) — so a
+// past month never reads 0 off a partial daily-history mirror. "Booked so far" and the
+// last-month comparison both read Finance's invoice figure too.
+function smBonusHero(R) {
+  const sel = R.monthSel;
+  const proj = (R.current || []).reduce((s, d) => s + (d.idle ? 0 : d.companyBonus), 0);   // == Today projBonus
+  const booked = (typeof computeExecMonth === 'function') ? Math.round((computeExecMonth(sel) || {}).tierCompany || 0) : 0;
+  const heroNum = R.isCurrentMonth ? proj : booked;                 // on-course (live) vs invoiced final
+  const [y, m] = sel.split('-').map(Number);
+  const pm0 = m === 1 ? 11 : m - 2, py = m === 1 ? y - 1 : y;
+  const prevKey = py + '-' + String(pm0 + 1).padStart(2, '0');
+  const prevLabel = new Date(py, pm0, 1).toLocaleDateString('en-GB', { month: 'short' });
+  const prevFinal = R.months.includes(prevKey) ? smMonthAgg(prevKey).bonus : null;   // invoiced final of the prior month
+  const deltaPct = (prevFinal && prevFinal > 0) ? Math.round((heroNum - prevFinal) / prevFinal * 100) : null;
+  const dChip = deltaPct == null ? '' : `<span style="color:${deltaPct >= 0 ? 'var(--dk-brand)' : 'var(--dk-danger)'};font-weight:700">${deltaPct >= 0 ? '▲' : '▼'}${Math.abs(deltaPct)}%</span>`;
+  const courseLbl = R.isCurrentMonth ? 'ON COURSE' : 'FINAL';
+  return `<div class="dk-card sm2-hero">
+    <div class="dk-card-t"><span class="t">Company bonus · ${escHtmlSm(R.periodLabel)}</span><span class="go" onclick="todayGoExec(event)" style="cursor:pointer">Finance →</span></div>
+    <div style="font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--dk-mut);margin-block-start:2px">${courseLbl}</div>
+    <div class="sm2-xl" style="color:var(--dk-brand)">${fmt(heroNum)}<span style="font-size:14px;color:var(--dk-mut)"> SAR</span></div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-block-start:10px;font-size:12px;color:var(--dk-mut)">
+      ${R.isCurrentMonth ? `<span>Booked <b class="dk-num" style="color:var(--dk-text)">${fmt(booked)}</b></span>` : ''}
+      <span>${prevLabel} final <b class="dk-num" style="color:var(--dk-text)">${prevFinal == null ? '—' : fmt(Math.round(prevFinal))}</b></span>
+      ${dChip ? `<span>${dChip}</span>` : ''}
+    </div>
+    <div style="font-size:10px;color:var(--dk-dim);margin-block-start:8px">${R.isCurrentMonth ? `on course vs ${prevLabel}'s final` : 'invoiced final'} · company money only (driver net is the driver's)</div>
+  </div>`;
+}
+function escHtmlSm(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+// ── I5 · GROWTH — stacked tier-band bars + company-bonus line (SM-2 (a)) ──
+// Inline SVG in a dir=ltr island (time flows L→R in both languages). Click a month
+// column → re-scope the whole deck to that month.
+function smGrowth(R, full) {
+  const all = R.months.slice().reverse();                     // chronological
+  const months = full ? all : all.slice(-12);                 // month mode = last 12
+  const data = months.map(smMonthAgg);
+  if (!data.length) return `<div class="dk-card"><div class="dk-card-t"><span class="t">Growth</span></div><div style="color:var(--dk-dim);font-size:12px">No history yet.</div></div>`;
+  const heroCls = R.monthSel === 'all' ? ' sm2-hero' : '';
+  const maxWorkers = Math.max(1, ...data.map(d => d.workers));
+  const maxBonus = Math.max(1, ...data.map(d => d.bonus));
+  const bandCols = ['var(--dk-t0)', 'var(--dk-t4)', 'var(--dk-t5)', 'var(--dk-t6)'];   // <4k,4k,5k,6k
+  const W = full ? 640 : 340, H = 190, padL = 8, padR = 8, padT = 14, padB = 26;
+  const n = data.length, gap = 6;
+  const colW = (W - padL - padR - gap * (n - 1)) / n;
+  const plotH = H - padT - padB;
+  const jsq = s => String(s || '').replace(/'/g, "\\'");
+  let bars = '', line = '', dots = '', labels = '';
+  const pts = [];
+  data.forEach((d, i) => {
+    const x = padL + i * (colW + gap);
+    let yTop = H - padB;
+    // stacked bands bottom→top: 6k on top
+    [0, 1, 2, 3].forEach(b => {
+      const h = d.bands[b] / maxWorkers * plotH;
+      if (h <= 0) return;
+      yTop -= h;
+      bars += `<rect x="${x.toFixed(1)}" y="${yTop.toFixed(1)}" width="${colW.toFixed(1)}" height="${h.toFixed(1)}" fill="${bandCols[b]}" opacity="${R.monthSel === d.key ? 1 : .82}"/>`;
+    });
+    // bonus line point (top area)
+    const by = padT + (1 - d.bonus / maxBonus) * plotH;
+    pts.push([x + colW / 2, by]);
+    const sel = R.monthSel === d.key;
+    labels += `<text x="${(x + colW / 2).toFixed(1)}" y="${H - 9}" text-anchor="middle" font-size="9" fill="${sel ? 'var(--dk-hi)' : 'var(--dk-mut)'}" font-family="var(--dk-mono)">${monthLabel(d.key).replace(/ \d{4}$/, '')}</text>`;
+    // clickable column hotspot
+    bars += `<rect x="${x.toFixed(1)}" y="${padT}" width="${colW.toFixed(1)}" height="${(H - padB - padT).toFixed(1)}" fill="transparent" style="cursor:pointer"><title>${escHtmlSm(monthLabel(d.key))} · ${d.workers} workers · bonus ${fmt(Math.round(d.bonus))}</title></rect>`;
+    bars += `<rect x="${x.toFixed(1)}" y="${padT}" width="${colW.toFixed(1)}" height="${(H - padB - padT).toFixed(1)}" fill="transparent" style="cursor:pointer" onclick="smSetSel('${jsq(d.key)}')"></rect>`;
+  });
+  line = `<polyline points="${pts.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="var(--dk-brand)" stroke-width="1.75"/>`;
+  dots = pts.map(p => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.2" fill="var(--dk-brand)"/>`).join('');
+  const legend = `<div style="display:flex;flex-wrap:wrap;gap:8px 12px;margin-block-start:8px;font-size:10px;color:var(--dk-mut)">
+    <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--dk-t6);vertical-align:middle"></span> 6k</span>
+    <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--dk-t5);vertical-align:middle"></span> 5k</span>
+    <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--dk-t4);vertical-align:middle"></span> 4k</span>
+    <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--dk-t0);vertical-align:middle"></span> &lt;4k</span>
+    <span><span style="display:inline-block;width:12px;height:2px;background:var(--dk-brand);vertical-align:middle"></span> company bonus</span></div>
+    <div style="font-size:9px;color:var(--dk-dim);margin-block-start:5px">tier mix + company bonus both from Finance (Bolt invoice for closed months)</div>`;
+  return `<div class="dk-card${heroCls}">
+    <div class="dk-card-t"><span class="t">Growth over time</span><span class="go">tier mix + bonus · click a month</span></div>
+    <div dir="ltr" style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;overflow:visible" preserveAspectRatio="xMidYMid meet">${bars}${line}${dots}${labels}</svg></div>
+    ${legend}</div>`;
+}
+
+// ── Lifetime strip (all-time mode replaces I1 + I4) ──
+function smLifetimeStrip(R) {
+  const cur = R.current || [];
+  const netAll = cur.reduce((s, d) => s + d.net, 0);
+  // Company bonus across CLOSED months only (invoiced finals) — the in-progress month is
+  // still a projection, so it's excluded from the "closed" lifetime total.
+  const bonusAll = R.months.reduce((s, mk) => { const a = smMonthAgg(mk); return s + (a.isCurrent ? 0 : a.bonus); }, 0);
+  const everSeen = (R.drivers || []).length;
+  const rosterNow = getFleetRoster().length;
+  const cell = (lbl, val, sub, brand) => `<div class="dk-stat${brand ? ' brand' : ''}"><div class="l">${lbl}</div><div class="v">${val}${sub ? `<small> ${sub}</small>` : ''}</div></div>`;
+  return `<div class="dk-strip" style="margin-block-start:12px">
+    ${cell('Fleet net · all time', fmt(Math.round(netAll)), 'SAR', true)}
+    ${cell('Company bonus · closed', fmt(Math.round(bonusAll)), 'SAR')}
+    ${cell('Drivers ever seen', everSeen, '')}
+    ${cell('Current roster', rosterNow, '')}
+  </div>`;
 }
 
 // ── Cerebro Lock Screen ──────────────────────────────────────────────────────
