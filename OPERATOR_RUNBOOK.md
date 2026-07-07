@@ -1,7 +1,7 @@
 # MOHM Fleet Dashboard — Operator Runbook
 
-**Last updated:** 2026-07-06  
-**Version:** v5.2  
+**Last updated:** 2026-07-07  
+**Version:** v5.3  
 **Dashboard URL:** your Vercel production URL (mhmbolt.vercel.app or custom domain)
 
 ---
@@ -12,6 +12,7 @@
 - Driver data is fetched automatically every night at **midnight Riyadh time** from the Bolt API.
 - All data is stored in **Supabase** (cloud database) — any device that opens the dashboard URL sees the same data.
 - A daily backup of all data is saved automatically before every overwrite.
+- Your **fleet roster** (how many captains you have) and the **blocked count** are read from the **most recent full nightly-sync day** — one complete snapshot of the whole fleet, not a mix stitched from several days. A partial mid-day upload (e.g. a CSV covering only the drivers who worked) never overwrites that full day; it only adds to it. *(Technical reference for the storage model: `BOLT_STORAGE_HEALTH.md`, commit `abf9480`.)*
 
 ---
 
@@ -95,6 +96,22 @@ the count and the latest backup date, read straight from `fleet_data_backup` via
 
 ---
 
+### Good to know: a bad sync night can't shrink your roster (safety net)
+**This is a protection, not a problem — no action needed.** Each midnight sync now checks whether it
+received a **complete** roster from Bolt (it reports this internally as `rosterComplete`). If part of
+the Bolt API fails that night and only a **partial** list comes back, the sync **refuses to overwrite**
+the last complete day for that date — it keeps the good full-fleet snapshot instead of replacing it
+with a short list. So one bad night can no longer corrupt your roster or blocked count.
+- **Real changes still apply:** if drivers genuinely left the fleet and the roster is legitimately
+  smaller, a *complete* pull still updates normally — the guard only blocks *incomplete* pulls, not
+  real churn.
+- **Self-healing:** the next healthy night writes the full day for that date automatically.
+- If you ever want to force a specific day, use **⚡ Bolt Sync** for that date (see below).
+
+*(Full details of how the roster/blocked truth is stored and protected: `BOLT_STORAGE_HEALTH.md`, commit `abf9480`.)*
+
+---
+
 ### A sheet edit isn't showing up on the dashboard yet
 **Cause:** the sheet mirror (DRIVERS/AMBASSADORS tabs → Supabase) only refreshes on the ~00:45
 Riyadh cron, so a same-day edit can take up to a day to appear. The "⇅ Sync from sheet" button on
@@ -171,7 +188,8 @@ The entire codebase is at: `github.com/Muhammedelhofy/MHMBOLT`
 Key files:
 - `index.html` — the whole dashboard (frontend)
 - `api/bolt/sync.js` — manual sync button handler
-- `api/bolt/cron-sync.js` — midnight auto-sync
-- `api/bolt/lib.js` — shared Bolt API logic
+- `api/bolt/cron-sync.js` — midnight auto-sync (holds the `rosterComplete` shrink-guard)
+- `api/bolt/lib.js` — shared Bolt API logic (computes `rosterComplete`)
 - `api/bolt/health.js` — System Status endpoint
 - `vercel.json` — cron schedule configuration
+- `BOLT_STORAGE_HEALTH.md` — storage-model reference: how the day-history (`khair_history`) is ordered and how the roster + blocked counts derive from the latest full nightly-cron day, plus the partial-failure shrink-guard (commit `abf9480`). The old top-level `h`/`fmt` keys were dead legacy and have been pruned — ignore any reference to them.
