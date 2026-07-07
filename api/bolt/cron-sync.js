@@ -124,7 +124,7 @@ module.exports = async function handler(req, res) {
   const date       = saudiYday.toISOString().slice(0, 10);
 
   try {
-    const { allOrders, drivers } = await fetchAndAggregateFleet(date);
+    const { allOrders, drivers, rosterComplete } = await fetchAndAggregateFleet(date);
 
     // Write into `khair_history` with the dashboard's "DD Mon YYYY" period — the
     // key + format the dashboard actually reads. (The old `h`/`fmt` keys were
@@ -135,16 +135,36 @@ module.exports = async function handler(req, res) {
     await writeBackup(existing, date);          // snapshot before overwrite
     const history  = Array.isArray(existing.khair_history) ? existing.khair_history : [];
     const idx      = history.findIndex(e => e.p === period);
-    if (idx >= 0) history[idx] = entry; else history.unshift(entry);
+    // Finding-B guard: this handler REPLACES the stored day for `period` wholesale
+    // (unlike the browser's per-driver union-merge). A partial API failure — a
+    // company's getDrivers threw and was caught non-fatally in lib → rosterComplete
+    // false — yields an INCOMPLETE roster. Letting it replace a LARGER complete day
+    // would erode that day until the next cron. So when the pull is known-incomplete
+    // AND smaller than what's stored, keep the stored day untouched. A COMPLETE pull
+    // (rosterComplete true) stays authoritative and always writes — it may legitimately
+    // be smaller when drivers have left the fleet. A later complete run self-heals a
+    // day skipped here.
+    const existingDc = idx >= 0 ? (Array.isArray(history[idx].d) ? history[idx].d.length : 0) : 0;
+    const degraded   = idx >= 0 && !rosterComplete && drivers.length < existingDc;
+    if (degraded) {
+      // leave history[idx] as-is
+    } else if (idx >= 0) {
+      history[idx] = entry;
+    } else {
+      history.unshift(entry);
+    }
     history.sort((a, b) => periodSortKey(b.p) - periodSortKey(a.p));
 
     // Supabase has no 100KB cap → keep the full history, same as the dashboard does.
     await writeFleetData({ ...existing, khair_fmt: CLOUD_FMT, khair_history: history });
-    await writeCronLog({ ts: now.toISOString(), ok: true, period, drivers: drivers.length, orders: allOrders.length });
+    await writeCronLog({ ts: now.toISOString(), ok: true, period, drivers: drivers.length, orders: allOrders.length,
+      ...(degraded ? { degraded: true, keptExisting: existingDc } : {}) });
 
     return res.status(200).json({
-      ok: true, date, drivers: drivers.length, orders: allOrders.length,
-      message: `Fleet synced for ${date} — ${drivers.length} drivers, ${allOrders.length} orders`,
+      ok: true, date, drivers: drivers.length, orders: allOrders.length, rosterComplete, degraded,
+      message: degraded
+        ? `Partial roster for ${date} (${drivers.length} drivers) — kept the stored ${existingDc}-driver day; a company roster pull failed`
+        : `Fleet synced for ${date} — ${drivers.length} drivers, ${allOrders.length} orders`,
     });
   } catch (e) {
     console.error("[cron-sync]", e.message);
