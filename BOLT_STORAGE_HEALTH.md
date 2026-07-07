@@ -113,4 +113,19 @@ Only 06 Jul carries a full cron roster because the enabling fixes are **recent**
 - Findings A/C/D are optional cleanups.
 - **No storage-model redesign is warranted** — so no Fable escalation needed.
 
-*Prepared read-only. No code changed. Worktree: `bolt-storage-health` off `origin/main@3c60d3a`.*
+---
+
+## Fix status (built on branch `bolt-storage-health`, NOT merged/deployed)
+
+Per your go on "cron guard + cleanups", built + verified — **awaiting your explicit deploy-OK before anything touches prod** (this is the data core).
+
+| # | Change | Type | Status |
+|---|--------|------|--------|
+| **B** | Cron guard: `lib.js` reports `rosterComplete`; `cron-sync.js` refuses to let a known-incomplete pull replace a *larger complete* stored day. Healthy pulls stay authoritative (legit churn allowed); a later complete run self-heals. | Code (Vercel deploy) | ✅ built + committed (`5a17a32`), Node v24 syntax-clean, **4/4 end-to-end scenarios pass** (degraded-shrink blocked · authoritative-shrink allowed · upgrade allowed · degraded-but-larger allowed) |
+| **D** | Prune the dead top-level `h` (6 entries frozen 20–25 Jun) + `fmt` keys that mislead audits. Verified unread by browser AND API. | Live DB write | 🔴 SQL prepared, **not run** — awaiting go: `UPDATE fleet_data SET data = data - 'h' - 'fmt' WHERE id='fleet';` (whole blob is backed up nightly in `fleet_data_backup`) |
+| **A** | Historical backfill gap (only 06 Jul is a full cron roster; older days are manual partials). | Informational | ✅ documented — no code fix possible/needed (cron only syncs yesterday; self-heals forward) |
+| **C** | Block-log duplicate open rows (57 open / 28 unique). | Adjacent subsystem | ✅ flagged — existing UI "Clean N duplicate rows" (`countBlockLogOpenDupes`) already handles it; not storage |
+
+**Deploy gate (needs your explicit OK):** (1) merge B to `main` → auto-deploys prod cron; (2) run the D prune. Nothing else changes.
+
+*Findings gathered read-only. Fix B built + tested on an isolated branch; no merge, no push, no live-DB write performed. Worktree: `bolt-storage-health` off `origin/main@3c60d3a`.*
