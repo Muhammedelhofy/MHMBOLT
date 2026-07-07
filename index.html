@@ -5317,6 +5317,7 @@ function saveManualBlockEvent() {
 }
 function deleteBlockEvent(id) {
   saveBlockLog(getBlockLog().filter(e => e.id !== id));
+  addBlockLogTombstones([id]);
   renderModalBody();
   toast('Block event removed');
   syncToCloud();
