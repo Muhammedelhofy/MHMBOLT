@@ -3650,7 +3650,7 @@ function dkCaptainsDeck() {
     <div class="dk-stat"><div class="l">${t('withActivity')} ${periodLabel}</div><div class="v">${active}</div></div>
     <div class="dk-stat"><div class="l">Net · ${periodLabel}</div><div class="v">${fmt(Math.round(net))}<small> SAR</small></div></div>
     <div class="dk-stat brand"><div class="l">${t('projBonus')}</div><div class="v">${projBonus != null ? '+' + fmt(projBonus) : '—'}<small>${projBonus != null ? ' SAR' : ''}</small></div></div>
-    <div class="dk-stat" style="grid-column:span 2;min-width:230px"><div class="l">${t('tierLadder')}</div>${ladder}</div>
+    <div class="dk-stat" style="grid-column:span 2;min-width:230px" title="Live per-driver pace projection — drives this tab's roster/funnel filters. For Finance's achieved/on-pace tier count, see Executive or Star Map."><div class="l">${t('tierLadderLive')}</div>${ladder}</div>
     <div class="dk-stat${blocked ? ' danger' : ''}"><div class="l">${t('blocked')}</div><div class="v">${blocked}</div></div>
   </div>`;
   return `<div class="dk"><div class="dk-shell" style="padding-block:2px 8px">${header}${rail}${strip}</div></div>`;
@@ -5060,6 +5060,24 @@ function getBlockLog() {
 function saveBlockLog(log) {
   try { localStorage.setItem('khair_block_log', JSON.stringify(log)); } catch(e) {}
 }
+// ── R3 · Block-log tombstones ─────────────────────────────────────────────────
+// The cloud merge (fetchFromCloud) unions block-log rows by id — additive only, so a
+// row cleaned away on this device would silently resurrect the next time a device that
+// never ran the cleanup pushed its stale copy back up. A tombstone is a permanent record
+// of "this id was deliberately removed"; it travels in the sync payload alongside the
+// log itself so every device converges on the same removal, not just this one.
+function getBlockLogTombstones() {
+  try { return JSON.parse(localStorage.getItem('khair_block_log_tombstones') || '[]'); } catch { return []; }
+}
+function saveBlockLogTombstones(ids) {
+  try { localStorage.setItem('khair_block_log_tombstones', JSON.stringify(ids)); } catch(e) {}
+}
+function addBlockLogTombstones(ids) {
+  if (!ids || !ids.length) return;
+  const set = new Set(getBlockLogTombstones());
+  ids.forEach(id => { if (id) set.add(id); });
+  saveBlockLogTombstones([...set]);
+}
 // How many duplicate OPEN rows could be cleaned (open rows minus unique drivers).
 // Non-mutating — used to label the "Clean N duplicate rows" button.
 function countBlockLogOpenDupes() {
@@ -5070,34 +5088,41 @@ function countBlockLogOpenDupes() {
 // key drifted across syncs can accumulate several unresolved rows — this is what
 // inflated the banner (49 rows for 20 people) and TOTAL EVENTS. We keep the earliest
 // dateBlocked, union distinct reason lines, and drop the extras. RESOLVED rows pass
-// through untouched. Pure: operates on a fresh getBlockLog() copy, returns {log, removed}.
+// through untouched. Pure: operates on a fresh getBlockLog() copy, returns
+// {log, removed, removedIds} — removedIds feeds the tombstone set in cleanBlockLogDupes.
 function dedupeBlockLog(srcLog) {
   const log = srcLog || getBlockLog();
   const openByKey = new Map(); // driverKey -> kept open row
   const out = [];
   let removed = 0;
+  const removedIds = [];
   for (const e of log) {
     if (e.dateUnblocked) { out.push(e); continue; }       // resolved rows untouched
     const k = driverKey(e.driverName);
     const kept = openByKey.get(k);
     if (!kept) { openByKey.set(k, e); out.push(e); continue; }
     removed++;
+    if (e.id) removedIds.push(e.id);
     if (periodSortKey(e.dateBlocked) < periodSortKey(kept.dateBlocked)) kept.dateBlocked = e.dateBlocked;
     const reasons = new Set((kept.reason||'').split('\n').map(s=>s.trim()).filter(Boolean));
     (e.reason||'').split('\n').map(s=>s.trim()).filter(Boolean).forEach(r => reasons.add(r));
     kept.reason = [...reasons].join('\n');
     if (!kept.driverId && e.driverId) kept.driverId = e.driverId;
   }
-  return { log: out, removed };
+  return { log: out, removed, removedIds };
 }
 // Apply the cleanup, persist, toast, and re-render. Wired to the Blocks-tab button.
+// R3: tombstones the removed ids and pushes immediately, so the removal — not just the
+// duplicate rows — reaches the cloud and survives the next merge from another device.
 function cleanBlockLogDupes() {
-  const { log, removed } = dedupeBlockLog();
+  const { log, removed, removedIds } = dedupeBlockLog();
   if (!removed) { if (typeof toast === 'function') toast('No duplicate block rows found'); return; }
   if (!confirm(`Clean ${removed} duplicate block row${removed>1?'s':''}? Resolved rows are kept; earliest block date and all reasons are preserved.`)) return;
   saveBlockLog(log);
+  addBlockLogTombstones(removedIds);
   if (typeof toast === 'function') toast(`Cleaned ${removed} duplicate block row${removed>1?'s':''}`);
   renderBlocks();
+  if (typeof syncToCloud === 'function') syncToCloud();
 }
 // Called after every sync. Compares today's driver states with the previous
 // synced day and records when a driver transitions blocked ↔ active.
@@ -5911,6 +5936,7 @@ async function syncToCloud() {
     khair_bolt_bonus:       loadBoltBonus(),
     khair_cycle_anchor:     localStorage.getItem(CYCLE_ANCHOR_KEY) || '',
     khair_block_log:        getBlockLog(),
+    khair_block_tombstones: getBlockLogTombstones(),   // R3 — carries dedup removals to other devices
     version: 2
   };
 
@@ -6017,12 +6043,22 @@ async function fetchFromCloud() {
   if (r.khair_cycle_anchor) {
     setCycleAnchor(r.khair_cycle_anchor);
   }
-  // Block log: merge cloud + local (union by id, no duplicates)
+  // Block log: merge cloud + local (union by id, no duplicates), then prune anything
+  // tombstoned on EITHER side (R3) — a plain union merge can't otherwise tell "removed
+  // on another device" apart from "never synced here", so a cleaned duplicate would keep
+  // resurrecting every time a stale copy merged back in.
+  if (Array.isArray(r.khair_block_tombstones) && r.khair_block_tombstones.length) {
+    addBlockLogTombstones(r.khair_block_tombstones);
+  }
+  const tombstones = new Set(getBlockLogTombstones());
   if (Array.isArray(r.khair_block_log) && r.khair_block_log.length) {
     const local = getBlockLog();
     const ids = new Set(local.map(e => e.id));
-    const merged2 = [...local, ...r.khair_block_log.filter(e => !ids.has(e.id))];
+    const merged2 = [...local, ...r.khair_block_log.filter(e => !ids.has(e.id))]
+      .filter(e => !tombstones.has(e.id));
     saveBlockLog(merged2);
+  } else if (tombstones.size) {
+    saveBlockLog(getBlockLog().filter(e => !tombstones.has(e.id)));
   }
   setSyncStatus('synced', 'synced ✓');
   localStorage.setItem('khair_last_sync', new Date().toISOString());
@@ -8611,15 +8647,15 @@ function renderFleetBoltBonus() {
     </table>`;
 }
 
-// ── ★ tierStatusFor(month) — the ONE shared tier-status source (S4) ───────────
-// Per tier {achieved, projected}: `achieved` = drivers whose BANKED net lands in that
-// band; `projected` = current-month drivers not yet banked there but on pace to reach
-// it. Executive, Bolt Bonus and the Fleet tier section all read this, so the tier story
-// is identical everywhere — killing the "No drivers hit a tier / 6,000 tier" contradiction.
-// For a CLOSED month with Bolt's invoice, banked = invoice net (month over → nothing "on
-// pace"); this mirrors computeExecMonth's tierCounts exactly, so displays never disagree.
-function tierStatusFor(monthKey) {
-  const st = { 4000:{achieved:0,projected:0}, 5000:{achieved:0,projected:0}, 6000:{achieved:0,projected:0} };
+// ── ★ _tierClassify(month) — the ONE driver-tier classification core (S4/SM-3/R6) ──
+// The single place a driver gets sorted into a 4k/5k/6k bucket. tierStatusFor() (Finance)
+// and smTierDetail() (Star Map / Today) both read this SAME loop instead of hand-copying
+// it, so their achieved/projected counts can never drift apart again. smTierDetail just
+// layers driver names + a `below` (earning, not yet tiered) bucket on top — tierStatusFor
+// doesn't need those, so it stays a thin projection of this result.
+function _tierClassify(monthKey) {
+  const st = { 4000:{achieved:0,projected:0,names:[]}, 5000:{achieved:0,projected:0,names:[]}, 6000:{achieved:0,projected:0,names:[]} };
+  const below = { count:0, names:[] };
   const imported = boltBonusMonth(monthKey);
   if (imported) {
     // Closed month: Bolt's invoice is banked truth. A paid row (gross>0) lands at its
@@ -8628,22 +8664,38 @@ function tierStatusFor(monthKey) {
       if ((+d.gross||0) <= 0) return;
       const net = +d.net||0;
       const f = net>=6000?6000 : net>=5000?5000 : 4000;
-      st[f].achieved++;
+      st[f].achieved++; if (d.name) st[f].names.push(d.name);
     });
   } else {
     // Open / un-invoiced month: classify each driver by the tier his bonus lands in
     // (pace-aware bonusForDriver.tierFloor — identical to computeExecMonth's count), then
     // split that tier into achieved (banked ≥ floor) vs on-pace (projected, not yet banked).
+    // Earning but untiered (tierFloor falsy, income>0) → the `below` pipeline bucket.
     getDriversInMonth(monthKey).forEach(name => {
       const income = computeDriverNetForPeriod(name, monthKey);
       const b = bonusForDriver(name, income, monthKey);
       const f = b.tierFloor;
-      if (!f) return;                                // below pace → pipeline, not a tier
+      if (!f) { if (income > 0) { below.count++; below.names.push(name); } return; }
       if (income >= f) st[f].achieved++; else st[f].projected++;
+      st[f].names.push(name);
     });
   }
+  return { tiers: st, below };
+}
+// Per tier {achieved, projected}: `achieved` = drivers whose BANKED net lands in that
+// band; `projected` = current-month drivers not yet banked there but on pace to reach
+// it. Executive, Bolt Bonus and the Fleet tier section all read this, so the tier story
+// is identical everywhere — killing the "No drivers hit a tier / 6,000 tier" contradiction.
+// For a CLOSED month with Bolt's invoice, banked = invoice net (month over → nothing "on
+// pace"); this mirrors computeExecMonth's tierCounts exactly, so displays never disagree.
+function tierStatusFor(monthKey) {
+  const { tiers } = _tierClassify(monthKey);
+  const st = {};
   const total = { achieved: 0, projected: 0 };
-  [4000,5000,6000].forEach(f => { total.achieved += st[f].achieved; total.projected += st[f].projected; });
+  [4000,5000,6000].forEach(f => {
+    st[f] = { achieved: tiers[f].achieved, projected: tiers[f].projected };
+    total.achieved += tiers[f].achieved; total.projected += tiers[f].projected;
+  });
   return { month: monthKey, tiers: st, total };
 }
 // The ONE copy pattern: "6,000 — 2 achieved · 3 on pace" per tier, high→low.
@@ -11795,6 +11847,10 @@ const DK_T = {
   fleetNet:     { en: 'Fleet net (MTD)',          ar: 'صافي الأسطول (الشهر)' },
   projBonus:    { en: 'Proj. company bonus',      ar: 'عمولة الشركة المتوقعة' },
   tierLadder:   { en: 'Tier ladder (proj.)',      ar: 'سلّم الفئات (متوقع)' },
+  // R6: distinct from tierLadder — Captains' strip reads live per-driver run-rate `d.band`
+  // (needed as-is by the movers/funnel/roster filters below it), NOT Finance's achieved/
+  // on-pace count, so it gets its own unambiguous label instead of sharing "(proj.)".
+  tierLadderLive: { en: 'Tier pace — live (not final)', ar: 'وتيرة الفئة — حيّة (غير نهائية)' },
   needsPush:    { en: 'Needs a push',             ar: 'يحتاج دفعة' },
   blocked:      { en: 'Blocked',                  ar: 'محظور' },
   activeToday:  { en: 'Active · latest day',      ar: 'نشِط · آخر يوم' },
@@ -12742,35 +12798,16 @@ function smMonthAgg(mk) {
 }
 
 // ── Finance-consistent tier detail (SM-3) ────────────────────────────────────
-// Replicates tierStatusFor's classification EXACTLY (so the counts equal Finance's
-// Executive tier block / Bolt-Bonus table for every month — invoice for a closed
-// month, pace projection for the open one) and additionally collects the per-driver
-// names so the ladder segments stay drillable. Adds a `below` bucket (earning but
-// below-pace) for the pipeline segment. Not memoised across renders (cheap; the deck
+// Delegates to _tierClassify (the same loop tierStatusFor reads) so the counts equal
+// Finance's Executive tier block / Bolt-Bonus table for every month — invoice for a
+// closed month, pace projection for the open one — by construction, not by hand-copy.
+// Adds nothing of its own except reshaping the result: names stay attached for the
+// ladder segments' drill-down, and `below` (earning but below-pace) is the pipeline
+// segment tierStatusFor doesn't need. Not memoised across renders (cheap; the deck
 // clears its caches each render).
 function smTierDetail(monthKey) {
-  const st = { 6000:{achieved:0,projected:0,names:[]}, 5000:{achieved:0,projected:0,names:[]},
-               4000:{achieved:0,projected:0,names:[]}, below:{count:0,names:[]} };
-  const imported = boltBonusMonth(monthKey);
-  if (imported) {                                   // closed month → Bolt's invoice is truth
-    Object.values(imported).forEach(d => {
-      if ((+d.gross || 0) <= 0) return;
-      const net = +d.net || 0;
-      const f = net >= 6000 ? 6000 : net >= 5000 ? 5000 : 4000;
-      st[f].achieved++; if (d.name) st[f].names.push(d.name);
-    });
-  } else {                                          // open month → same pace logic as tierStatusFor
-    getDriversInMonth(monthKey).forEach(name => {
-      const income = computeDriverNetForPeriod(name, monthKey);
-      if (income <= 0) return;                       // idle → the roster reconciliation line, not a tier
-      const b = bonusForDriver(name, income, monthKey);
-      const f = b.tierFloor;
-      if (!f) { st.below.count++; st.below.names.push(name); return; }
-      if (income >= f) st[f].achieved++; else st[f].projected++;
-      st[f].names.push(name);
-    });
-  }
-  return st;
+  const { tiers, below } = _tierClassify(monthKey);
+  return { 6000: tiers[6000], 5000: tiers[5000], 4000: tiers[4000], below };
 }
 
 // ── Drill overlay (opens OVER the deck; the one soft shadow allowed on overlays) ──
