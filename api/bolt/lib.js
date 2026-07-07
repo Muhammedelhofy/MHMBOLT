@@ -108,7 +108,12 @@ async function fetchAndAggregateFleet(date) {
   }
 
   // 4. Driver profiles → rating, score, vehicle, state (optional per company)
+  // The roster is seeded from these getDrivers pulls, so a company whose pull throws
+  // (caught here, non-fatal) drops that company's non-ordering drivers → an INCOMPLETE
+  // roster. `profileErrors` counts those failures so the caller can tell an authoritative
+  // full pull from a degraded one and avoid overwriting a complete stored day with it.
   const profileMap = {};
+  let profileErrors = 0;
   for (const cid of companyIds) {
     try {
       const drivers = await paginateAll(
@@ -117,7 +122,7 @@ async function fetchAndAggregateFleet(date) {
         "drivers", "total"
       );
       for (const dr of drivers) profileMap[dr.driver_uuid] = dr;
-    } catch (e) { console.warn(`[bolt-lib] profiles company ${cid}:`, e.message); }
+    } catch (e) { profileErrors++; console.warn(`[bolt-lib] profiles company ${cid}:`, e.message); }
   }
 
   // 5. Aggregate orders per driver
@@ -216,7 +221,11 @@ async function fetchAndAggregateFleet(date) {
     return dr;
   });
 
-  return { allOrders, drivers, startTs, endTs };
+  // rosterComplete: true only when EVERY company's getDrivers pull succeeded, i.e. the
+  // roster is authoritative and may legitimately be smaller than a prior day (drivers
+  // left the fleet). false → a partial-failure pull the cron must not let clobber a
+  // larger complete day (audit Finding B).
+  return { allOrders, drivers, startTs, endTs, rosterComplete: profileErrors === 0, profileErrors, companyCount: companyIds.length };
 }
 
 module.exports = { fetchAndAggregateFleet };
