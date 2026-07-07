@@ -12758,13 +12758,25 @@ function smTierLadder(R) {
   const td = smTierDetail(R.monthSel);
   const cnt = f => td[f].achieved + td[f].projected;
   const c6 = cnt(6000), c5 = cnt(5000), c4 = cnt(4000), cb = td.below.count;
-  const barTotal = Math.max(1, c6 + c5 + c4 + cb);
+  const earnersTotal = c6 + c5 + c4 + cb;
+  const barTotal = Math.max(1, earnersTotal);
   const segs = [
     { n: c6, bg: 'var(--dk-t6)', k: '6000', lbl: '6K' },
     { n: c5, bg: 'var(--dk-t5)', k: '5000', lbl: '5K' },
     { n: c4, bg: 'var(--dk-t4)', k: '4000', lbl: '4K' },
     { n: cb, bg: 'var(--dk-t0)', k: 'below', lbl: '<4K' },
   ].filter(s => s.n > 0);
+  // Earners (this-month bar) vs roster (footer) are two different populations — a
+  // driver who earned this month but has since left the fleet counts in the bar,
+  // not the roster. Both are correct; when they diverge, say so instead of letting
+  // the two totals sit side by side looking like they should reconcile.
+  let gapNote = '';
+  if (earnersTotal > cur.length) {
+    const rosterKeys = new Set(cur.map(d => d.key));
+    const earnerNames = [].concat(td[6000].names, td[5000].names, td[4000].names, td.below.names);
+    const leftCount = earnerNames.filter(n => !rosterKeys.has(driverKey(n))).length;
+    if (leftCount > 0) gapNote = `<div style="font-size:11px;color:var(--dk-dim);margin-block-start:6px">${leftCount} earned this month · since left the fleet</div>`;
+  }
   // The count rides a small dark chip with light text so it stays legible on every
   // segment colour in BOTH themes (no text-shadow — design-system rule).
   const bar = (c6 + c5 + c4 + cb) ? `<div class="sm2-seg">${segs.map(s => {
@@ -12779,8 +12791,8 @@ function smTierLadder(R) {
     return `<span style="display:inline-flex;align-items:center;gap:6px">${dkTierPill(band)}<span style="font-size:12px;color:var(--dk-mut)">${t.achieved} achieved${on}</span></span>`;
   }).join('')}</div>`;
   return `<div class="dk-card">
-    <div class="dk-card-t"><span class="t">Tier ladder</span><span class="go">where earning drivers sit on the 4k/5k/6k ladder →</span></div>
-    ${bar}${foot}${chips}</div>`;
+    <div class="dk-card-t"><span class="t">Tier ladder</span><span class="go">earned at each tier this month →</span></div>
+    ${bar}${gapNote}${foot}${chips}</div>`;
 }
 
 // ── I2 · OPERATION FUNNEL — onboard → activate → earn → tier, with the two leaks ──
