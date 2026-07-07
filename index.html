@@ -740,75 +740,15 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 
 
 
-/* ── Cerebro Lock Screen ─────────────────────────────────────── */
-#cerebroOverlay {
-  display:none; position:fixed; inset:0; z-index:99999;
-  background:#000a14; align-items:center; justify-content:center; overflow:hidden;
-}
-#cerebroOverlay.open { display:flex; }
-#cerebroOverlay::before {
-  content:''; position:absolute; inset:0;
-  background-image:
-    linear-gradient(60deg,  rgba(0,212,255,.04) 1px, transparent 1px),
-    linear-gradient(-60deg, rgba(0,212,255,.04) 1px, transparent 1px),
-    linear-gradient(rgba(0,212,255,.02) 1px, transparent 1px);
-  background-size:40px 70px, 40px 70px, 40px 40px;
-  background-position:0 0, 0 35px, 0 0;
-  animation:cbr-grid 40s linear infinite;
-}
-@keyframes cbr-grid { to{background-position:40px 70px, 40px 105px, 0 40px} }
-#cerebroOverlay::after {
-  content:''; position:absolute; left:0; right:0; height:2px; z-index:1;
-  background:linear-gradient(90deg,transparent,rgba(0,212,255,.55),rgba(0,255,179,.85),rgba(0,212,255,.55),transparent);
-  box-shadow:0 0 12px rgba(0,212,255,.5);
-  animation:cbr-sweep 7s linear infinite;
-}
-@keyframes cbr-sweep { from{top:-2px} to{top:100vh} }
-
-.cbr-modal { position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; gap:12px; }
-.cbr-rings { position:relative; width:260px; height:260px; display:flex; align-items:center; justify-content:center; margin-bottom:6px; }
-.cbr-node   { animation:cbr-node-pulse 3s ease-in-out infinite; }
-@keyframes cbr-node-pulse { 0%,100%{opacity:.32} 50%{opacity:1;filter:drop-shadow(0 0 5px rgba(0,255,179,.85))} }
-@keyframes cbr-beam { to{transform:rotate(360deg)} }
-.cbr-corner { position:absolute; z-index:2; font-family:var(--mono); font-size:7px; letter-spacing:.1em; color:rgba(0,212,255,.28); line-height:2; }
-.cbr-corner span { display:block; }
-.cbr-tl { top:18px; left:18px; }
-.cbr-tr { top:18px; right:18px; text-align:right; }
-.cbr-bl { bottom:18px; left:18px; }
-.cbr-br { bottom:18px; right:18px; text-align:right; }
-
-.cbr-core {
-  position:relative; z-index:1;
-  font-family:var(--mono); font-size:24px; font-weight:900; letter-spacing:.12em;
-  color:var(--bolt-green);
-  text-shadow:0 0 18px rgba(0,255,179,.9),0 0 36px rgba(0,255,179,.45);
-  animation:cbr-pulse 2.2s ease-in-out infinite;
-  transition:color .3s;
-}
-@keyframes cbr-pulse {
-  0%,100%{text-shadow:0 0 18px rgba(0,255,179,.85),0 0 36px rgba(0,255,179,.4)}
-  50%{text-shadow:0 0 28px rgba(0,255,179,1),0 0 56px rgba(0,255,179,.6),0 0 84px rgba(0,212,255,.25)}
-}
-.cbr-title  { font-family:var(--mono); font-size:11px; font-weight:700; letter-spacing:.42em; color:var(--cyan); text-shadow:0 0 10px rgba(0,212,255,.5); animation:cbr-flicker 4.5s ease-in-out infinite; }
-.cbr-sub    { font-family:var(--mono); font-size:8px; letter-spacing:.22em; color:rgba(0,212,255,.38); }
-.cbr-status { font-family:var(--mono); font-size:9px; letter-spacing:.18em; color:var(--bolt-green); text-shadow:0 0 8px rgba(0,255,179,.5); min-height:14px; text-transform:uppercase; }
-.cbr-dots   { display:flex; gap:14px; margin:4px 0; min-height:20px; align-items:center; }
-.cbr-dot    { width:12px; height:12px; border-radius:50%; border:1px solid rgba(0,212,255,.32); background:transparent; }
-.cbr-dot.lit{ background:var(--bolt-green); border-color:var(--bolt-green); box-shadow:0 0 8px rgba(0,255,179,.9),0 0 16px rgba(0,255,179,.4); animation:cbr-dot-pop .13s ease; }
-@keyframes cbr-dot-pop { from{transform:scale(0);opacity:0} to{transform:scale(1);opacity:1} }
-.cbr-hint   { font-family:var(--mono); font-size:8px; letter-spacing:.22em; color:rgba(0,212,255,.28); text-transform:uppercase; }
-.cbr-feedback{ font-family:var(--mono); font-size:11px; font-weight:700; letter-spacing:.26em; min-height:18px; text-align:center; }
-.cbr-feedback.ok { color:var(--bolt-green); text-shadow:0 0 12px rgba(0,255,179,.8); animation:cbr-appear .3s ease; }
-.cbr-feedback.err{ color:var(--red);       text-shadow:0 0 12px rgba(255,68,102,.8); animation:cbr-shake .4s ease; }
-.cbr-footer { font-family:var(--mono); font-size:7px; letter-spacing:.16em; color:rgba(0,212,255,.22); margin-top:6px; }
-.cbr-flash  { position:absolute; inset:0; z-index:1; pointer-events:none; opacity:0; }
-.cbr-flash.ok { animation:cbr-fok .9s ease forwards; }
-.cbr-flash.err{ animation:cbr-ferr .55s ease forwards; }
-@keyframes cbr-fok  { 0%{background:transparent;opacity:0} 25%{background:rgba(0,255,179,.07);opacity:1} 100%{opacity:0} }
-@keyframes cbr-ferr { 0%{background:transparent;opacity:0} 25%{background:rgba(255,68,102,.11);opacity:1} 60%{opacity:0} 80%{opacity:.45} 100%{opacity:0} }
-@keyframes cbr-flicker{ 0%,100%{opacity:1} 50%{opacity:.85} 77%{opacity:.95} 80%{opacity:.58} 83%{opacity:.95} }
-@keyframes cbr-appear { from{opacity:0;letter-spacing:.55em} to{opacity:1;letter-spacing:.26em} }
-@keyframes cbr-shake  { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)} 40%{transform:translateX(10px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
+/* ── Today clickable stat cards + shared drill overlay (Command Center list-overlay
+   pattern, reused from any tab) ─────────────────────────────────────────────── */
+.dk-stat.click { cursor: pointer; transition: background var(--dk-tf); }
+.dk-stat.click:hover { background: var(--dk-s2); }
+.dk-stat .l .drill { color: var(--dk-dim); font-weight: 700; margin-inline-start: 3px; }
+.dk-tier.drill { cursor: pointer; }
+.dk-tier.drill:hover { filter: brightness(1.14); }
+#dkOverlayHost { position: fixed; inset: 0; z-index: 401; display: none; }
+#dkOverlayHost.open { display: block; }
 
 /* ── Star Map — command-centre instruments (DECK, token-only so light theme works) ── */
 /* Two-column deck rows (collapse to one column on narrow screens). */
@@ -1243,7 +1183,7 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
   <div class="tab"        data-tab="blocks"     onclick="showTab('blocks',this);renderBlocks()">Blocks</div>
   <div class="tab"        data-tab="analytics" onclick="showTab('analytics',this);renderAnalytics()">Analytics</div>
   <div class="tab"        data-tab="pipeline"  onclick="showTab('pipeline',this);renderPipeline()">Onboarding</div>
-  <div class="tab"        data-tab="starmap"   onclick="showTab('starmap',this)">Star Map</div>
+  <div class="tab"        data-tab="starmap"   onclick="showTab('starmap',this)">Command Center</div>
   <div class="tab"        data-tab="settings"  onclick="showTab('settings',this)">Settings</div>
 </div>
 
@@ -1266,9 +1206,10 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
   </div>
 </div>
 
-<!-- Star Map Panel — the strategic command centre (D-3 rebuild). Aggregates only:
-     NO driver list, NO action buttons on the surface (boundary rules, spec §1). The
-     "7ofy" Cerebro lock still gates entry (SM-1, kept). Every number reuses an existing
+<!-- Command Center Panel (was "Star Map"; D-3 REVERSED 2026-07-07 — Muhammad's main
+     strategy deck). Aggregates first, but every number now DRILLS to the names behind
+     it → the A1 driver panel (tier ladder, funnel, ambassador panel). Opens instantly —
+     the "7ofy" Cerebro passcode (SM-1) was removed. Every number reuses an existing
      engine — the deck recomputes nothing. -->
 <div id="starmap" class="panel">
   <div id="starmapContent">
@@ -1925,14 +1866,10 @@ function dataHealthOpenDriver(name) {
 // ═══════════════════════════════════════════
 // TAB NAV
 // ═══════════════════════════════════════════
-let _starmapUnlocked = false;
+// Command Center opens instantly like any tab (the old "7ofy" Cerebro passcode
+// gate — SM-1 — was removed 2026-07-07: it's Muhammad's main strategy view, not a
+// vault). The gate function + overlay + passcode are deleted, not merely bypassed.
 function showTab(id, el) {
-  if (id === 'starmap' && !_starmapUnlocked) {
-    openCerebroLock();
-    return;
-  }
-  // Re-lock whenever leaving Star Map
-  if (id !== 'starmap') { _starmapUnlocked = false; }
   _doShowTab(id, el);
 }
 function _doShowTab(id, el) {
@@ -3650,7 +3587,7 @@ function dkCaptainsDeck() {
     <div class="dk-stat"><div class="l">${t('withActivity')} ${periodLabel}</div><div class="v">${active}</div></div>
     <div class="dk-stat"><div class="l">Net · ${periodLabel}</div><div class="v">${fmt(Math.round(net))}<small> SAR</small></div></div>
     <div class="dk-stat brand"><div class="l">${t('projBonus')}</div><div class="v">${projBonus != null ? '+' + fmt(projBonus) : '—'}<small>${projBonus != null ? ' SAR' : ''}</small></div></div>
-    <div class="dk-stat" style="grid-column:span 2;min-width:230px" title="Live per-driver pace projection — drives this tab's roster/funnel filters. For Finance's achieved/on-pace tier count, see Executive or Star Map."><div class="l">${t('tierLadderLive')}</div>${ladder}</div>
+    <div class="dk-stat" style="grid-column:span 2;min-width:230px" title="Live per-driver pace projection — drives this tab's roster/funnel filters. For Finance's achieved/on-pace tier count, see Executive or Command Center."><div class="l">${t('tierLadderLive')}</div>${ladder}</div>
     <div class="dk-stat${blocked ? ' danger' : ''}"><div class="l">${t('blocked')}</div><div class="v">${blocked}</div></div>
   </div>`;
   return `<div class="dk"><div class="dk-shell" style="padding-block:2px 8px">${header}${rail}${strip}</div></div>`;
@@ -11853,6 +11790,7 @@ const DK_T = {
   // on-pace count, so it gets its own unambiguous label instead of sharing "(proj.)".
   tierLadderLive: { en: 'Tier pace — live (not final)', ar: 'وتيرة الفئة — حيّة (غير نهائية)' },
   needsPush:    { en: 'Needs a push',             ar: 'يحتاج دفعة' },
+  tapBand:      { en: 'tap a band',               ar: 'اختر فئة' },
   blocked:      { en: 'Blocked',                  ar: 'محظور' },
   activeToday:  { en: 'Active · latest day',      ar: 'نشِط · آخر يوم' },
   trips:        { en: 'trips',                    ar: 'رحلة' },
@@ -12123,6 +12061,92 @@ function dkOpenDriver(name, monthKey) {
   openModal(name, null, { monthFilter: (monthKey && monthKey !== 'all') ? monthKey : null });
 }
 
+// ── Shared drill overlay (body-level) — the Command Center list-overlay pattern,
+// reusable from any tab. Today's clickable stat cards open driver lists over the page
+// through it; rows drill to the A1 panel (dkOpenDriver), month-scoped. Same .sm2-ov-*
+// visual language as the in-panel Command Center overlay (smShowOverlay). ────────────
+function dkListOverlay(title, bodyHtml) {
+  let host = document.getElementById('dkOverlayHost');
+  if (!host) { host = document.createElement('div'); host.id = 'dkOverlayHost'; document.body.appendChild(host); }
+  host.innerHTML = `<div class="dk"><div class="sm2-ov-back" onclick="dkCloseOverlay()"></div>
+    <div class="sm2-ov-card"><div class="sm2-ov-head"><span class="t">${title}</span>
+      <button class="sm2-ov-close" onclick="dkCloseOverlay()" title="Close">✕</button></div>
+      ${bodyHtml}</div></div>`;
+  host.classList.add('open');
+  document.addEventListener('keydown', _dkOverlayEsc);
+}
+function _dkOverlayEsc(e) { if (e.key === 'Escape') dkCloseOverlay(); }
+function dkCloseOverlay() {
+  const h = document.getElementById('dkOverlayHost');
+  if (h) { h.classList.remove('open'); h.innerHTML = ''; }
+  document.removeEventListener('keydown', _dkOverlayEsc);
+}
+// Build the driver rows for a drill list. list = [{ name, pill(html), right(html) }].
+// Each row → the A1 panel, month-scoped. Closes the overlay first so the slide-over lands clean.
+function dkDriverRows(list, monthKey) {
+  const jsq = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  if (!list || !list.length) return `<div style="color:var(--dk-dim);font-size:12px;padding:6px">No drivers here right now.</div>`;
+  return list.map(r => `<div class="dk-row click" onclick="dkCloseOverlay();dkOpenDriver('${jsq(r.name)}','${jsq(monthKey)}')">
+    <span class="k">${escH(lookupForeignName(r.name) || r.name)}${r.pill ? ' ' + r.pill : ''}</span>
+    <span class="v">${r.right || ''}</span></div>`).join('');
+}
+
+// ── Today's six stat cards → each drills to its own driver list → A1 panel ───────────
+// Reads computeRosterForMonth('') exactly like renderToday (recomputes nothing). Kinds
+// mirror the strip's instruments; the four tier pills reuse smTierDetail (== Finance).
+function todayStatDrill(kind, ev) {
+  if (ev) ev.stopPropagation();
+  const R = computeRosterForMonth('');
+  if (!R || !R.current) return;
+  const cur = R.current, mk = R.monthSel;
+  const pill = d => dkDriverTierPill(d, R);
+  const num = v => `<span class="dk-num">${fmt(Math.round(v))}</span>`;
+  const sar = v => num(v) + ` <small style="color:var(--dk-dim)">SAR</small>`;
+  let list = [], title = '';
+  if (kind === 'active') {                             // Fleet Net card → drivers earning this month
+    list = cur.filter(d => !d.idle && !d.blocked).slice().sort((a, b) => b.net - a.net)
+      .map(d => ({ name: d.name, pill: pill(d), right: sar(d.net) }));
+    title = 'Active this month';
+  } else if (kind === 'bonus') {                       // Proj Bonus card → drivers generating company bonus
+    list = cur.filter(d => !d.idle && d.companyBonus > 0).slice().sort((a, b) => b.companyBonus - a.companyBonus)
+      .map(d => ({ name: d.name, pill: pill(d), right: `+${fmt(Math.round(d.companyBonus))} <small style="color:var(--dk-dim)">bonus</small>` }));
+    title = 'Projected company bonus — contributors';
+  } else if (kind === 'needspush') {                   // Needs Push card → idle + below-pace (== stat strip)
+    const idle = cur.filter(d => d.idle && !d.blocked).slice().sort((a, b) => (b.net || 0) - (a.net || 0));
+    const slow = (R.projectable ? cur.filter(d => !d.idle && !d.blocked && d.band === 0) : []).slice().sort((a, b) => b.net - a.net);
+    list = idle.map(d => ({ name: d.name, pill: pill(d), right: `<span style="color:var(--dk-warn)">idle · no trips</span>` }))
+      .concat(slow.map(d => ({ name: d.name, pill: pill(d), right: `<span style="color:var(--dk-warn)">below 4k pace</span> · ${num(d.net)}` })));
+    title = 'Needs a push — idle + below pace';
+  } else if (kind === 'blocked') {                     // Blocked card → live-suspended drivers
+    list = cur.filter(d => d.blocked).slice().sort((a, b) => (b.proj || b.net) - (a.proj || a.net))
+      .map(d => ({ name: d.name, pill: `<span class="dk-statechip blocked">blocked</span>`, right: sar(d.proj || d.net) }));
+    title = 'Blocked on Bolt';
+  } else if (kind === 'latestday') {                   // Active Today card → that day's active drivers
+    const hist = getHistory().slice().sort((a, b) => periodSortKey(b.period) - periodSortKey(a.period));
+    const latest = hist[0], byKey = {}; cur.forEach(d => { byKey[d.key] = d; });
+    const rows = [];
+    (latest && latest.drivers || []).forEach(d => {
+      if (!d.name) return;
+      const o = sN(d.orders), hrs = sN(d.hoursOnline), net = sN(d.netEarnings);
+      if (hrs > 0 || o > 0) rows.push({ name: d.name, key: driverKey(d.name), net, orders: o });
+    });
+    rows.sort((a, b) => b.net - a.net);
+    list = rows.map(r => {
+      const rd = byKey[r.key], p = rd ? dkDriverTierPill(rd, R) : dkTierPill(netTierBand(r.net));
+      return { name: r.name, pill: p, right: `${num(r.net)} <small style="color:var(--dk-dim)">${fmt(r.orders)} trips today</small>` };
+    });
+    title = `Active — ${latest ? String(latest.period).replace(/\s\d{4}$/, '') : 'latest day'}`;
+  } else if (kind === '6000' || kind === '5000' || kind === '4000' || kind === 'below') {   // Tier pills → each band (== Finance)
+    const td = smTierDetail(mk);
+    const names = kind === 'below' ? td.below.names.slice() : ((td[Number(kind)] || {}).names || []);
+    const enriched = names.map(n => ({ n, net: computeDriverNetForPeriod(n, mk) })).sort((a, b) => b.net - a.net);
+    list = enriched.map(x => ({ name: x.n, pill: dkTierPill(netTierBand(x.net)), right: sar(x.net) }));
+    title = kind === 'below' ? '&lt;4k — below pace' : (Number(kind) / 1000) + 'k tier';
+  } else return;
+  dkListOverlay(`${title} · ${list.length} · ${R.periodLabel}`, dkDriverRows(list, mk));
+}
+
 // ── A3 · alert rail (one renderer + one source registry) ──
 // alerts = [{ cls:'danger'|'warn'|'', n, txt, go }]; renders nothing when calm.
 function dkAlertRail(alerts) {
@@ -12375,40 +12399,44 @@ function renderToday() {
   if (slip.count) alerts.push({ cls:'warn', n:slip.count, txt:t('slipping'), go:'dkToggleSlip(event)' });
   const rail = dkAlertRail(alerts);   // A3 · one renderer, shared with the S2 tabs
 
-  // ── Stat strip — six instruments ──
+  // ── Stat strip — six instruments, each drilling to its own driver list → A1 panel.
+  // Clickable when the number is > 0 (an empty card doesn't pretend to drill). The four
+  // tier pills each drill to their band (smTierDetail == Finance); the rest via todayStatDrill.
+  const drill = `<span class="drill">▸</span>`;
+  const clk = (on, kind) => on ? ` click" onclick="todayStatDrill('${kind}',event)` : '';
   const tierPills = projectable ? `
     <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
-      <span class="dk-tier t6 hollow">6K <b>${bandCounts[3]}</b></span>
-      <span class="dk-tier t5 hollow">5K <b>${bandCounts[2]}</b></span>
-      <span class="dk-tier t4 hollow">4K <b>${bandCounts[1]}</b></span>
-      <span class="dk-tier t0">&lt;4K <b>${bandCounts[0]}</b></span>
+      <span class="dk-tier t6 hollow drill" onclick="todayStatDrill('6000',event)">6K <b>${bandCounts[3]}</b></span>
+      <span class="dk-tier t5 hollow drill" onclick="todayStatDrill('5000',event)">5K <b>${bandCounts[2]}</b></span>
+      <span class="dk-tier t4 hollow drill" onclick="todayStatDrill('4000',event)">4K <b>${bandCounts[1]}</b></span>
+      <span class="dk-tier t0 drill" onclick="todayStatDrill('below',event)">&lt;4K <b>${bandCounts[0]}</b></span>
     </div>
     <div class="d" style="margin-block-start:6px">${dkTierMoves(R)}</div>` : `<div class="v">—</div>`;
   const strip = `
     <div class="dk-strip">
-      <div class="dk-stat">
-        <div class="l">${t('fleetNet')}</div>
+      <div class="dk-stat${clk(monthNet > 0, 'active')}">
+        <div class="l">${t('fleetNet')}${monthNet > 0 ? drill : ''}</div>
         <div class="v">${fmt(Math.round(monthNet))}<small> SAR</small></div>
         ${deltaPct != null ? `<div class="d ${deltaPct >= 0 ? 'up' : 'down'}">${deltaPct >= 0 ? '▲' : '▼'} ${Math.abs(deltaPct)}% ${t('vs')} ${prevMonthName}</div>` : ''}
       </div>
-      <div class="dk-stat brand">
-        <div class="l">${t('projBonus')}</div>
+      <div class="dk-stat brand${clk(projectable && projBonus > 0, 'bonus')}">
+        <div class="l">${t('projBonus')}${projectable && projBonus > 0 ? drill : ''}</div>
         <div class="v">${projectable ? '+' + fmt(projBonus) : '—'}<small>${projectable ? ' SAR' : ''}</small></div>
       </div>
       <div class="dk-stat" style="grid-column:span 2;min-width:230px">
-        <div class="l">${t('tierLadder')}</div>
+        <div class="l">${t('tierLadder')}${projectable ? ` <span class="drill">▸ ${t('tapBand') || 'tap a band'}</span>` : ''}</div>
         ${tierPills}
       </div>
-      <div class="dk-stat${(idleN + slowN) ? ' warn' : ''}">
-        <div class="l">${t('needsPush')}</div>
+      <div class="dk-stat${(idleN + slowN) ? ' warn' : ''}${clk((idleN + slowN) > 0, 'needspush')}">
+        <div class="l">${t('needsPush')}${(idleN + slowN) > 0 ? drill : ''}</div>
         <div class="v">${idleN + slowN}</div>
       </div>
-      <div class="dk-stat${blockedCount ? ' danger' : ''}">
-        <div class="l">${t('blocked')}</div>
+      <div class="dk-stat${blockedCount ? ' danger' : ''}${clk(blockedCount > 0, 'blocked')}">
+        <div class="l">${t('blocked')}${blockedCount > 0 ? drill : ''}</div>
         <div class="v">${blockedCount}</div>
       </div>
-      ${F ? `<div class="dk-stat">
-        <div class="l">${t('activeToday')}</div>
+      ${F ? `<div class="dk-stat${clk(F.pulse.L.active > 0, 'latestday')}">
+        <div class="l">${t('activeToday')}${F.pulse.L.active > 0 ? drill : ''}</div>
         <div class="v">${F.pulse.L.active}</div>
         <div class="d">${fmt(F.pulse.L.trips)} ${t('trips')}</div>
       </div>` : ''}
@@ -12698,12 +12726,12 @@ function dismissCortexAlert(el) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STAR MAP — the strategic command centre (D-3 rebuild, rung S-SM).
-// AGGREGATES ONLY: no driver list, no action buttons on the surface (§1 boundary
-// rules) — driver names appear only inside a drill overlay. Every number REUSES an
-// existing engine (computeRosterForMonth / bonusFor / tierStatusFor /
-// incentiveTotalsFor / blockAtStake / the stage snapshot) — the deck recomputes
-// nothing. Entry is still gated by the "7ofy" Cerebro lock (SM-1, kept intact).
+// COMMAND CENTER — Muhammad's daily strategy deck (was "Star Map"; D-3 REVERSED
+// 2026-07-07). AGGREGATES FIRST, but every number DRILLS to the names behind it →
+// the A1 driver panel (tier ladder segments, funnel stages, the ambassadors-working
+// panel). Every number REUSES an existing engine (computeRosterForMonth / bonusFor /
+// tierStatusFor / incentiveTotalsFor / blockAtStake / the stage snapshot) — the deck
+// recomputes nothing. Opens instantly — the "7ofy" Cerebro passcode (SM-1) was removed.
 // ═══════════════════════════════════════════════════════════════════════════
 let _smSel = '';                 // '' → default (latest month) · a 'YYYY-MM' · or 'all'
 let _smMonthCache = {};          // memoized per-month growth aggregates
@@ -12823,9 +12851,10 @@ function smShowOverlay(title, bodyHtml) {
 }
 function smCloseOverlay() { const h = document.getElementById('smOverlayHost'); if (h) { h.classList.remove('open'); h.innerHTML = ''; } }
 
-// Scoped driver list for a ladder segment. kind:
+// Scoped driver list for a ladder / funnel segment. kind:
 //   '6000'|'5000'|'4000'|'below'  → the Finance-consistent tier buckets (smTierDetail)
 //   'tiers'                        → all tiered drivers (funnel's TIERED chip)
+//   'activated'|'earning'          → the funnel's ACTIVATED / EARNING stages (roster)
 //   'idle'|'blocked'              → the roster reconciliation buckets
 // Rows → A1 driver panel, month-scoped.
 function smLadderDrill(kind) {
@@ -12837,10 +12866,14 @@ function smLadderDrill(kind) {
     <span class="k">${escH(name)} ${dkTierPill(netTierBand(net))}</span>
     <span class="v"><span class="dk-num">${fmt(Math.round(net))}</span></span></div>`;
   let rows, title, count;
-  if (kind === 'idle' || kind === 'blocked') {
-    const list = (kind === 'blocked' ? R.current.filter(d => d.blocked) : R.current.filter(d => d.idle && !d.blocked))
-      .slice().sort((a, b) => (b.proj || b.net) - (a.proj || a.net));
-    title = kind === 'blocked' ? 'Blocked drivers' : 'Idle drivers'; count = list.length;
+  if (kind === 'idle' || kind === 'blocked' || kind === 'activated' || kind === 'earning') {
+    let list;
+    if (kind === 'blocked')        { list = R.current.filter(d => d.blocked); title = 'Blocked drivers'; }
+    else if (kind === 'idle')      { list = R.current.filter(d => d.idle && !d.blocked); title = 'Idle drivers'; }
+    else if (kind === 'earning')   { list = R.current.filter(d => !d.idle); title = 'Earning this month'; }
+    else                           { list = R.current.slice(); title = 'Activated (roster)'; }
+    list = list.slice().sort((a, b) => (b.proj || b.net) - (a.proj || a.net));
+    count = list.length;
     rows = list.map(d => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(d.name)}','${R.monthSel}')">
       <span class="k">${escH(d.name)} ${dkDriverTierPill(d, R)}</span><span class="v"><span class="dk-num">${fmt(Math.round(d.proj || d.net))}</span></span></div>`).join('');
   } else {
@@ -12863,7 +12896,7 @@ function renderStarMapDeck() {
   if (!el) return;
   const R = computeRosterForMonth(_smSel);
   if (!R || !R.months || !R.months.length) {
-    el.innerHTML = `<div class="dk"><div class="dk-shell">${dkDeckHeader({ title: 'Star Map', context: 'the whole operation, at a glance' })}
+    el.innerHTML = `<div class="dk"><div class="dk-shell">${dkDeckHeader({ title: 'Command Center', context: 'the whole operation, at a glance' })}
       <div class="dk-card" style="text-align:center;padding:36px 20px;color:var(--dk-mut)">
         <div style="font-size:26px">🛰</div><div style="font-size:15px;font-weight:600;color:var(--dk-text)">No fleet data yet</div>
         <div style="font-size:12px">Upload a Bolt CSV (or run the sync) — the command instruments light up automatically.</div></div></div></div>`;
@@ -12874,22 +12907,24 @@ function renderStarMapDeck() {
   const roll = ambassadorRollup(R.monthSel);  // the heaviest join — computed once, threaded down
 
   const header = dkDeckHeader({
-    title: 'Star Map',
+    title: 'Command Center',
     context: `the whole operation · ${isAll ? 'all time' : R.periodLabel}`,
     status: dkStatusChip()
   });
   const rail = dkAlertRail(dkAlertRegistry(['stale', 'reconcile']));   // trust-only subset (§5)
 
+  // Layout (D-3 reversed): the bonus-projection HERO leads (Muhammad's strategy headline),
+  // then the operational stat strip, then the drillable instruments. Every aggregate below
+  // drills to the names behind it → A1 (tier ladder, funnel, ambassadors-working panel).
   const body = `<div class="dk"><div class="dk-shell" style="padding-block:2px 8px">
     ${header}${rail}
     ${smTimeframe(R)}
-    ${smStatStrip(R, roll)}
-    ${isAll
-      ? smLifetimeStrip(R)
-      : `<div class="sm2-grid r1">${smBonusHero(R)}${smTierLadder(R)}</div>`}
+    ${isAll ? smLifetimeStrip(R) : `<div style="margin-block-start:12px">${smBonusHero(R)}</div>`}
+    <div style="margin-block-start:12px">${smStatStrip(R, roll)}</div>
+    ${isAll ? '' : `<div style="margin-block-start:12px">${smTierLadder(R)}</div>`}
     ${smFunnel(R)}
     ${isAll
-      ? `${smLeaderboard(R, roll)}${smGrowth(R, true)}`
+      ? `<div style="margin-block-start:14px">${smLeaderboard(R, roll)}</div><div style="margin-block-start:12px">${smGrowth(R, true)}</div>`
       : `<div class="sm2-grid r3">${smLeaderboard(R, roll)}${smGrowth(R, false)}</div>`}
   </div></div>`;
   el.innerHTML = body;
@@ -12993,9 +13028,9 @@ function smFunnel(R) {
     : { lbl: 'PIPELINE', n: '—', go: "todayGo('pipeline')", muted: true };
   const segs = [
     pipeSeg,
-    { lbl: 'ACTIVATED', n: activated, go: '' },
-    { lbl: 'EARNING', n: earning, go: '' },
-    { lbl: 'TIERED', n: tiered, go: "smLadderDrill('tiers')" },
+    { lbl: 'ACTIVATED', n: activated, go: activated ? "smLadderDrill('activated')" : '' },
+    { lbl: 'EARNING', n: earning, go: earning ? "smLadderDrill('earning')" : '' },
+    { lbl: 'TIERED', n: tiered, go: tiered ? "smLadderDrill('tiers')" : '' },
   ];
   const flow = `<div style="display:flex;align-items:stretch;gap:8px;flex-wrap:wrap;margin-block-start:4px">${segs.map((s, i) => `
     <div style="flex:1;min-width:120px;border:1px solid var(--dk-line);border-radius:8px;padding:9px 12px;background:var(--dk-s2);${s.go ? 'cursor:pointer' : ''}"${s.go ? ` onclick="${s.go}"` : ''}>
@@ -13012,7 +13047,10 @@ function smFunnel(R) {
     ${flow}${leaks}${note}</div>`;
 }
 
-// ── I3 · AMBASSADOR LEADERBOARD — who feeds the funnel (money first) ──
+// ── I3 · AMBASSADORS WORKING — who's feeding the funnel right now (money first). Each
+// row = one ambassador: drivers brought · active % · fleet-net MTD · incentive MTD ·
+// slipping flag (all from ambassadorRollup). Click a row → the NAMES behind the number
+// (that ambassador's drivers) → A1 (D-3 drill-to-names), with a link out to the full tab.
 function smLeaderboard(R, roll) {
   roll = roll || ambassadorRollup(R.monthSel);
   const jsq = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -13022,14 +13060,35 @@ function smLeaderboard(R, roll) {
   const money = r => r.currency === 'EGP' ? `${fmt(Math.round(r.incNative))} EGP` : `${fmt(Math.round(r.incSar))} SAR`;
   const body = shown.map((r, i) => {
     const actPct = r.drivers ? Math.round(r.active / r.drivers * 100) : 0;
-    return `<div class="dk-row click" onclick="openAmbassador('${jsq(r.name)}','${R.monthSel}')">
+    return `<div class="dk-row click" onclick="smAmbassadorDrill('${jsq(r.name)}')">
       <span class="k"><span class="sm2-rank">#${i + 1}</span> ${escH(r.name)}${r.slipping ? ` <span class="dk-warn-n" style="font-size:10px" title="${r.slipping} slipping">▾${r.slipping}</span>` : ''}</span>
-      <span class="v"><span style="color:var(--dk-mut)">${r.drivers}d · ${actPct}%</span> · <span class="dk-num">${fmt(Math.round(r.fleetNet))}</span> · <b style="color:${r.incSar > 0 ? 'var(--dk-brand)' : 'var(--dk-dim)'}">${r.incSar > 0 || r.incNative > 0 ? money(r) : '—'}</b></span></div>`;
+      <span class="v"><span style="color:var(--dk-mut)">${r.drivers} drv · ${actPct}% act</span> · <span class="dk-num">${fmt(Math.round(r.fleetNet))}</span> · <b style="color:${r.incSar > 0 ? 'var(--dk-brand)' : 'var(--dk-dim)'}">${r.incSar > 0 || r.incNative > 0 ? money(r) : '—'}</b></span></div>`;
   }).join('') || `<div style="color:var(--dk-dim);font-size:12px;padding:6px">No ambassador attribution yet.</div>`;
   const more = rows.length > 5 ? `<div class="dk-row click" style="justify-content:center;color:var(--dk-info)" onclick="smToggleLeaderAll()">${_smLeaderAll ? 'show top 5 ▲' : `show all ${rows.length} ▾`}</div>` : '';
   return `<div class="dk-card">
-    <div class="dk-card-t"><span class="t">Ambassador leaderboard</span><span class="go">drivers · active% · fleet net · incentive →</span></div>
+    <div class="dk-card-t"><span class="t">Ambassadors working</span><span class="go">drivers · active% · fleet net · incentive · click → their drivers</span></div>
     ${body}${more}</div>`;
+}
+
+// Drill an ambassador → the drivers behind their number (D-3 drill-to-names). Opens over
+// the deck (smShowOverlay); each driver row → A1, month-scoped. A footer link opens the
+// full Ambassadors tab scoped to this ambassador (the prior openAmbassador behaviour, kept).
+function smAmbassadorDrill(name) {
+  const R = computeRosterForMonth(_smSel);
+  if (!R || !R.current) return;
+  const jsq = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const key = String(name || '').trim().toLowerCase();
+  const list = R.current.filter(d => ((getCourierProfile(d.name) && getCourierProfile(d.name).ambassador || '').trim().toLowerCase()) === key)
+    .slice().sort((a, b) => b.net - a.net);
+  const chip = d => d.blocked ? '<span class="dk-statechip blocked">blocked</span>'
+    : d.idle ? '<span class="dk-statechip idle">idle</span>' : '<span class="dk-statechip active">active</span>';
+  const rows = list.map(d => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(d.name)}','${R.monthSel}')">
+    <span class="k">${escH(d.name)} ${dkDriverTierPill(d, R)}</span>
+    <span class="v">${chip(d)} · <span class="dk-num">${fmt(Math.round(d.net))}</span></span></div>`).join('');
+  const openTab = `<div class="dk-row click" style="justify-content:center;color:var(--dk-info)" onclick="smCloseOverlay();openAmbassador('${jsq(name)}','${R.monthSel}')">open in Ambassadors tab →</div>`;
+  smShowOverlay(`${escH(name)} · ${list.length} drivers · ${escH(R.periodLabel)}`,
+    (rows || `<div style="color:var(--dk-dim);font-size:12px;padding:6px">No drivers tagged to this ambassador in ${escH(R.periodLabel)}.</div>`) + openTab);
 }
 
 // ── I4 · BONUS PROJECTION + TREND — the hero (company money only, invoice-aware) ──
@@ -13135,181 +13194,12 @@ function smLifetimeStrip(R) {
   </div>`;
 }
 
-// ── Cerebro Lock Screen ──────────────────────────────────────────────────────
-const _cbrStatuses = [
-  'NEURAL SCAN ACTIVE',
-  'MAPPING THOUGHT PATTERNS',
-  'CEREBRAL SYNC IN PROGRESS',
-  'QUANTUM ENCRYPTION ENABLED',
-  'AWAITING AUTHORIZATION CODE',
-  'SCANNING MUTANT SIGNATURES…'
-];
-let _cerebroVal = '', _cbrSIdx = 0, _cbrTimer = null;
-
-function openCerebroLock() {
-  _cerebroVal = '';
-  const ov = document.getElementById('cerebroOverlay');
-  ov.classList.add('open');
-  document.getElementById('cerebroFeedback').textContent = '';
-  document.getElementById('cerebroFeedback').className = 'cbr-feedback';
-  document.getElementById('cerebroFlash').className = 'cbr-flash';
-  document.getElementById('cerebroCore').style.color = '';
-  _cbrRenderDots();
-  _cbrSetStatus('NEURAL SCAN ACTIVE');
-  _cbrSIdx = 0;
-  clearInterval(_cbrTimer);
-  _cbrTimer = setInterval(() => {
-    _cbrSIdx = (_cbrSIdx + 1) % _cbrStatuses.length;
-    _cbrSetStatus(_cbrStatuses[_cbrSIdx]);
-  }, 2800);
-  document.addEventListener('keydown', _cbrKeyHandler);
-}
-
-function closeCerebroLock() {
-  clearInterval(_cbrTimer);
-  document.getElementById('cerebroOverlay').classList.remove('open');
-  document.removeEventListener('keydown', _cbrKeyHandler);
-  _cerebroVal = '';
-}
-
-function _cbrKeyHandler(e) {
-  if (e.key === 'Escape')    { closeCerebroLock(); return; }
-  if (e.key === 'Backspace') { _cerebroVal = _cerebroVal.slice(0,-1); _cbrRenderDots(); return; }
-  if (e.key === 'Enter')     { _cerebroSubmit(); return; }
-  if (e.key.length === 1 && _cerebroVal.length < 12) { _cerebroVal += e.key; _cbrRenderDots(); }
-}
-
-function _cbrSetStatus(t) { document.getElementById('cerebroStatus').textContent = t; }
-
-function _cbrRenderDots() {
-  const n = _cerebroVal.length, SLOTS = 6;
-  document.getElementById('cerebroDots').innerHTML =
-    Array.from({length: SLOTS}, (_, i) =>
-      `<div class="cbr-dot${i < n ? ' lit' : ''}"></div>`
-    ).join('');
-}
-
-function _cerebroSubmit() {
-  clearInterval(_cbrTimer);
-  const fb = document.getElementById('cerebroFeedback');
-  const fl = document.getElementById('cerebroFlash');
-  if (_cerebroVal === '7ofy') {
-    _cbrSetStatus('NEURAL LINK ESTABLISHED');
-    fl.className = 'cbr-flash ok';
-    fb.textContent = '── ACCESS GRANTED ──';
-    fb.className = 'cbr-feedback ok';
-    document.getElementById('cerebroCore').style.color = '#00ffb3';
-    setTimeout(() => {
-      _starmapUnlocked = true;
-      closeCerebroLock();
-      const tab = document.querySelector('.tab[data-tab="starmap"]');
-      if (tab) _doShowTab('starmap', tab);
-    }, 1500);
-  } else {
-    _cbrSetStatus('INTRUSION DETECTED · ACCESS DENIED');
-    fl.className = 'cbr-flash err';
-    fb.textContent = '── NEURAL MISMATCH ──';
-    fb.className = 'cbr-feedback err';
-    _cerebroVal = '';
-    setTimeout(() => {
-      _cbrRenderDots();
-      fb.textContent = ''; fb.className = 'cbr-feedback';
-      fl.className = 'cbr-flash';
-      _cbrSIdx = 0; _cbrSetStatus('NEURAL SCAN ACTIVE');
-      _cbrTimer = setInterval(() => {
-        _cbrSIdx = (_cbrSIdx + 1) % _cbrStatuses.length;
-        _cbrSetStatus(_cbrStatuses[_cbrSIdx]);
-      }, 2800);
-    }, 1400);
-  }
-}
+// (The "7ofy" Cerebro lock screen JS was removed 2026-07-07 — Command Center now
+// opens instantly. Gate, overlay markup, passcode and CSS all deleted.)
 </script>
 
-<!-- ── Cerebro Lock Screen ── -->
-<div id="cerebroOverlay">
-  <div class="cbr-flash" id="cerebroFlash"></div>
-  <div class="cbr-modal">
-    <!-- corner telemetry -->
-    <div class="cbr-corner cbr-tl"><span>SIG.STR: 94%</span><span>NODES: 14</span><span>SYNC: LIVE</span></div>
-    <div class="cbr-corner cbr-tr"><span>FREQ: 1.2 GHz</span><span>LAT: 0.003ms</span><span>ENC: AES-X</span></div>
-    <div class="cbr-corner cbr-bl"><span>RANGE: GLOBAL</span><span>SHIELD: ACTIVE</span></div>
-    <div class="cbr-corner cbr-br"><span>TUNNEL: SECURE</span><span>AUTH: PENDING</span></div>
-
-    <div class="cbr-rings">
-      <!-- Cerebro neural-network SVG -->
-      <svg viewBox="0 0 260 260" width="260" height="260" style="position:absolute;inset:0;overflow:visible">
-        <!-- Outer hex boundary -->
-        <polygon points="130,8 222,58 222,202 130,252 38,202 38,58"
-          fill="none" stroke="rgba(0,212,255,.22)" stroke-width="1"/>
-        <!-- Inner hex -->
-        <polygon points="130,45 192,80 192,180 130,215 68,180 68,80"
-          fill="none" stroke="rgba(0,212,255,.1)" stroke-width="1" stroke-dasharray="5,6"/>
-        <!-- Spokes center→outer vertices -->
-        <g stroke="rgba(0,212,255,.13)" stroke-width=".8">
-          <line x1="130" y1="130" x2="130" y2="8"/>
-          <line x1="130" y1="130" x2="222" y2="58"/>
-          <line x1="130" y1="130" x2="222" y2="202"/>
-          <line x1="130" y1="130" x2="130" y2="252"/>
-          <line x1="130" y1="130" x2="38"  y2="202"/>
-          <line x1="130" y1="130" x2="38"  y2="58"/>
-        </g>
-        <!-- Skip-connections (like synaptic cross-links) -->
-        <g stroke="rgba(0,212,255,.06)" stroke-width=".6">
-          <line x1="130" y1="8"   x2="222" y2="202"/>
-          <line x1="222" y1="58"  x2="38"  y2="202"/>
-          <line x1="222" y1="58"  x2="130" y2="252"/>
-          <line x1="130" y1="8"   x2="38"  y2="202"/>
-          <line x1="38"  y1="58"  x2="222" y2="202"/>
-          <line x1="38"  y1="58"  x2="130" y2="252"/>
-        </g>
-        <!-- Spokes center→inner vertices -->
-        <g stroke="rgba(0,255,179,.1)" stroke-width=".7">
-          <line x1="130" y1="130" x2="130" y2="45"/>
-          <line x1="130" y1="130" x2="192" y2="80"/>
-          <line x1="130" y1="130" x2="192" y2="180"/>
-          <line x1="130" y1="130" x2="130" y2="215"/>
-          <line x1="130" y1="130" x2="68"  y2="180"/>
-          <line x1="130" y1="130" x2="68"  y2="80"/>
-        </g>
-        <!-- Rotating scan beam -->
-        <g style="transform-origin:130px 130px;animation:cbr-beam 6s linear infinite">
-          <line x1="130" y1="130" x2="130" y2="8"
-            stroke="rgba(0,212,255,.55)" stroke-width="1.5"/>
-          <line x1="130" y1="130" x2="130" y2="8"
-            stroke="rgba(0,212,255,.12)" stroke-width="9"/>
-        </g>
-        <!-- Target reticle -->
-        <circle cx="130" cy="130" r="24" fill="none" stroke="rgba(0,255,179,.16)" stroke-width=".8"/>
-        <circle cx="130" cy="130" r="10" fill="none" stroke="rgba(0,255,179,.22)" stroke-width=".8"/>
-        <g stroke="rgba(0,255,179,.2)" stroke-width=".8">
-          <line x1="130" y1="114" x2="130" y2="146"/>
-          <line x1="114" y1="130" x2="146" y2="130"/>
-        </g>
-        <!-- Outer vertex nodes (cyan, staggered pulse) -->
-        <circle class="cbr-node" cx="130" cy="8"   r="3.5" fill="rgba(0,212,255,.75)" style="animation-delay:0s"/>
-        <circle class="cbr-node" cx="222" cy="58"  r="3.5" fill="rgba(0,212,255,.75)" style="animation-delay:.5s"/>
-        <circle class="cbr-node" cx="222" cy="202" r="3.5" fill="rgba(0,212,255,.75)" style="animation-delay:1s"/>
-        <circle class="cbr-node" cx="130" cy="252" r="3.5" fill="rgba(0,212,255,.75)" style="animation-delay:1.5s"/>
-        <circle class="cbr-node" cx="38"  cy="202" r="3.5" fill="rgba(0,212,255,.75)" style="animation-delay:2s"/>
-        <circle class="cbr-node" cx="38"  cy="58"  r="3.5" fill="rgba(0,212,255,.75)" style="animation-delay:2.5s"/>
-        <!-- Inner vertex nodes (green, offset pulse) -->
-        <circle class="cbr-node" cx="130" cy="45"  r="2.5" fill="rgba(0,255,179,.7)" style="animation-delay:.25s"/>
-        <circle class="cbr-node" cx="192" cy="80"  r="2.5" fill="rgba(0,255,179,.7)" style="animation-delay:.75s"/>
-        <circle class="cbr-node" cx="192" cy="180" r="2.5" fill="rgba(0,255,179,.7)" style="animation-delay:1.25s"/>
-        <circle class="cbr-node" cx="130" cy="215" r="2.5" fill="rgba(0,255,179,.7)" style="animation-delay:1.75s"/>
-        <circle class="cbr-node" cx="68"  cy="180" r="2.5" fill="rgba(0,255,179,.7)" style="animation-delay:2.25s"/>
-        <circle class="cbr-node" cx="68"  cy="80"  r="2.5" fill="rgba(0,255,179,.7)" style="animation-delay:2.75s"/>
-      </svg>
-      <div class="cbr-core" id="cerebroCore">X·M</div>
-    </div>
-    <div class="cbr-title">XAVIER FLEET COMMAND</div>
-    <div class="cbr-sub">CEREBRAL INTERFACE &nbsp;·&nbsp; NEURAL AUTHENTICATION REQUIRED</div>
-    <div class="cbr-status" id="cerebroStatus">NEURAL SCAN ACTIVE</div>
-    <div class="cbr-dots" id="cerebroDots"></div>
-    <div class="cbr-hint">ENTER ACCESS CODE</div>
-    <div class="cbr-feedback" id="cerebroFeedback"></div>
-    <div class="cbr-footer">[ ENTER ] &nbsp; AUTHENTICATE &emsp;·&emsp; [ ESC ] &nbsp; ABORT SEQUENCE</div>
-  </div>
-</div>
+<!-- Shared drill overlay host — any tab can open a driver list over the page (Today's
+     clickable stat cards use it; same visual language as the Command Center overlay). -->
+<div id="dkOverlayHost"></div>
 </body>
 </html>
