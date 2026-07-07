@@ -67,18 +67,19 @@ function smAmbassadorDrill
 Ambassadors working
 smLadderDrill('activated')
 ```
-**Must be ABSENT** (passcode fully removed)
+**Must be ABSENT** (passcode fully removed — gate, JS, overlay, CSS)
 ```
 openCerebroLock
+_cerebroSubmit
 cerebroOverlay
 _starmapUnlocked
-7ofy
 ```
+> Note: the literal `7ofy` still appears **4×**, but only in removal-documentation comments — there is no functional `=== '7ofy'` check left. Grep for `_cerebroSubmit`/`openCerebroLock` (= 0) to confirm the gate is gone, not for bare `7ofy`.
 
 Suggested one-liner:
 ```
-curl -s https://mhmbolt.vercel.app/ | grep -c "todayStatDrill\|Ambassadors working\|Command Center"   # expect ≥ 3
-curl -s https://mhmbolt.vercel.app/ | grep -c "openCerebroLock\|cerebroOverlay\|7ofy"                   # expect 0
+curl -s https://mhmbolt.vercel.app/ | grep -c "todayStatDrill\|Ambassadors working\|Command Center"   # expect >= 3
+curl -s https://mhmbolt.vercel.app/ | grep -c "openCerebroLock\|_cerebroSubmit\|cerebroOverlay"        # expect 0
 ```
 
 ---
