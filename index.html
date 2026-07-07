@@ -2028,6 +2028,8 @@ function confirmUpload() {
   document.getElementById('headerPeriod').textContent = period;
 
   saveToHistory(period, currentDrivers, pendingFilename, pInfo, 'csv');
+  reconcileBlockLog();  // R1 — keep the block log honest after the upload (a CSV can't derive
+                        // block state itself; this reconciles against the last state-bearing day)
   // Record Bolt transfer amounts from this CSV into the payment log
   recordTransfersFromUpload(htmlDate, currentDrivers);
   // Integrity guard: warn if this upload produced any suspicious transfer log entries
@@ -2114,6 +2116,7 @@ async function runBoltSync() {
     const pInfo = { start:{ day:dy, month:mo-1, year:yr }, end:{ day:dy, month:mo-1, year:yr } };
     saveToHistory(period, j.drivers, 'bolt-api-sync', pInfo, 'api');
     updateBlockLog(period, j.drivers);
+    reconcileBlockLog();   // R1 — also open/close against the full live set, not just this day's transitions
 
     status.style.color = 'var(--bolt-green)';
     status.textContent = `✓ Saved ${j.driverCount} drivers, ${j.totalOrders} orders`;
@@ -4271,8 +4274,10 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const departedKeys = getDepartedKeys();
   // A BLOCKED captain is still ON the fleet (just blocked on Bolt) — they must NEVER be
   // counted as "left", even if Bolt dropped them from the latest roster export. So we
-  // subtract currently-blocked captains (open block-log rows) from the departed set.
-  const blockedKeys  = new Set(getBlockLog().filter(e => !e.dateUnblocked).map(e => driverKey(e.driverName)));
+  // subtract currently-blocked captains from the departed set. R1: blocked-now = the live
+  // Bolt state (liveBlockedKeys), not the block LOG — so a stale open row can't rescue a
+  // genuinely-departed driver, and a truly-suspended driver is never mis-badged "left".
+  const blockedKeys  = liveBlockedKeys();
 
   // Working-month basis for pace tracking, derived from the actual month in view.
   // Model: a captain takes ~1 day off per week, so a working month is ≈ 6/7 of the
@@ -4635,11 +4640,40 @@ function buildDayEntry(period, drivers, filename, pInfo, source) {
 // had one — so it still reads as roster-bearing (getRosterEntry). To wholly discard a bad
 // day, use the History tab's Delete (deleteHistoryEntry) then re-upload — the explicit
 // force-replace path the wholesale behaviour used to serve.
+// R2 — the per-driver union is a per-FIELD merge, not a wholesale replace. The newer
+// entry still wins on ACTIVITY (orders/net/hours/…), but STATE & PROFILE fields (live
+// Bolt + vehicle suspension, categories, cash flag, rating/score, identity) are RETAINED
+// from the side that carries them when the newer side is state-less. An activity-only CSV
+// has no boltState/vehicleState/… on any row, so the old "newer wins" BLANKED the live
+// states the nightly cron stored — blinding the block tracker + vehicle panel until the
+// next cron (audit R2). Per-field retention makes a CSV upload an ACTIVITY update, not a
+// state wipe. driverKey preserves the roster set (F1); this preserves the state per driver.
+function mergeDriverEntry(older, newer) {
+  if (!older) return newer;
+  if (!newer) return older;
+  const out = { ...newer };
+  const keepStr = ['boltState','boltSuspensionReason','boltSuspensionCategory','boltSuspendedSince',
+    'vehicleState','vehicleSuspensionReason','vehiclePlate','activeCategories','inactiveCategories',
+    'phone','email','driverId'];
+  for (const f of keepStr) {
+    const nv = newer[f];
+    if ((nv == null || nv === '') && older[f] != null && older[f] !== '') out[f] = older[f];
+  }
+  // Numeric profile fields read back as 0 when absent (unpackDriver) → 0 means "no value":
+  // keep the older non-zero rating/score rather than let a state-less CSV zero it out.
+  for (const f of ['rating','score']) if (!newer[f] && older[f]) out[f] = older[f];
+  // Tri-state cash flag: null = unknown → keep the older known value (false is a real value).
+  if (newer.hasCashPayment == null && older.hasCashPayment != null) out.hasCashPayment = older.hasCashPayment;
+  // Tier is profile too: keep the older tier when the newer side has only the empty default.
+  const tierLevel = t => (t && t.level != null) ? t.level : -1;
+  if (tierLevel(newer.tier) === -1 && tierLevel(older.tier) !== -1) out.tier = older.tier;
+  return out;
+}
 function mergeDayEntries(older, newer) {
   const keyOf = d => driverKey(d.name) || (d.driverId||'').trim();
   const byKey = new Map();
   (older.drivers||[]).forEach(d => { const k = keyOf(d); if (k) byKey.set(k, d); });
-  (newer.drivers||[]).forEach(d => { const k = keyOf(d); if (k) byKey.set(k, d); }); // newer wins
+  (newer.drivers||[]).forEach(d => { const k = keyOf(d); if (k) byKey.set(k, mergeDriverEntry(byKey.get(k), d)); }); // newer wins on activity; state/profile retained
   const drivers   = [...byKey.values()];
   const rosterSrc = [older.source, newer.source].find(s => s==='cron' || s==='api');
   const merged    = buildDayEntry(newer.period, drivers, newer.filename || older.filename,
@@ -5106,6 +5140,108 @@ function updateBlockLog(period, newDrivers) {
   }
   saveBlockLog(log);
 }
+
+// ── R1 · ONE-TRUTH "blocked NOW" set ──────────────────────────────────────────
+// The set of currently-blocked drivers is derived from the LIVE Bolt state on the latest
+// STATE-BEARING day — never from the block LOG (which is now HISTORY only), and never from
+// a state-less CSV day. A state-bearing day is a cron/api pull, or a CSV day that RETAINED
+// its bs after the R2 per-field merge. This is the F2 one-truth pattern applied to block
+// state: it drops the stale opens (a live-active driver isn't in the set) and surfaces the
+// invisible suspended (a suspended driver IS in the set even with no log row). Guard: a
+// brand-new activity-only CSV has boltState='' on every row, so it is skipped and the last
+// known state-bearing day rules — a partial upload can never derive block state.
+function latestStateBearingEntry() {
+  const sorted = [...getHistory()].sort((a,b) => periodSortKey(b.period) - periodSortKey(a.period));
+  return sorted.find(h =>
+    h.source === 'cron' || h.source === 'api' ||
+    (Array.isArray(h.drivers) && h.drivers.some(d => (d.boltState||'').trim()))
+  ) || null;
+}
+// Map: driverKey → { key, name, driverId, state, reason, since, category } for every driver
+// whose live boltState is a non-active suspension state (suspended / deactivated).
+function liveBlockedSet() {
+  const e = latestStateBearingEntry();
+  const m = new Map();
+  if (!e) return m;
+  for (const d of (e.drivers || [])) {
+    const st = (d.boltState || '').trim().toLowerCase();
+    if (!st || st === 'active') continue;
+    const k = driverKey(d.name) || (d.driverId || '').trim();
+    if (k && !m.has(k)) m.set(k, {
+      key: k, name: d.name, driverId: d.driverId || '', state: st,
+      reason: d.boltSuspensionReason || '', since: d.boltSuspendedSince || '',
+      category: normBoltCat(d.boltSuspensionCategory) || ''
+    });
+  }
+  return m;
+}
+function liveBlockedKeys() { return new Set(liveBlockedSet().keys()); }
+
+// R1 — reconcile the block LOG against the live-blocked SET so the log stays an honest
+// HISTORY (when/why + duration), not the source of "who is blocked now". Runs on every
+// data ARRIVAL — cron merges included, not only a manual sync — which is exactly what the
+// old updateBlockLog (manual-sync-only, one-day-pair transition) could not see:
+//   • OPEN a row for a live-suspended driver with no open row → the invisible set gets a
+//     real dateBlocked/reason so their duration + bonus-at-stake count.
+//   • CLOSE an open row whose driver is live-active now → the stale opens clear themselves.
+// Guarded to the latest STATE-BEARING day, so a state-less CSV upload never closes a block
+// on false pretences. Returns true iff the log changed. Idempotent (safe to re-run).
+function reconcileBlockLog() {
+  const stateDay = latestStateBearingEntry();
+  if (!stateDay) return false;                       // nothing state-bearing yet → never touch the log
+  const asOf = stateDay.period || _todayPeriodStr();
+  const live = liveBlockedSet();
+  const log  = getBlockLog();
+  let changed = false;
+
+  // Bolt's suspended_since is a raw timestamp; coerce to a period, never later than today
+  // or the observing day. Falls back to the state-bearing day (when we first see the block).
+  const sinceToPeriod = raw => {
+    if (!raw) return asOf;
+    const t = Date.parse(raw);
+    if (isNaN(t)) return asOf;
+    const dt = new Date(t);
+    if (dt.getTime() > Date.now()) return asOf;
+    const p = `${String(dt.getDate()).padStart(2,'0')} ${MONTH_NAMES[dt.getMonth()]} ${dt.getFullYear()}`;
+    return periodSortKey(p) > periodSortKey(asOf) ? asOf : p;
+  };
+
+  const openByKey = new Map();
+  for (const ev of log) {
+    if (ev.dateUnblocked) continue;
+    const k = driverKey(ev.driverName) || (ev.driverId || '').trim();
+    if (!openByKey.has(k)) openByKey.set(k, ev);
+  }
+
+  // CLOSE stale opens — the driver is live-active now (not in the live-blocked set)
+  for (const ev of log) {
+    if (ev.dateUnblocked) continue;
+    const k = driverKey(ev.driverName) || (ev.driverId || '').trim();
+    if (live.has(k)) continue;                                         // still blocked → leave open
+    if (periodSortKey(ev.dateBlocked) > periodSortKey(asOf)) continue; // future-dated manual block → not yet in effect
+    ev.dateUnblocked = asOf;
+    changed = true;
+  }
+
+  // OPEN rows for live-suspended drivers with no open row (the invisible set)
+  for (const [k, d] of live) {
+    if (openByKey.has(k)) continue;
+    const db = sinceToPeriod(d.since);
+    log.push({
+      id: k + '_' + db.replace(/\s/g,''),
+      driverId: d.driverId, driverName: d.name,
+      dateBlocked: db, dateUnblocked: null,
+      reason: d.reason || 'No reason provided',
+      source: 'auto',
+      ...(d.category ? { category: d.category } : {})
+    });
+    changed = true;
+  }
+
+  if (changed) saveBlockLog(log);
+  return changed;
+}
+
 function getDriverBlockHistory(driverId, name) {
   return getBlockLog()
     .filter(e => (driverId && e.driverId === driverId) || driverKey(e.driverName) === driverKey(name))
@@ -5346,6 +5482,8 @@ function buildVehicleCategorySection(){
 function renderBlocks() {
   const el = document.getElementById('blocksContent');
   if (!el) return;
+  reconcileBlockLog();          // R1 — sync the log to live Bolt state before reading it:
+                                // close stale opens, open the invisible suspended set.
   const all = getBlockLog();
   const vc = buildVehicleCategorySection();          // Build-167: vehicle + partial-category snapshot
   if (!all.length && !vc.vehN && !vc.catN) {
@@ -5753,6 +5891,7 @@ async function syncToCloud() {
   const cloudKhairHistory = readCloudHistory(record);
   const merged = mergeHistories(getHistory(), cloudKhairHistory);
   saveHistory(merged); // full local (compressed, capped to LOCAL_MAX_DAYS)
+  reconcileBlockLog(); // R1 — reconcile before the block log is pushed below, so the cloud copy is honest
   invalidateAlertCache();
 
   const { khair_history: _oldHist, ...recordRest } = record;
@@ -5817,6 +5956,8 @@ async function fetchFromCloud() {
   if (khairHistory && khairHistory.length) {
     const merged = mergeHistories(getHistory(), khairHistory);
     saveHistory(merged);
+    reconcileBlockLog();  // R1 — cron-merged days arrive here; reconcile the log so the nightly
+                          // cron's block transitions are seen (the manual-sync-only gap is closed)
   }
   const cloudMapping = r.khair_nameMapping;
   // Apply cloud mappings whenever they contain valid {saudi, foreign} entries —
@@ -11012,7 +11153,11 @@ function computeRosterForMonth(monthSel) {
 
   // ── Per-driver aggregation ──
   const departedKeys = getDepartedKeys();
-  const blockedKeys  = new Set(getBlockLog().filter(e => !e.dateUnblocked).map(e => driverKey(e.driverName)));
+  // R1: blocked-now = the LIVE Bolt state on the latest state-bearing day (liveBlockedKeys),
+  // not the block LOG. This is what blockedCount + the per-driver `blocked` flag (projection
+  // cap, "not left") read — so the count matches the real live-suspended set (stale opens
+  // gone, invisible suspended surfaced) on Today / Captains / Star Map / the alert rail.
+  const blockedKeys  = liveBlockedKeys();
   const accAlerts = getAlertCache();
   const NEW_MS = 14 * 86400000, nowMs = Date.now();
   const TIERS = bonusTiers();                          // [4000, 5000, 6000]
