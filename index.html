@@ -12139,9 +12139,13 @@ function todayStatDrill(kind, ev) {
     title = `Active — ${latest ? String(latest.period).replace(/\s\d{4}$/, '') : 'latest day'}`;
   } else if (kind === '6000' || kind === '5000' || kind === '4000' || kind === 'below') {   // Tier pills → each band (== Finance)
     const td = smTierDetail(mk);
-    const names = kind === 'below' ? td.below.names.slice() : ((td[Number(kind)] || {}).names || []);
+    const floor = kind === 'below' ? 0 : Number(kind);
+    const band = { '6000': 3, '5000': 2, '4000': 1, 'below': 0 }[kind];
+    const names = kind === 'below' ? td.below.names.slice() : ((td[floor] || {}).names || []);
     const enriched = names.map(n => ({ n, net: computeDriverNetForPeriod(n, mk) })).sort((a, b) => b.net - a.net);
-    list = enriched.map(x => ({ name: x.n, pill: dkTierPill(netTierBand(x.net)), right: sar(x.net) }));
+    // Pill = the tier THIS bucket represents (smTierDetail), filled if banked ≥ floor,
+    // hollow if only on pace — so clicking "6K 18" shows 6K pills, not the banked <4K band.
+    list = enriched.map(x => ({ name: x.n, pill: floor ? dkTierPill(band, { hollow: x.net < floor }) : dkTierPill(0), right: sar(x.net) }));
     title = kind === 'below' ? '&lt;4k — below pace' : (Number(kind) / 1000) + 'k tier';
   } else return;
   dkListOverlay(`${title} · ${list.length} · ${R.periodLabel}`, dkDriverRows(list, mk));
@@ -12862,8 +12866,11 @@ function smLadderDrill(kind) {
   if (!R || !R.current) return;
   const jsq = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const row = (name, net) => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(name)}','${R.monthSel}')">
-    <span class="k">${escH(name)} ${dkTierPill(netTierBand(net))}</span>
+  // Pill = the tier the driver's BUCKET represents (smTierDetail), filled if banked ≥
+  // floor, hollow if only on pace — so clicking "6K 18" shows 6K pills, not the banked
+  // <4K net-band. floor 0 → the plain <4K pill (below-pace bucket).
+  const row = (name, net, floor) => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(name)}','${R.monthSel}')">
+    <span class="k">${escH(name)} ${floor ? dkTierPill({ 6000: 3, 5000: 2, 4000: 1 }[floor], { hollow: net < floor }) : dkTierPill(0)}</span>
     <span class="v"><span class="dk-num">${fmt(Math.round(net))}</span></span></div>`;
   let rows, title, count;
   if (kind === 'idle' || kind === 'blocked' || kind === 'activated' || kind === 'earning') {
@@ -12878,13 +12885,21 @@ function smLadderDrill(kind) {
       <span class="k">${escH(d.name)} ${dkDriverTierPill(d, R)}</span><span class="v"><span class="dk-num">${fmt(Math.round(d.proj || d.net))}</span></span></div>`).join('');
   } else {
     const td = smTierDetail(R.monthSel);
-    let names;
-    if (kind === 'tiers')      { names = [].concat(td[6000].names, td[5000].names, td[4000].names); title = 'On a tier (4k+)'; }
-    else if (kind === 'below') { names = td.below.names.slice(); title = '<4k — below pace'; }
-    else                       { names = (td[Number(kind)] || {}).names || []; title = (Number(kind) / 1000) + 'k tier'; }
-    const enriched = names.map(n => ({ n, net: computeDriverNetForPeriod(n, R.monthSel) })).sort((a, b) => b.net - a.net);
+    let items;   // [{ n, floor }] — floor tags each name with the tier bucket it fell in
+    if (kind === 'tiers') {
+      items = [].concat(
+        td[6000].names.map(n => ({ n, floor: 6000 })),
+        td[5000].names.map(n => ({ n, floor: 5000 })),
+        td[4000].names.map(n => ({ n, floor: 4000 })));
+      title = 'On a tier (4k+)';
+    } else if (kind === 'below') {
+      items = td.below.names.map(n => ({ n, floor: 0 })); title = '<4k — below pace';
+    } else {
+      const f = Number(kind); items = ((td[f] || {}).names || []).map(n => ({ n, floor: f })); title = (f / 1000) + 'k tier';
+    }
+    const enriched = items.map(it => ({ n: it.n, floor: it.floor, net: computeDriverNetForPeriod(it.n, R.monthSel) })).sort((a, b) => b.net - a.net);
     count = enriched.length;
-    rows = enriched.map(x => row(x.n, x.net)).join('');
+    rows = enriched.map(x => row(x.n, x.net, x.floor)).join('');
   }
   smShowOverlay(`${escH(title)} · ${count} · ${escH(R.periodLabel)}`,
     rows || `<div style="color:var(--dk-dim);font-size:12px;padding:6px">No drivers in this band.</div>`);

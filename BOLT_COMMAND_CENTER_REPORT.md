@@ -31,6 +31,9 @@ Each list row shows **name + tier pill + the key info** (net / why-flagged, e.g.
   - **Drill-to-names on every aggregate:** tier-ladder segments (already), **funnel ACTIVATED + EARNING stages (new)**, TIERED, and the ambassadors panel all open the driver list → A1. `smLadderDrill` gained `activated` / `earning` kinds.
 - Kept all **5 instruments** (tier ladder · funnel · ambassadors · bonus hero · growth), the month/ALL-TIME selector, and the trust-only alert rail.
 
+### Follow-up (2026-07-07) — tier-band drill pills now show the BUCKET's tier
+Band drills (Today's 4 tier pills + Command Center's `6000`/`5000`/`4000`/`below`/`tiers`) previously rendered each row's pill from the driver's **banked net-band** — naturally `<4K` early in the month, so clicking "6K 18" showed `<4K` pills. Now every row shows the **tier the `smTierDetail` bucket represents** (6K→6K, 5K→5K, below→<4K), **filled if banked ≥ floor, hollow if only on pace** (same semantics as `dkDriverTierPill` and the tier-ladder chips). For a closed/invoiced month every row is filled; for the live month they're hollow (on pace). Verified in the DOM: Today 6K drill → 4× `dk-tier t6` "6K", 5K → 2× `t5` "5K", below → 3× `t0` "<4K"; Command Center `tiers` → 4× "6K" + 2× "5K", each name tagged with its own bucket.
+
 ---
 
 ## Self-verification (seeded fixture, both themes, zero console errors)
