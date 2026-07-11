@@ -1,0 +1,138 @@
+{
+  "_note": "B-192 (Meaning-First v3 S1) — SCORED fixtures for understand(). These are Muhammad's REAL phrasings (the 2026-07-08 night bugs first). Per the ★ M8 DOCTRINE this suite scores MEANING as a pass-rate — it is NOT a byte mirror and must never become one. expect fields: capability = allowed lane list; intent_domain = required domain part of intent; reference = required|null|any; uc_min/uc_max = understanding_confidence bounds; ec_min/ec_max = execution_confidence bounds; clarify = true|false|\"any\". The invisible char in assistant turns is MONEY_SENTINEL (wallet replies carry it live).",
+  "cases": [
+    {
+      "id": "remaining_after_balance",
+      "why": "TONIGHT'S BUG — natural follow-up with zero trigger words got googled (dictionary definition). Must be: understood (uc HIGH), wallet, but NOT computable (no budget model -> ec LOW).",
+      "message": "what is the remaining?",
+      "history": [
+        { "role": "user", "content": "what is my balance?" },
+        { "role": "assistant", "content": "You spent 1,240 SAR this month across 18 transactions. Top category: groceries (410 SAR).⁣" }
+      ],
+      "expect": { "capability": ["wallet"], "intent_domain": "wallet", "reference": "required", "uc_min": 0.6, "ec_max": 0.4, "clarify": "any" }
+    },
+    {
+      "id": "left_after_spend",
+      "why": "Tonight, second phrasing of the same miss.",
+      "message": "how much is left?",
+      "history": [
+        { "role": "user", "content": "كم صرفت هذا الشهر؟" },
+        { "role": "assistant", "content": "صرفت هذا الشهر 950 ريال. أكبر بند: البقالة.⁣" }
+      ],
+      "expect": { "capability": ["wallet"], "intent_domain": "wallet", "reference": "required", "uc_min": 0.6, "ec_max": 0.4, "clarify": "any" }
+    },
+    {
+      "id": "remaining_no_context",
+      "why": "The SAME words with no prior turn are genuinely ambiguous — low uc, ASK. This is the pair that proves the two failure modes are separated.",
+      "message": "what is the remaining?",
+      "history": [],
+      "expect": { "capability": ["none", "chat", "wallet"], "reference": "null", "uc_max": 0.5, "clarify": true }
+    },
+    {
+      "id": "trip_with_this_budget",
+      "why": "Tonight — 'this budget' must resolve to the money figure from the prior turn; the lane is travel.",
+      "message": "recommend a trip with this budget",
+      "history": [
+        { "role": "user", "content": "what is my balance?" },
+        { "role": "assistant", "content": "You spent 1,240 SAR this month; your logged income minus spend leaves about 2,800 SAR.⁣" }
+      ],
+      "expect": { "capability": ["travel"], "intent_domain": "travel", "reference": "required", "uc_min": 0.6 }
+    },
+    {
+      "id": "same_for_ahmed",
+      "why": "Tonight — 'the same' = the expense just logged, retargeted at Ahmed. Wallet, reference required.",
+      "message": "do the same for Ahmed",
+      "history": [
+        { "role": "user", "content": "add 50 sar lunch for Ali" },
+        { "role": "assistant", "content": "🧾 Logged: 50 SAR · Food · lunch (Ali).⁣" }
+      ],
+      "expect": { "capability": ["wallet"], "intent_domain": "wallet", "reference": "required", "uc_min": 0.6 }
+    },
+    {
+      "id": "move_it_tomorrow",
+      "why": "Tonight — bare anaphor onto the task just created. Tasks, reference required.",
+      "message": "move it to tomorrow",
+      "history": [
+        { "role": "user", "content": "remind me to renew the iqama today at 6pm" },
+        { "role": "assistant", "content": "✅ Reminder set: renew the iqama — today 6:00 PM." }
+      ],
+      "expect": { "capability": ["tasks"], "intent_domain": "tasks", "reference": "required", "uc_min": 0.6 }
+    },
+    {
+      "id": "cancel_that_task",
+      "why": "Bare 'cancel that' right after a reminder confirmation.",
+      "message": "cancel that",
+      "history": [
+        { "role": "user", "content": "remind me to call the school tomorrow morning" },
+        { "role": "assistant", "content": "✅ Reminder set: call the school — tomorrow 8:00 AM." }
+      ],
+      "expect": { "capability": ["tasks"], "intent_domain": "tasks", "reference": "required", "uc_min": 0.6 }
+    },
+    {
+      "id": "balance_fresh",
+      "why": "Plain first-turn wallet read — the easy case must stay easy: high uc, high ec, no clarify.",
+      "message": "what is my balance?",
+      "history": [],
+      "expect": { "capability": ["wallet"], "intent_domain": "wallet", "uc_min": 0.7, "ec_min": 0.5, "clarify": false }
+    },
+    {
+      "id": "add_expense",
+      "why": "Canonical wallet write.",
+      "message": "add 50 sar lunch",
+      "history": [],
+      "expect": { "capability": ["wallet"], "intent_domain": "wallet", "uc_min": 0.7, "ec_min": 0.5, "clarify": false }
+    },
+    {
+      "id": "spend_month_ar",
+      "why": "Arabic wallet read — the meaning pass must be language-blind.",
+      "message": "كم صرفت هذا الشهر؟",
+      "history": [],
+      "expect": { "capability": ["wallet"], "intent_domain": "wallet", "uc_min": 0.7, "ec_min": 0.5, "clarify": false }
+    },
+    {
+      "id": "remind_bank",
+      "why": "Canonical tasks write.",
+      "message": "remind me to call the bank tomorrow",
+      "history": [],
+      "expect": { "capability": ["tasks"], "intent_domain": "tasks", "uc_min": 0.7, "ec_min": 0.5, "clarify": false }
+    },
+    {
+      "id": "drivers_today",
+      "why": "Fleet read — must not be stolen by wallet.",
+      "message": "how did the drivers do today?",
+      "history": [],
+      "expect": { "capability": ["fleet"], "intent_domain": "fleet", "uc_min": 0.7, "ec_min": 0.5, "clarify": false }
+    },
+    {
+      "id": "cv_careem",
+      "why": "His OWN ingested docs — the B-176 theft case ('fleet_context stole my CV').",
+      "message": "what does my CV say about Careem?",
+      "history": [],
+      "expect": { "capability": ["knowledge", "docs"], "uc_min": 0.6, "ec_min": 0.5, "clarify": false }
+    },
+    {
+      "id": "weather_riyadh",
+      "why": "Legit web turn — web must stay reachable for genuinely public questions.",
+      "message": "what's the weather in Riyadh tomorrow?",
+      "history": [],
+      "expect": { "capability": ["web", "knowledge"], "uc_min": 0.7, "ec_min": 0.5, "clarify": false }
+    },
+    {
+      "id": "and_sara",
+      "why": "Member follow-up inside a money thread (household member, real usage).",
+      "message": "and what about Sara?",
+      "history": [
+        { "role": "user", "content": "how much did I spend on groceries this month?" },
+        { "role": "assistant", "content": "Groceries this month: 410 SAR across 9 transactions.⁣" }
+      ],
+      "expect": { "capability": ["wallet"], "intent_domain": "wallet", "reference": "required", "uc_min": 0.6 }
+    },
+    {
+      "id": "send_money_honest_cant",
+      "why": "Understood perfectly, but M8 NEVER sends money — the honest-can't direction of execution_confidence.",
+      "message": "send 200 sar to Ahmed",
+      "history": [],
+      "expect": { "capability": ["wallet", "none"], "uc_min": 0.6, "ec_max": 0.4 }
+    }
+  ]
+}

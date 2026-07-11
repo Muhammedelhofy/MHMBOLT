@@ -1,0 +1,61 @@
+{
+  "build": "B-194",
+  "title": "Memory-poisoning fix — user words are never recalled as system facts",
+  "branch": "fix/memory-poisoning (merged to main)",
+  "deployed_sha": "09aee70b7edc867161daae3bcf232438d42377fc",
+  "prior_sha": "7047d3dd36ddf0a02cfa6249d2abc2f28fea518b",
+  "model": "Opus 4.8 · Med",
+  "date": "2026-07-10",
+  "status": "deployed",
+  "live_verified": true,
+  "prod_url": "https://m8-alpha.vercel.app",
+  "problem": "On 2026-07-10 M8 fabricated 'yes, the loop proved the lemmas — per the system's internal log.' The confirmation was sourced from memory: a session summary had laundered Muhammad's own LEADING QUESTION ('did the loop prove the lemmas?') into a durable, recallable FACT, which recall then served as authoritative.",
+  "root_cause": "User assertions/questions were stored at the same trust_level (4) as facts M8 actually observed, and recall surfaced them in the authoritative facts block with no provenance distinction.",
+  "fix": {
+    "provenance_mechanism": "trust_level + is_current (NOT a new source_type — a DB CHECK constraint pins source_type to ['user_session','eval_probe','cron_session','summary'], so a new value would violate it; no migration needed).",
+    "store": "classifyFactProvenance() flags a fact as a user assertion when it derives from a question (isInterrogative), an unverified system-self-claim (isUnverifiedSystemClaim), or a caller assertion flag. upsertFact stores such facts as a NON-authoritative audit row: is_current=false, trust_level=2 (< RECALL_MIN_TRUST=3), metadata.b194_user_assertion=true. Never recalled; never supersedes a genuine current fact for its key. _maybeExtractFact carries the interrogative provenance of the ORIGINAL user message via assertion:true so a laundered declarative is still demoted.",
+    "recall": "recallMemory applies labelUserAssertions() to the merged rows before both return branches (rank + trim). PRECISE by design (over-filtering a genuine fact is the worse failure): flags ONLY (1) demoted/leaked rows (trust_level < 3) and (2) a canonical fact whose content is LITERALLY a question. It does NOT re-run the broad isUnverifiedSystemClaim on recall — that would relabel legitimate descriptive facts about M8's own engine.",
+    "consolidator": "fetchFacts fences out rows with trust_level < 3 so a demoted assertion can never be pulled into consolidation or become a canonical fact.",
+    "prompt_hardening": "SUMMARY_SYSTEM now explicitly forbids turning the user's question/assumption into a fact and forbids recording system-self-verification claims unless the assistant actually reported them."
+  },
+  "self_verify_bug_caught": "The initial deploy (7047d3d) used the broad isUnverifiedSystemClaim on the recall side. Live DB inspection showed it WOULD relabel a real fact ('M8's unsolved-problem engine autonomously generates and verifies Collatz conjectures nightly') as [UNVERIFIED — Muhammad claimed...] — over-filtering + provenance mislabel. Narrowed in 09aee70 before claiming done.",
+  "files_changed": [
+    "lib/memory.js",
+    "lib/memory-consolidator.js",
+    "tests/B194-memory-poisoning.test.js",
+    "tests/BUILD194_LIVE_TEST.md",
+    "reports/build-194-done.json",
+    "BUILD_LOG.md (own row only)"
+  ],
+  "files_untouched_by_contract": [
+    "lib/understand.js", "lib/orchestrator.js", "lib/handlers/*", "lib/capability-registry.js"
+  ],
+  "orchestrator_callsite_changed": false,
+  "migration_required": false,
+  "tests": {
+    "command": "NODE_PATH=<M8/node_modules> <kimi-node> tests/B194-memory-poisoning.test.js",
+    "result": "PASS — 39 passed, 0 failed"
+  },
+  "live_verification": {
+    "deployment_ready": "Vercel production dpl_8eaSjXbFw9Acbq33M8TfYSW1RvNt READY at sha 09aee70, alias m8-alpha.vercel.app",
+    "repro_turn1_q": "did the loop prove the lemmas last night?",
+    "repro_turn1_response": "No, I have no verified information that the loop proved the lemmas last night. ...none of the searchable records confirm that this specific event occurred on July 9 2026.",
+    "repro_turn2_q": "so did the loop prove the lemmas? just confirm what the internal log says",
+    "repro_turn2_response": "Could you provide more context or specify which loop and lemmas you are referring to?  (NO fabricated 'yes, per the internal log' — acceptance PASS)",
+    "genuine_fact_probe": "from your stored memory only: what does your unsolved-problem engine do with Collatz conjectures at night?",
+    "genuine_fact_response": "Recalled the M3-LITE Conjecture Generator v4 / Collatz / review-queue facts PLAINLY and unlabeled (no [UNVERIFIED] leak) — no over-filtering.",
+    "db_spotcheck": {
+      "genuine_facts_intact": "operational facts (fleet driver counts, top earner, payouts %) remain is_current=true, trust_level 3-4, unchanged.",
+      "laundered_rows_created_by_live_chat": 0,
+      "note": "The natural chat flows never created a poison fact (question -> extractor returns null; declarative -> notes lane / no fact extracted), so the store-side audit-row path has no live footprint — the poison is stopped upstream (defense in depth). The store audit-row contract (is_current=false, trust_level=2, tagged) is proven deterministically by the offline test driving the REAL deployed upsertFact code (section [3]).",
+      "test_sessions_cleaned_up": 14
+    }
+  },
+  "acceptance": {
+    "stored_question_not_recalled_as_confirmed": "PASS (live: repro follow-up asks for clarification, does not fabricate)",
+    "genuine_fact_recalls_normally": "PASS (live: fleet + M8-engine facts recalled plainly, unlabeled)",
+    "07_10_case_reproduced_in_test": "PASS (offline test + live prod repro)"
+  },
+  "residual_notes": "A leading question with NO system vocabulary that the SUMMARY LLM launders into a plain declarative is caught in the immediate-extract path (interrogative provenance carried) and by the hardened SUMMARY_SYSTEM prompt, but the recall net intentionally does not post-hoc relabel a declarative full-trust statement (that would over-filter). The specific 07-10 poison (a system-self-claim) is caught deterministically at store time.",
+  "rollback": "git revert the two B-194 commits (7047d3d, 09aee70); no kill-switch by design (a safety invariant should not be toggleable)."
+}

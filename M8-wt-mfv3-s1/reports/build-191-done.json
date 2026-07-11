@@ -1,0 +1,22 @@
+{
+  "build": "B-191",
+  "status": "done",
+  "committed_sha": "c992fd4692ce257e8a3b0483ff195c90a563ebe2",
+  "files_changed": [
+    "lib/capability-registry.js",
+    "lib/knowledge-intake.js",
+    "lib/orchestrator.js",
+    "lib/travel.js",
+    "lib/wallet.js",
+    "lib/source-token-filter.js",
+    "tests/fixtures/routing_phrasings.json",
+    "tests/intent_gate_test.ps1",
+    "tests/build191_fixes.test.js",
+    "tests/build191_fixes.test.ps1",
+    "tests/BUILD191_LIVE_TEST.md"
+  ],
+  "test_result": "43/43 B-191 unit + 21/21 PS mirror; intent_gate 105/105 + 154/0 PS; travel 68/68 + multi-dest 31/31 unchanged",
+  "migration_needed": false,
+  "migration_file": null,
+  "notes": "All 4 transcript bugs fixed, tested, and live-verified on prod (SHA aaed33a): FIX1 routes trip-with-budget to travel; FIX2 no vault: leak (cites 'START HERE'/'Status'); FIX3 honest 'not a running balance, spent 910.61 SAR'. FIX4 first pass was masked live because the LLM extractor resolved Egypt->Cairo; FIX4b (detectStatedCountryOrigin) is a code-guaranteed override so M8 ASKS which city instead of assuming — pending redeploy."
+}

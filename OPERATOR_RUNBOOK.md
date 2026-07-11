@@ -1,7 +1,7 @@
 # MOHM Fleet Dashboard — Operator Runbook
 
 **Last updated:** 2026-07-07  
-**Version:** v5.3  
+**Version:** v5.4  
 **Dashboard URL:** your Vercel production URL (mhmbolt.vercel.app or custom domain)
 
 ---
@@ -193,3 +193,112 @@ Key files:
 - `api/bolt/health.js` — System Status endpoint
 - `vercel.json` — cron schedule configuration
 - `BOLT_STORAGE_HEALTH.md` — storage-model reference: how the day-history (`khair_history`) is ordered and how the roster + blocked counts derive from the latest full nightly-cron day, plus the partial-failure shrink-guard (commit `abf9480`). The old top-level `h`/`fmt` keys were dead legacy and have been pruned — ignore any reference to them.
+
+---
+
+# HANDOFF — the full picture (added v5.4, 2026-07-07)
+
+*Everything above is the "how do I keep it running" reference. This section is the "understand the
+whole machine + take it over" handoff. Read it once end-to-end.*
+
+## The system in one picture — what talks to what
+
+There are **four pieces**:
+
+1. **Bolt Fleet API** (Bolt's servers) — the source of driver / ride / earnings data. The dashboard
+   logs in with `BOLT_CLIENT_ID` + `BOLT_CLIENT_SECRET` and pulls automatically each night.
+2. **Google Sheet `Bolt_Activation_Master`** — the onboarding pipeline + ambassador list (you and
+   the sales team maintain it). The dashboard reads specific tabs from it: **DRIVERS, AMBASSADORS,
+   STAGE LOG, STAGE SNAPSHOT** (matched by column *name*, not letter).
+3. **Supabase** (cloud database, project `ltqpoupferwituusxwal`, table `fleet_data`) — the single
+   store. One row (`id = 'fleet'`) holds the entire dataset as one blob; a backup row is written
+   before every overwrite. *(The real day history lives under the `khair_history` key, newest day
+   first — see `BOLT_STORAGE_HEALTH.md`.)*
+4. **Vercel** (hosting) — runs the website (`index.html`) **and** the automatic nightly jobs.
+
+**What happens every night (Riyadh time):**
+
+| Time | Job (file) | What it pulls |
+|---|---|---|
+| **00:00** | `cron-sync.js` | Yesterday's drivers / rides / earnings from the **Bolt API** → Supabase |
+| **00:30** | `sync-stage-log.js` | The onboarding **STAGE LOG** from the Google Sheet → Supabase |
+| **00:45** | `sync-sheet.js` | The **DRIVERS + AMBASSADORS** tabs from the Google Sheet → Supabase |
+
+Any device that opens the dashboard then reads the latest from Supabase. *(Vercel's free plan can
+start these up to ~1 hour late — that's normal, not a fault.)*
+
+**Automatic vs. manual:**
+- **Automatic:** the 3 nightly pulls above.
+- **Manual (you):** upload the **monthly** "Earnings per driver" CSV for finalized money (see Known
+  Quirks #1), optionally a daily Bolt CSV for same-day numbers, and normal clicking in the dashboard.
+
+## Operating routine — what to check, in what order
+
+**Daily (2 minutes)** — open the dashboard → **Today**:
+1. Read the top cards: bonus projection · Needs-a-push · Blocked · Active today.
+2. Click **Blocked** → work the unblock queue (each reactivated driver = money back on).
+3. Click **Needs a push** / **Do next** → the ranked chase list (who to message, worth in SAR).
+
+**Weekly:**
+- **Command Center** (the strategy deck) → ambassadors working, tier ladder, growth.
+- In the Google Sheet, fill any missing driver **Nationality** (DRIVERS tab) + ambassador **Team**
+  (AMBASSADORS tab) — the 💸 Incentives tab stays blank until these exist.
+
+**Monthly (money — important):**
+- Download Bolt's monthly **"Earnings per driver"** CSV (all drivers, 1st→end of month) →
+  **Settings → Bolt Bonus Split → Upload Bolt bonus**. This becomes the **official finalized** money
+  for the month (it captures campaign bonuses the daily sync can't — see Known Quirks #1).
+- Reconcile the closed month.
+
+> [FILL IN — Muhammad: any daily/weekly checks you do that AREN'T on the dashboard: supplier calls,
+> cash collection, car swaps, etc.]
+
+## The sales team's sheet automation ("other-team" sync)
+
+Separate from the dashboard: the **CALL LIST** tab in `Bolt_Activation_Master` is where the sales
+team calls leads. Automations keep it honest:
+- **Live Status columns (L / M / N)** — formulas pulling each driver's real status + amount-due into
+  the call list so sales see the true state.
+- **`bolt_pendingon_autosync.gs`** — a small Apps Script installed in the sheet (10-minute trigger)
+  that writes each driver's real stage into the hand-typed "Pending On" column so it matches the
+  driver tab. It runs itself; nothing to do.
+- **Key fact:** the dashboard's sheet-sync crons read DRIVERS / AMBASSADORS / STAGE tabs and **never
+  the CALL LIST** — so edits there are invisible to the dashboard. The two systems are independent;
+  a break in one doesn't break the other.
+
+> [FILL IN — Muhammad: who on the sales team owns this sheet after you leave, and their contact.]
+
+## Known quirks / gotchas — these are NOT bugs, don't "fix" them
+
+1. **Campaign/bonus earnings need the monthly CSV.** Bolt's API only returns *per-ride* money, not
+   campaign bonuses — a driver can earn a bonus with **zero rides** (e.g. 250 SAR / 0 trips), which
+   the nightly sync structurally cannot see. The **monthly "Earnings per driver" CSV upload is the
+   required source** for campaign money and finalized totals. (Confirmed 2026-07-07 — the API has no
+   campaign endpoint.)
+2. **Suspended drivers show 0 trips in Bolt's CSV.** Bolt zeroes a suspended driver's finished-rides
+   / online-time in the *downloaded CSV* even though they earned money — so the dashboard shows 0
+   trips while Bolt's *live portal* shows more (e.g. Ali Ahmed). That's Bolt disagreeing with itself;
+   the dashboard faithfully mirrors the CSV. Not a dashboard fault.
+3. **"Clean duplicate rows" (Blocks tab)** is safe to click anytime — it collapses duplicate *open*
+   block rows (about **29** right now) and leaves a permanent tombstone so they can't come back from
+   another device's stale copy.
+4. **A deploy can silently not go live.** Vercel's auto-deploy webhook has occasionally missed a
+   push. After ANY code change, confirm the live site actually updated (hard-refresh Ctrl+Shift+R; if
+   unsure, redeploy from Vercel → Deployments → ··· → Redeploy).
+5. **The 02–04 Jul 2026 days are short (67 drivers).** A one-off pre-fix scar; harmless and
+   self-heals forward. No action.
+
+## Before you leave — capture + clean exit
+
+**Write these down (only you have them):**
+- [FILL IN] Driver onboarding process — the stages, and who does each step.
+- [FILL IN] Real per-car cost numbers — rental, insurance, maintenance, plates.
+- [FILL IN] Contacts / suppliers — Bolt account manager, car supplier, workshop, etc.
+- [FILL IN] Anything you rely on that isn't in the dashboard.
+
+**Exit week — turn the nightly jobs off cleanly:**
+- Vercel → MHMBOLT → the 3 crons in `vercel.json` (`cron-sync`, `sync-stage-log`, `sync-sheet`).
+  Disable them at exit so they don't run headless and error once your Bolt credentials lapse.
+- These feed **both** the dashboard **and** M8's fleet lane. Stopping them is **expected** — M8's
+  fleet lane is designed to freeze read-only (a staleness-dated archive) when the crons stop, so it
+  won't "break," it will just stop updating. This is intentional, not something to avoid.

@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bolt KSA Fleet — Models & P&L</title>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: var(--color-background-tertiary, #f5f5f0); color: var(--color-text-primary, #1a1a18); font-size: 15px; line-height: 1.6; }
+
+.tabs { display: flex; gap: 0; border-bottom: 1px solid #e0ddd4; background: #fff; padding: 0 1.5rem; }
+.tab { padding: 12px 18px; font-size: 13px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; color: #888; transition: all .15s; white-space: nowrap; }
+.tab.active { color: #1a1a18; border-bottom-color: #1a1a18; }
+.tab:hover:not(.active) { color: #444; }
+
+.panel { display: none; padding: 1.5rem; }
+.panel.active { display: block; }
+
+.tabs-outer { display: flex; gap: 0; border-bottom: 2px solid #c8c5bc; background: #edecea; padding: 0 1.5rem; }
+.tab-outer { padding: 14px 24px; font-size: 14px; font-weight: 600; cursor: pointer; border-bottom: 3px solid transparent; color: #666; transition: all .15s; white-space: nowrap; }
+.tab-outer.active { color: #1a1a18; border-bottom-color: #1a1a18; background: #fff; }
+.tab-outer:hover:not(.active) { color: #333; }
+.panel-outer { display: none; }
+.panel-outer.active { display: block; }
+#outer-onboarding.panel-outer.active { padding: 1.5rem; }
+
+.section-label { font-size: 11px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: #888; margin-bottom: 10px; }
+
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 1.5rem; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 1.5rem; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1.5rem; }
+
+.card { background: #fff; border: 0.5px solid #e0ddd4; border-radius: 10px; padding: 1rem 1.25rem; }
+.card-sm { background: #f9f8f5; border: 0.5px solid #e0ddd4; border-radius: 8px; padding: .75rem 1rem; }
+
+.metric-label { font-size: 12px; color: #888; margin-bottom: 4px; }
+.metric-value { font-size: 22px; font-weight: 500; color: #1a1a18; }
+.metric-sub { font-size: 12px; color: #aaa; margin-top: 2px; }
+
+.badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
+.badge-blue { background: #e6f1fb; color: #185fa5; }
+.badge-green { background: #eaf3de; color: #3b6d11; }
+.badge-amber { background: #faeeda; color: #854f0b; }
+.badge-red { background: #fcebeb; color: #a32d2d; }
+.badge-gray { background: #f1efe8; color: #5f5e5a; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 500; color: #888; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid #e0ddd4; }
+td { padding: 9px 10px; border-bottom: 0.5px solid #f0ede6; color: #1a1a18; }
+tr:last-child td { border-bottom: none; }
+.td-right { text-align: right; }
+.td-muted { color: #888; }
+.td-green { color: #3b6d11; font-weight: 500; }
+.td-red { color: #a32d2d; font-weight: 500; }
+.td-bold { font-weight: 500; }
+
+.divider { border: none; border-top: 1px solid #e0ddd4; margin: 1.25rem 0; }
+.row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 0.5px solid #f0ede6; font-size: 13px; }
+.row:last-child { border-bottom: none; }
+.row-label { color: #555; }
+.row-value { font-weight: 500; }
+.row-total { background: #f5f5f0; border-radius: 6px; padding: 8px 10px; margin-top: 8px; display: flex; justify-content: space-between; font-weight: 500; }
+
+input[type=range] { width: 100%; }
+input[type=number] { width: 100%; padding: 6px 10px; border: 0.5px solid #d0cec6; border-radius: 6px; font-size: 14px; color: #1a1a18; background: #fff; }
+select { width: 100%; padding: 6px 10px; border: 0.5px solid #d0cec6; border-radius: 6px; font-size: 13px; color: #1a1a18; background: #fff; }
+
+.flow-arrow { text-align: center; font-size: 18px; color: #ccc; padding: 4px 0; }
+.scenario-header { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+.scenario-sub { font-size: 12px; color: #888; margin-bottom: 1rem; }
+
+.pill-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1rem; }
+
+.risk-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 0.5px solid #f0ede6; font-size: 13px; }
+.risk-item:last-child { border-bottom: none; }
+.risk-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+
+.profit-bar-wrap { height: 8px; background: #f0ede6; border-radius: 4px; margin-top: 6px; overflow: hidden; }
+.profit-bar { height: 100%; border-radius: 4px; transition: width .3s; }
+
+.note { font-size: 12px; color: #888; background: #f9f8f5; border: 0.5px solid #e0ddd4; border-radius: 6px; padding: 8px 12px; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<div class="tabs-outer">
+  <div class="tab-outer active" onclick="showOuterTab('finance')">Finance</div>
+  <div class="tab-outer" onclick="showOuterTab('onboarding')">Onboarding</div>
+</div>
+
+<div id="outer-finance" class="panel-outer active">
+<div class="tabs">
+  <div class="tab active" onclick="showTab('bonus')">Bonus structure</div>
+  <div class="tab" onclick="showTab('s1')">Scenario 1 — Saudi</div>
+  <div class="tab" onclick="showTab('s2')">Scenario 2 — With car</div>
+  <div class="tab" onclick="showTab('s3')">Scenario 3 — Salary</div>
+  <div class="tab" onclick="showTab('driver')">Driver benchmarks</div>
+  <div class="tab" onclick="showTab('calc')">P&L calculator</div>
+</div>
+
+<!-- BONUS STRUCTURE -->
+<div id="tab-bonus" class="panel active">
+  <div class="section-label">Bolt partnership bonus — applies to all scenarios</div>
+  <div class="card" style="margin-bottom:1rem;">
+    <table>
+      <tr>
+        <th>Driver net earning</th>
+        <th>Bolt bonus sent</th>
+        <th>مهم receives</th>
+        <th>Company B receives</th>
+        <th>Notes</th>
+      </tr>
+      <tr>
+        <td class="td-bold">4,000 SAR</td>
+        <td>1,500 SAR</td>
+        <td class="td-green">750 SAR</td>
+        <td class="td-muted">750 SAR</td>
+        <td><span class="badge badge-gray">Lower tier</span></td>
+      </tr>
+      <tr>
+        <td class="td-bold">5,000 SAR</td>
+        <td>2,000 SAR</td>
+        <td class="td-green">1,000 SAR</td>
+        <td class="td-muted">1,000 SAR</td>
+        <td><span class="badge badge-amber">Mid tier</span></td>
+      </tr>
+      <tr>
+        <td class="td-bold">6,000 SAR</td>
+        <td>2,500 SAR</td>
+        <td class="td-green">1,250 SAR</td>
+        <td class="td-muted">1,250 SAR</td>
+        <td><span class="badge badge-blue">Target tier</span></td>
+      </tr>
+    </table>
+  </div>
+  <div class="note">Bonus is triggered once per period at the highest threshold the driver crosses. Above 6,000 SAR, no additional bonus — but Scenario 3 has a 500/500 overage split per 1,000 SAR extra.</div>
+
+  <hr class="divider">
+  <div class="section-label">Overage rule — Scenario 3 (salary model) only</div>
+  <div class="card">
+    <table>
+      <tr><th>Driver net</th><th>Overage above 6k</th><th>Driver gets</th><th>مهم gets</th></tr>
+      <tr><td>7,000 SAR</td><td>1,000 SAR</td><td class="td-green">+500 SAR</td><td class="td-green">+500 SAR</td></tr>
+      <tr><td>8,000 SAR</td><td>2,000 SAR</td><td class="td-green">+1,000 SAR</td><td class="td-green">+1,000 SAR</td></tr>
+      <tr><td>10,000 SAR</td><td>4,000 SAR</td><td class="td-green">+2,000 SAR</td><td class="td-green">+2,000 SAR</td></tr>
+    </table>
+    <div class="note" style="margin-top:10px;">Overage is paid from within Bolt earnings that come to مهم — not an additional payment from Bolt.</div>
+  </div>
+</div>
+
+<!-- SCENARIO 1 -->
+<div id="tab-s1" class="panel">
+  <div class="scenario-header">Scenario 1 — Saudi brings himself or his own foreigner</div>
+  <div class="scenario-sub">مهم pays nothing monthly. Saudi only receives his bonus cut. No user rental from مهم.</div>
+
+  <div class="pill-row">
+    <span class="badge badge-green">No monthly cost to مهم</span>
+    <span class="badge badge-blue">Target: 5,000 or 6,000 SAR net</span>
+    <span class="badge badge-gray">No Saudi user fee</span>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="section-label">At 5,000 SAR net</div>
+      <div class="row"><span class="row-label">Bolt bonus sent</span><span class="row-value">2,000 SAR</span></div>
+      <div class="row"><span class="row-label">Saudi receives</span><span class="row-value">750 SAR</span></div>
+      <div class="row"><span class="row-label">Remaining</span><span class="row-value">1,250 SAR</span></div>
+      <div class="row-total"><span>مهم share</span><span style="color:#3b6d11">625 SAR</span></div>
+      <div class="row-total" style="margin-top:4px;"><span>Company B share</span><span style="color:#888">625 SAR</span></div>
+    </div>
+    <div class="card">
+      <div class="section-label">At 6,000 SAR net</div>
+      <div class="row"><span class="row-label">Bolt bonus sent</span><span class="row-value">2,500 SAR</span></div>
+      <div class="row"><span class="row-label">Saudi receives</span><span class="row-value">1,000 SAR</span></div>
+      <div class="row"><span class="row-label">Remaining</span><span class="row-value">1,500 SAR</span></div>
+      <div class="row-total"><span>مهم share</span><span style="color:#3b6d11">750 SAR</span></div>
+      <div class="row-total" style="margin-top:4px;"><span>Company B share</span><span style="color:#888">750 SAR</span></div>
+    </div>
+  </div>
+
+  <div class="section-label">Risks</div>
+  <div class="card">
+    <div class="risk-item"><div class="risk-dot" style="background:#a32d2d"></div><div>Saudi may not perform consistently — مهم has no control over the driver or his schedule.</div></div>
+    <div class="risk-item"><div class="risk-dot" style="background:#854f0b"></div><div>No visibility into whether target will be hit each month — bonus is all or nothing.</div></div>
+    <div class="risk-item"><div class="risk-dot" style="background:#3b6d11"></div><div>No monthly cost exposure — lowest risk model for مهم.</div></div>
+  </div>
+</div>
+
+<!-- SCENARIO 2 -->
+<div id="tab-s2" class="panel">
+  <div class="scenario-header">Scenario 2 — Resident with his own car, on مهم's Saudi user</div>
+  <div class="scenario-sub">Resident pays 750 SAR/month user rental. مهم pays Saudi 500 SAR/month. Target: 6,000 SAR net.</div>
+
+  <div class="pill-row">
+    <span class="badge badge-blue">Monthly in: 750 SAR</span>
+    <span class="badge badge-amber">Monthly out: 500 SAR</span>
+    <span class="badge badge-green">Net from user: +250 SAR</span>
+    <span class="badge badge-gray">Referral: 250 SAR one-time</span>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="section-label">Monthly cash flow (user arrangement)</div>
+      <div class="row"><span class="row-label">Resident pays مهم</span><span class="row-value" style="color:#3b6d11">+750 SAR</span></div>
+      <div class="row"><span class="row-label">مهم pays Saudi</span><span class="row-value" style="color:#a32d2d">-500 SAR</span></div>
+      <div class="row-total"><span>Net user margin</span><span style="color:#3b6d11">+250 SAR/month</span></div>
+    </div>
+    <div class="card">
+      <div class="section-label">When driver hits 6,000 net</div>
+      <div class="row"><span class="row-label">Bolt bonus</span><span class="row-value">2,500 SAR</span></div>
+      <div class="row"><span class="row-label">مهم receives</span><span class="row-value" style="color:#3b6d11">1,250 SAR</span></div>
+      <div class="row"><span class="row-label">Company B receives</span><span class="row-value td-muted">1,250 SAR</span></div>
+      <div class="row-total"><span>مهم total this month</span><span style="color:#3b6d11">1,500 SAR</span></div>
+      <div class="note" style="margin-top:8px;">250 user margin + 1,250 bonus</div>
+    </div>
+  </div>
+
+  <div class="section-label">Referral bonus</div>
+  <div class="card">
+    <div class="row"><span class="row-label">Referred by someone (one-time, at first 6,000)</span><span class="row-value" style="color:#a32d2d">-250 SAR from مهم</span></div>
+    <div class="row"><span class="row-label">No referral (مهم found him directly)</span><span class="row-value" style="color:#3b6d11">250 SAR saved</span></div>
+  </div>
+
+  <hr class="divider">
+  <div class="section-label">Risks</div>
+  <div class="card">
+    <div class="risk-item"><div class="risk-dot" style="background:#a32d2d"></div><div>If driver doesn't hit 6,000 — no bonus, but 500 SAR monthly cost to Saudi still applies. مهم loses 250 SAR/month net.</div></div>
+    <div class="risk-item"><div class="risk-dot" style="background:#854f0b"></div><div>Resident collects 750 upfront but underperforms — need enforcement mechanism.</div></div>
+    <div class="risk-item"><div class="risk-dot" style="background:#3b6d11"></div><div>No car risk. Low overhead. Upside is purely bonus-based.</div></div>
+  </div>
+</div>
+
+<!-- SCENARIO 3 -->
+<div id="tab-s3" class="panel">
+  <div class="scenario-header">Scenario 3 — Resident without car (salary model)</div>
+  <div class="scenario-sub">مهم provides car, salary, petrol. All Bolt earnings come to مهم. Most profitable model — but highest risk.</div>
+
+  <div class="pill-row">
+    <span class="badge badge-red">Highest risk</span>
+    <span class="badge badge-green">Highest profit potential</span>
+    <span class="badge badge-blue">Target: 6,000+ SAR net</span>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:1rem;">
+    <div class="card">
+      <div class="section-label">مهم pays (monthly)</div>
+      <div class="row"><span class="row-label">Saudi user fee</span><span class="row-value" style="color:#a32d2d">-500 SAR</span></div>
+      <div class="row"><span class="row-label">Driver base salary</span><span class="row-value" style="color:#a32d2d">-2,000 SAR</span></div>
+      <div class="row"><span class="row-label">Car rent</span><span class="row-value" style="color:#a32d2d">-2,000 to -2,500 SAR</span></div>
+      <div class="row"><span class="row-label">Petrol (actual, ~15.7% of net)</span><span class="row-value" style="color:#a32d2d">variable</span></div>
+      <div class="row"><span class="row-label">Company B (from bonus)</span><span class="row-value" style="color:#a32d2d">-1,250 SAR</span></div>
+    </div>
+    <div class="card">
+      <div class="section-label">مهم receives (monthly)</div>
+      <div class="row"><span class="row-label">All Bolt net earnings</span><span class="row-value" style="color:#3b6d11">+full amount</span></div>
+      <div class="row"><span class="row-label">Bolt bonus (مهم share at 6k)</span><span class="row-value" style="color:#3b6d11">+1,250 SAR</span></div>
+      <div class="row"><span class="row-label">Overage share (per 1,000 above 6k)</span><span class="row-value" style="color:#3b6d11">+500 SAR each</span></div>
+    </div>
+  </div>
+
+  <div class="section-label">P&L at key earning levels</div>
+  <div class="card">
+    <table>
+      <tr>
+        <th>Driver net</th>
+        <th>Revenue in</th>
+        <th>Total costs</th>
+        <th>مهم profit</th>
+        <th>Status</th>
+      </tr>
+      <tr>
+        <td>4,000 SAR</td>
+        <td>5,500 SAR</td>
+        <td>6,128 SAR</td>
+        <td class="td-red">-628 SAR</td>
+        <td><span class="badge badge-red">Loss</span></td>
+      </tr>
+      <tr>
+        <td>5,000 SAR</td>
+        <td>7,000 SAR</td>
+        <td>6,535 SAR</td>
+        <td class="td-green">+465 SAR</td>
+        <td><span class="badge badge-amber">Break-even</span></td>
+      </tr>
+      <tr>
+        <td>6,000 SAR</td>
+        <td>8,500 SAR</td>
+        <td>6,942 SAR</td>
+        <td class="td-green">+1,558 SAR</td>
+        <td><span class="badge badge-green">Profitable</span></td>
+      </tr>
+      <tr>
+        <td>7,000 SAR</td>
+        <td>9,500 SAR</td>
+        <td>7,599 SAR</td>
+        <td class="td-green">+1,901 SAR</td>
+        <td><span class="badge badge-green">Profitable</span></td>
+      </tr>
+      <tr>
+        <td>10,000 SAR</td>
+        <td>12,500 SAR</td>
+        <td>9,570 SAR</td>
+        <td class="td-green">+2,930 SAR</td>
+        <td><span class="badge badge-green">Good</span></td>
+      </tr>
+    </table>
+    <div class="note">Car rent assumed at 2,250 SAR mid-point. Petrol at 15.7% of net earnings.</div>
+  </div>
+
+  <hr class="divider">
+  <div class="section-label">Risks</div>
+  <div class="card">
+    <div class="risk-item"><div class="risk-dot" style="background:#a32d2d"></div><div>If driver doesn't hit 6,000 — مهم absorbs full losses (~500 to 1,400 SAR/month per driver).</div></div>
+    <div class="risk-item"><div class="risk-dot" style="background:#a32d2d"></div><div>Car rental is a fixed cost regardless of driver performance.</div></div>
+    <div class="risk-item"><div class="risk-dot" style="background:#854f0b"></div><div>Driver may leave after receiving salary without performing — need minimum performance clause.</div></div>
+    <div class="risk-item"><div class="risk-dot" style="background:#3b6d11"></div><div>At 10,000 SAR net the model becomes significantly profitable per driver.</div></div>
+  </div>
+</div>
+
+<!-- DRIVER BENCHMARKS -->
+<div id="tab-driver" class="panel">
+  <div class="section-label">Real driver data — baseline for estimates</div>
+
+  <div class="grid-4">
+    <div class="card-sm"><div class="metric-label">Avg pay/trip</div><div class="metric-value">17.67 SAR</div></div>
+    <div class="card-sm"><div class="metric-label">Avg liters/trip</div><div class="metric-value">1.27 L</div></div>
+    <div class="card-sm"><div class="metric-label">Petrol % of net</div><div class="metric-value">15.7%</div></div>
+    <div class="card-sm"><div class="metric-label">Petrol price/liter</div><div class="metric-value">2.18 SAR</div></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="section-label">Day 1 sample</div>
+      <div class="row"><span class="row-label">Net earning</span><span class="row-value">315 SAR</span></div>
+      <div class="row"><span class="row-label">Trips</span><span class="row-value">18 trips</span></div>
+      <div class="row"><span class="row-label">Pay per trip</span><span class="row-value">17.5 SAR</span></div>
+      <div class="row"><span class="row-label">Petrol consumed</span><span class="row-value">22 L (47.96 SAR)</span></div>
+      <div class="row"><span class="row-label">Liters per trip</span><span class="row-value">1.22 L</span></div>
+      <div class="row"><span class="row-label">Petrol % of earnings</span><span class="row-value">15.2%</span></div>
+    </div>
+    <div class="card">
+      <div class="section-label">Day 2 sample</div>
+      <div class="row"><span class="row-label">Net earning</span><span class="row-value">215 SAR</span></div>
+      <div class="row"><span class="row-label">Trips</span><span class="row-value">12 trips</span></div>
+      <div class="row"><span class="row-label">Pay per trip</span><span class="row-value">17.9 SAR</span></div>
+      <div class="row"><span class="row-label">Petrol consumed</span><span class="row-value">16.05 L (35 SAR)</span></div>
+      <div class="row"><span class="row-label">Liters per trip</span><span class="row-value">1.34 L</span></div>
+      <div class="row"><span class="row-label">Petrol % of earnings</span><span class="row-value">16.3%</span></div>
+    </div>
+  </div>
+
+  <div class="section-label">Capacity vs earnings (26 working days, 12-hour app limit)</div>
+  <div class="card">
+    <table>
+      <tr><th>Trips/day</th><th>Hours/day</th><th>Monthly net</th><th>Monthly petrol</th><th>Feasibility</th></tr>
+      <tr><td>14</td><td>~7 hrs</td><td>~6,422 SAR</td><td>~1,008 SAR</td><td><span class="badge badge-green">Comfortable</span></td></tr>
+      <tr><td>18</td><td>~9 hrs</td><td>~8,257 SAR</td><td>~1,296 SAR</td><td><span class="badge badge-green">Good pace</span></td></tr>
+      <tr><td>22</td><td>~11 hrs</td><td>~10,092 SAR</td><td>~1,584 SAR</td><td><span class="badge badge-amber">Demanding</span></td></tr>
+      <tr><td>24</td><td>~12 hrs (max)</td><td>~11,009 SAR</td><td>~1,729 SAR</td><td><span class="badge badge-red">Max capacity</span></td></tr>
+    </table>
+    <div class="note">12,000 SAR/month requires ~28 days at max capacity. Realistic target: 10,000 SAR (22 trips/day, 26 days).</div>
+  </div>
+</div>
+
+<!-- P&L CALCULATOR -->
+<div id="tab-calc" class="panel">
+  <div class="section-label">Scenario 3 — Salary model P&L calculator</div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="section-label">Inputs</div>
+      <div style="margin-bottom:12px;">
+        <div class="metric-label" style="margin-bottom:4px;">Driver net earning (SAR/month)</div>
+        <input type="number" id="inp-earning" value="8000" min="1000" max="15000" step="500" oninput="calcPL()">
+      </div>
+      <div style="margin-bottom:12px;">
+        <div class="metric-label" style="margin-bottom:4px;">Car rent (SAR/month)</div>
+        <select id="inp-car" onchange="calcPL()">
+          <option value="1400">1,400 SAR</option>
+          <option value="1450">1,450 SAR</option>
+          <option value="1500">1,500 SAR</option>
+          <option value="1550">1,550 SAR</option>
+          <option value="1600">1,600 SAR</option>
+          <option value="1650">1,650 SAR</option>
+          <option value="1700">1,700 SAR</option>
+          <option value="1750">1,750 SAR</option>
+          <option value="1800">1,800 SAR</option>
+          <option value="1850">1,850 SAR</option>
+          <option value="1900">1,900 SAR</option>
+          <option value="1950">1,950 SAR</option>
+          <option value="2000">2,000 SAR</option>
+          <option value="2050">2,050 SAR</option>
+          <option value="2100">2,100 SAR</option>
+          <option value="2150">2,150 SAR</option>
+          <option value="2200">2,200 SAR</option>
+          <option value="2250" selected>2,250 SAR (mid)</option>
+          <option value="2300">2,300 SAR</option>
+          <option value="2350">2,350 SAR</option>
+          <option value="2400">2,400 SAR</option>
+          <option value="2450">2,450 SAR</option>
+          <option value="2500">2,500 SAR</option>
+        </select>
+      </div>
+      <div style="margin-bottom:12px;">
+        <div class="metric-label" style="margin-bottom:4px;">Petrol variance</div>
+        <select id="inp-petrol-adj" onchange="calcPL()">
+          <option value="-200">-200 SAR (lower)</option>
+          <option value="0" selected>Standard (15.7%)</option>
+          <option value="200">+200 SAR (higher)</option>
+        </select>
+      </div>
+      <div style="margin-bottom:12px;">
+        <div class="metric-label" style="margin-bottom:4px;">Kafala status</div>
+        <select id="inp-kafala" onchange="calcPL()">
+          <option value="0">No kafala cost</option>
+          <option value="1500">Under kafala — 1,500 SAR/month</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card" id="pl-result">
+      <div class="section-label">P&L result</div>
+      <div id="pl-content"></div>
+    </div>
+  </div>
+
+  <div class="section-label" style="margin-top:1rem;">Profitability across earning levels</div>
+  <div class="card" id="pl-range"></div>
+</div>
+</div><!-- /outer-finance -->
+
+<div id="outer-onboarding" class="panel-outer">
+
+  <!-- Section A: Required Documents -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="section-label">Saudi Profile Docs</div>
+      <div class="risk-item"><div class="risk-dot" style="background:#3b6d11"></div><div>National ID</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#3b6d11"></div><div>Photo</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#3b6d11"></div><div>IBAN</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#3b6d11"></div><div>Mobile Number</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#3b6d11"></div><div>Email</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#3b6d11"></div><div>Selfie Photo</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#3b6d11"></div><div>Driving License</div></div>
+    </div>
+    <div class="card">
+      <div class="section-label">Foreigner Profile Docs</div>
+      <div class="risk-item"><div class="risk-dot" style="background:#854f0b"></div><div>Captain Name</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#854f0b"></div><div>Iqama Number</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#854f0b"></div><div>Phone Number</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#854f0b"></div><div>IBAN (Kafala or Personal)</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#854f0b"></div><div>Selfie</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#854f0b"></div><div>Car License</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#854f0b"></div><div>Plate Number</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#854f0b"></div><div>Car Status</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#854f0b"></div><div>Rent Price / Date</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#854f0b"></div><div>1st Trip Date</div></div>
+      <div class="risk-item"><div class="risk-dot" style="background:#854f0b"></div><div>Car Video (if rented)</div></div>
+    </div>
+  </div>
+
+  <!-- Section B: Activation & Transfer Flow -->
+  <div class="card">
+    <div class="scenario-header">Account &amp; Vehicle Activation Flow</div>
+    <div class="card-sm">
+      <strong>Step 1 — Activate Saudi Account &amp; Initial Rental Contract</strong>
+      <div>Contract must initially be under Saudi name for vehicle authorization.</div>
+      <span class="badge badge-green">Same Day</span>
+    </div>
+    <div class="flow-arrow">↓</div>
+    <div class="card-sm">
+      <strong>Step 2 — Change Mobile Number</strong>
+      <div>Via Bolt App OTP or Bolt mohm VIP WhatsApp group.</div>
+      <span class="badge badge-amber">2–24 Hours</span>
+    </div>
+    <div class="flow-arrow">↓</div>
+    <div class="card-sm">
+      <strong>Step 3 — Change IBAN</strong>
+      <div>Via Bolt App chat support. Requires English IBAN certificate.</div>
+    </div>
+    <div class="flow-arrow">↓</div>
+    <div class="card-sm">
+      <strong>Step 4 — Change Photo</strong>
+      <div>Replace Saudi photo with Foreigner photo via VIP WhatsApp group.</div>
+      <span class="badge badge-amber">Up to 48 Hours</span>
+    </div>
+    <div class="flow-arrow">↓</div>
+    <div class="card-sm">
+      <strong>Step 5 — Transfer Rental Contract</strong>
+      <div>Change rental contract to Foreigner name to remove Saudi liability.</div>
+      <span class="badge badge-red">Mandatory</span>
+    </div>
+  </div>
+
+  <!-- Section C: Tracker -->
+  <div class="card">
+    <div class="section-label">Main Tracker &amp; Uploads</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Captain Name</th>
+          <th>Vehicle Auth (Saudi)</th>
+          <th>Contract Transferred</th>
+          <th>Docs Uploaded</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>—</td>
+          <td style="text-align:center"><input type="checkbox"></td>
+          <td style="text-align:center"><input type="checkbox"></td>
+          <td>—</td>
+          <td><span class="badge badge-amber">In Progress</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="note">Crucial: Always verify the rental contract has been updated to the foreigner's name post-activation before closing the onboarding ticket.</div>
+  </div>
+
+</div><!-- /outer-onboarding -->
+
+<script>
+function showOuterTab(name) {
+  document.querySelectorAll('.tab-outer').forEach(function(t, i) {
+    var names = ['finance','onboarding'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.panel-outer').forEach(function(p) { p.classList.remove('active'); });
+  document.getElementById('outer-' + name).classList.add('active');
+}
+
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(function(t, i) {
+    var names = ['bonus','s1','s2','s3','driver','calc'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+function getBonusTier(e) {
+  if (e >= 6000) return { bonus: 2500, b: 1250 };
+  if (e >= 5000) return { bonus: 2000, b: 1000 };
+  if (e >= 4000) return { bonus: 1500, b: 750 };
+  return { bonus: 0, b: 0 };
+}
+
+function calcPL() {
+  var earning   = parseInt(document.getElementById('inp-earning').value);
+  var carRent   = parseInt(document.getElementById('inp-car').value);
+  var petrolAdj = parseInt(document.getElementById('inp-petrol-adj').value);
+  var kafala    = parseInt(document.getElementById('inp-kafala').value);
+
+  var tier = getBonusTier(earning);
+  var fullBonus = tier.bonus;
+  var companyB  = tier.b;
+  var petrol        = Math.round(earning * 0.157) + petrolAdj;
+  var baseSalary    = 2000;
+  var saudiUser     = 500;
+  var driverOverage = earning > 6000 ? Math.floor((earning - 6000) / 1000) * 500 : 0;
+  var profit = earning + fullBonus - saudiUser - baseSalary - driverOverage - carRent - petrol - companyB - kafala;
+
+  var profitColor = profit >= 500 ? '#3b6d11' : profit >= 0 ? '#854f0b' : '#a32d2d';
+  var profitLabel = profit >= 0 ? 'Net profit' : 'Net loss';
+  var barPct = profit > 0 ? Math.min(100, (profit / 3000) * 100) : 0;
+
+  var overageRows = '';
+  if (driverOverage > 0) {
+    overageRows =
+      '<div class="row"><span class="row-label">Driver extra (above 6,000)</span><span class="row-value" style="color:#a32d2d">-' + driverOverage.toLocaleString() + ' SAR</span></div>' +
+      '<div class="row" style="background:#f9f8f5;border-radius:6px;padding:6px 10px;margin:2px 0;"><span class="row-label" style="font-weight:500;">Driver total pay</span><span class="row-value">' + (baseSalary + driverOverage).toLocaleString() + ' SAR</span></div>';
+  }
+
+  var kafalaRow = kafala > 0
+    ? '<div class="row"><span class="row-label">Kafala cost</span><span class="row-value" style="color:#a32d2d">-' + kafala.toLocaleString() + ' SAR</span></div>'
+    : '';
+
+  var profitSign = profit >= 0 ? '+' : '';
+
+  document.getElementById('pl-content').innerHTML =
+    '<div class="row"><span class="row-label">Bolt earnings (in)</span><span class="row-value" style="color:#3b6d11">+' + earning.toLocaleString() + ' SAR</span></div>' +
+    '<div class="row"><span class="row-label">Bolt bonus — full (in)</span><span class="row-value" style="color:#3b6d11">+' + fullBonus.toLocaleString() + ' SAR</span></div>' +
+    '<div class="row"><span class="row-label">Saudi user fee</span><span class="row-value" style="color:#a32d2d">-' + saudiUser + ' SAR</span></div>' +
+    '<div class="row"><span class="row-label">Driver base salary</span><span class="row-value" style="color:#a32d2d">-' + baseSalary.toLocaleString() + ' SAR</span></div>' +
+    overageRows +
+    '<div class="row"><span class="row-label">Car rent</span><span class="row-value" style="color:#a32d2d">-' + carRent.toLocaleString() + ' SAR</span></div>' +
+    '<div class="row"><span class="row-label">Petrol</span><span class="row-value" style="color:#a32d2d">-' + petrol.toLocaleString() + ' SAR</span></div>' +
+    '<div class="row"><span class="row-label">Company B (from bonus)</span><span class="row-value" style="color:#a32d2d">-' + companyB.toLocaleString() + ' SAR</span></div>' +
+    kafalaRow +
+    '<div class="row-total" style="margin-top:8px;"><span>' + profitLabel + '</span><span style="color:' + profitColor + '">' + profitSign + profit.toLocaleString() + ' SAR</span></div>' +
+    '<div class="profit-bar-wrap"><div class="profit-bar" style="width:' + barPct + '%;background:' + profitColor + '"></div></div>' +
+    '<div class="note" style="margin-top:10px;">Car rent: ' + carRent.toLocaleString() + ' SAR. Petrol: 15.7% of net. Overage above 6,000 splits 50/50.' + (kafala > 0 ? ' Kafala: 1,500 SAR/month.' : '') + '</div>';
+
+  var levels = [4000, 5000, 6000, 7000, 8000, 9000, 10000, 12000];
+  var rows = levels.map(function(e) {
+    var t2 = getBonusTier(e);
+    var b = t2.bonus, cb = t2.b;
+    var p  = Math.round(e * 0.157) + petrolAdj;
+    var ov = e > 6000 ? Math.floor((e - 6000) / 1000) * 500 : 0;
+    var pr = e + b - saudiUser - baseSalary - ov - carRent - p - cb - kafala;
+    var col      = pr >= 500 ? '#3b6d11' : pr >= 0 ? '#854f0b' : '#a32d2d';
+    var bdgClass = pr >= 500 ? 'badge-green' : pr >= 0 ? 'badge-amber' : 'badge-red';
+    var lbl      = pr >= 500 ? 'Profitable' : pr >= 0 ? 'Break-even' : 'Loss';
+    var costs    = saudiUser + baseSalary + ov + carRent + p + cb + kafala;
+    var ps = pr >= 0 ? '+' : '';
+    return '<tr><td>' + e.toLocaleString() + ' SAR</td><td>' + b.toLocaleString() + ' SAR</td><td>' + costs.toLocaleString() + ' SAR</td><td style="color:' + col + '">' + ps + pr.toLocaleString() + ' SAR <span class="badge ' + bdgClass + '">' + lbl + '</span></td></tr>';
+  }).join('');
+
+  document.getElementById('pl-range').innerHTML =
+    '<table><thead><tr><th>Earning</th><th>Bolt bonus</th><th>Total costs</th><th>Net profit</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+calcPL();
+</script>
+</body>

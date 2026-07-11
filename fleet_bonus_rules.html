@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fleet Bonus Rules — Bolt &amp; Uber</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --line:#2a313c;
+  --txt:#e6edf3; --muted:#8b97a7; --accent:#3fb6ff; --accent2:#36d399;
+  --warn:#f7b955; --danger:#f04f4f; --chip:#222b36;
+}
+body { font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif; background:var(--bg); color:var(--txt); font-size:14px; line-height:1.5; padding-bottom:80px; }
+header { padding:20px 24px; border-bottom:1px solid var(--line); background:linear-gradient(180deg,#11161d,#0e1116); position:sticky; top:0; z-index:20; }
+.htop { display:flex; align-items:flex-start; gap:14px; }
+header h1 { font-size:18px; font-weight:650; letter-spacing:.2px; }
+header p { color:var(--muted); font-size:12.5px; margin-top:3px; }
+.langbtn { margin-inline-start:auto; background:var(--chip); border:1px solid var(--line); color:var(--accent); padding:7px 16px; border-radius:20px; font-size:13px; cursor:pointer; font-weight:600; white-space:nowrap; flex-shrink:0; }
+.langbtn:hover { border-color:var(--accent); }
+.tabs { display:flex; gap:4px; padding:0 24px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:73px; z-index:19; overflow-x:auto; }
+.tab { padding:11px 16px; font-size:13px; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; }
+.tab:hover { color:var(--txt); }
+.tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+.wrap { padding:22px 24px; max-width:1100px; }
+section { display:none; }
+section.active { display:block; }
+h2 { font-size:15px; margin-bottom:4px; }
+.hint { color:var(--muted); font-size:12.5px; margin-bottom:14px; }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:18px; }
+.card h3 { font-size:13.5px; margin-bottom:10px; color:var(--accent2); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+table { width:100%; border-collapse:collapse; }
+th { text-align:start; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); padding:7px 8px; border-bottom:1px solid var(--line); font-weight:600; }
+td { padding:4px 6px; border-bottom:1px solid #1f262f; vertical-align:middle; }
+tr:last-child td { border-bottom:none; }
+input, select { width:100%; background:var(--panel2); border:1px solid transparent; color:var(--txt); padding:7px 8px; border-radius:6px; font-size:13px; font-family:inherit; }
+input:hover, select:hover { border-color:var(--line); }
+input:focus, select:focus { outline:none; border-color:var(--accent); background:#10161e; }
+.num { max-width:120px; }
+.btn { background:var(--chip); border:1px solid var(--line); color:var(--txt); padding:7px 13px; border-radius:7px; font-size:12.5px; cursor:pointer; font-family:inherit; }
+.btn:hover { border-color:var(--accent); color:var(--accent); }
+.btn.add { color:var(--accent2); }
+.del { background:transparent; border:none; color:var(--muted); cursor:pointer; font-size:16px; padding:2px 8px; border-radius:5px; }
+.del:hover { color:var(--danger); background:#2a1414; }
+.matrix td, .matrix th { padding:12px; border:1px solid var(--line); }
+.matrix .cell { font-size:12.5px; }
+.matrix .who { display:block; color:var(--muted); font-size:11px; margin-bottom:2px; }
+.matrix .amt { color:var(--accent2); font-weight:600; }
+.matrix .none { color:var(--muted); font-style:italic; }
+.matrix .muted { color:var(--muted); }
+.rowhead { background:var(--panel2); font-weight:600; color:var(--accent); }
+.chip { display:inline-block; background:var(--chip); border:1px solid var(--line); border-radius:20px; padding:2px 10px; font-size:11px; color:var(--muted); }
+.chip.ph { color:var(--warn); border-color:#4a3a1a; background:#251d0e; }
+.bar { position:fixed; bottom:0; left:0; right:0; background:var(--panel); border-top:1px solid var(--line); padding:12px 24px; display:flex; gap:10px; align-items:center; z-index:30; }
+.bar .status { color:var(--muted); font-size:12px; margin-inline-start:auto; }
+.bar .btn.primary { background:var(--accent); color:#04121d; border-color:var(--accent); font-weight:600; }
+.note { font-size:12px; color:var(--warn); background:#1f1a0e; border:1px solid #3a3014; border-radius:8px; padding:10px 12px; margin-bottom:14px; }
+pre { background:#0a0d12; border:1px solid var(--line); border-radius:8px; padding:14px; overflow:auto; font-size:12px; color:#a9d2ee; max-height:480px; direction:ltr; text-align:left; }
+.flex { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+label.inline { font-size:12.5px; color:var(--muted); display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<header>
+  <div class="htop">
+    <div>
+      <h1 data-i18n="title"></h1>
+      <p data-i18n="sub"></p>
+    </div>
+    <button class="langbtn" id="langBtn" onclick="toggleLang()"></button>
+  </div>
+</header>
+
+<div class="tabs" id="tabs"></div>
+
+<div class="wrap">
+  <!-- OVERVIEW -->
+  <section id="overview" class="active">
+    <h2 data-i18n="overview.h2"></h2>
+    <p class="hint" data-i18n="overview.hint"></p>
+    <div class="card"><table class="matrix" id="matrixTable"></table></div>
+    <div class="card">
+      <h3 data-i18n="overview.constants"></h3>
+      <p class="hint" style="margin:0">1 — <span data-i18n="const1"></span><br>2 — <span data-i18n="const2"></span></p>
+    </div>
+  </section>
+
+  <!-- BOLT -->
+  <section id="bolt">
+    <h2 data-i18n="bolt.h2"></h2>
+    <p class="hint" data-i18n="bolt.hint"></p>
+    <div class="card">
+      <h3><span data-i18n="bolt.tiers"></span> <span class="chip" data-i18n="chip.monthly"></span></h3>
+      <table data-table="net_tier_rules"></table>
+      <div style="margin-top:10px"><button class="btn add" data-add="net_tier_rules" data-i18n="add.tier"></button></div>
+    </div>
+  </section>
+
+  <!-- UBER -->
+  <section id="uber">
+    <h2 data-i18n="uber.h2"></h2>
+    <p class="hint" data-i18n="uber.hint"></p>
+    <div class="card">
+      <h3 data-i18n="uber.model"></h3>
+      <div class="flex">
+        <label class="inline"><span data-i18n="uber.modelq"></span>
+          <select id="uberModel" style="max-width:300px">
+            <option value="gate" data-i18n="model.gate"></option>
+            <option value="graduated" data-i18n="model.graduated"></option>
+            <option value="tier" data-i18n="model.tier"></option>
+          </select>
+        </label>
+      </div>
+      <p class="hint" style="margin:8px 0 0" data-i18n="uber.modelhint"></p>
+    </div>
+    <div class="card">
+      <h3 data-i18n="uber.kpidef"></h3>
+      <table data-table="kpi_definitions"></table>
+      <div style="margin-top:10px"><button class="btn add" data-add="kpi_definitions" data-i18n="add.kpi"></button></div>
+    </div>
+    <div class="card">
+      <h3><span data-i18n="uber.kpitargets"></span> <span class="chip" data-i18n="chip.editable"></span></h3>
+      <table data-table="kpi_targets"></table>
+      <div style="margin-top:10px"><button class="btn add" data-add="kpi_targets" data-i18n="add.target"></button></div>
+    </div>
+    <div class="card">
+      <h3><span data-i18n="uber.rates"></span> <span class="chip ph" data-i18n="chip.ph"></span></h3>
+      <table data-table="per_trip_rate_rules"></table>
+      <div style="margin-top:10px"><button class="btn add" data-add="per_trip_rate_rules" data-i18n="add.rate"></button></div>
+    </div>
+  </section>
+
+  <!-- REFERRAL -->
+  <section id="referral">
+    <h2 data-i18n="referral.h2"></h2>
+    <p class="hint" data-i18n="referral.hint"></p>
+    <div class="note" data-i18n="referral.note"></div>
+    <div class="card">
+      <h3><span data-i18n="referral.rules"></span> <span class="chip" data-i18n="chip.oneshot"></span></h3>
+      <table data-table="referral_rules"></table>
+      <div style="margin-top:10px"><button class="btn add" data-add="referral_rules" data-i18n="add.ref"></button></div>
+    </div>
+  </section>
+
+  <!-- ENGINE MAP -->
+  <section id="engines">
+    <h2 data-i18n="engines.h2"></h2>
+    <p class="hint" data-i18n="engines.hint"></p>
+    <div class="card">
+      <table data-table="reward_engine"></table>
+      <div style="margin-top:10px"><button class="btn add" data-add="reward_engine" data-i18n="add.map"></button></div>
+    </div>
+  </section>
+
+  <!-- EXPORT -->
+  <section id="export">
+    <h2 data-i18n="export.h2"></h2>
+    <p class="hint" data-i18n="export.hint"></p>
+    <div class="flex" style="margin-bottom:12px">
+      <button class="btn" onclick="copyJSON()" data-i18n="btn.copy"></button>
+      <button class="btn" onclick="downloadJSON()" data-i18n="btn.download"></button>
+      <button class="btn" onclick="importJSON()" data-i18n="btn.import"></button>
+      <input type="file" id="fileIn" accept=".json" style="display:none">
+    </div>
+    <pre id="jsonOut"></pre>
+  </section>
+</div>
+
+<div class="bar">
+  <button class="btn primary" onclick="save()" data-i18n="btn.save"></button>
+  <button class="btn" onclick="resetAll()" data-i18n="btn.reset"></button>
+  <span class="status" id="status"></span>
+</div>
+
+<script>
+// ================= i18n =================
+const I18N = {
+  en:{
+    title:"Fleet Bonus Rules — Bolt & Uber",
+    sub:"Editable rulebook for ambassador referrals + driver bonuses. Everything here is configuration — edit, add, or remove rows; the team reads the same numbers.",
+    "tab.overview":"Overview","tab.bolt":"Bolt","tab.uber":"Uber","tab.referral":"Referrals","tab.engines":"Engine map","tab.export":"Export",
+    "overview.h2":"The master matrix",
+    "overview.hint":"Driver type × platform. The ambassador referral fires in every cell; only the driver reward engine changes.",
+    "overview.constants":"Two constants",
+    const1:"Ambassador always gets a one-shot referral bonus (amount varies by case).",
+    const2:"A foreigner on a Saudi account = 24/7 support only, no driver bonus, on any platform.",
+    "bolt.h2":"Bolt — driver monthly bonus",
+    "bolt.hint":"Saudi driver earns a flat monthly bonus by the net-earning tier he hits that month (tiered, not stacked).",
+    "bolt.tiers":"Net-earning tiers","chip.monthly":"monthly · recompute each month","add.tier":"+ Add tier",
+    "uber.h2":"Uber — driver per-trip bonus (KPI-gated)",
+    "uber.hint":"Saudi driver earns up to a max SAR/trip based on KPI performance. Define KPIs, set targets, map performance to a per-trip rate.",
+    "uber.model":"Payout model","uber.modelq":"How “up to 2.5/trip” is earned:",
+    "model.gate":"Gate — meet all KPIs → full rate, else 0",
+    "model.graduated":"Graduated — each KPI earns a slice",
+    "model.tier":"Tier — performance bands map to a rate",
+    "uber.modelhint":"Pick one; the rate table below is read according to this model.",
+    "uber.kpidef":"KPI definitions","add.kpi":"+ Add KPI",
+    "uber.kpitargets":"KPI targets","chip.editable":"editable thresholds","add.target":"+ Add target",
+    "uber.rates":"Per-trip rate rules","chip.ph":"placeholder values","add.rate":"+ Add rate",
+    "referral.h2":"Ambassador referral bonuses",
+    "referral.hint":"One-shot per driver, per referrer. Fires the first month the driver reaches the trigger net; never fires twice for the same referrer.",
+    "referral.note":"Three separate channels, each paid in its own currency: KSA ambassador (SAR), Egypt call center (EGP), and a Saudi driver referring another Saudi (SAR). A driver is credited to ONE channel — the one that sourced him. No stacking.",
+    "referral.rules":"Referral rules","chip.oneshot":"one-shot per driver","add.ref":"+ Add referral rule",
+    "engines.h2":"Reward engine map",
+    "engines.hint":"Which driver-bonus engine + support level applies to each (platform, driver type). This is what makes a foreigner “support only”.",
+    "add.map":"+ Add mapping",
+    "export.h2":"Export / schema",
+    "export.hint":"The full rulebook as JSON — hand this to the team or feed it to the payout engine. Copy or download.",
+    "btn.copy":"Copy JSON","btn.download":"Download .json","btn.import":"Import .json","btn.save":"Save changes","btn.reset":"Reset to defaults",
+    "matrix.driver":"Driver","matrix.amb":"Referrers (one-shot)","matrix.nobonus":"no driver bonus","matrix.support":"24/7 support",
+    "matrix.upto":"up to","matrix.pertrip":"SAR/trip","matrix.kpis":"(KPIs)","matrix.at":"@","matrix.net":"net",
+    "dt.saudi_self":"Saudi (own account)","dt.foreigner_on_saudi_acct":"Foreigner (on Saudi account)",
+    "msg.saved":"Saved ✓","msg.reset":"Reset to defaults","msg.copied":"Copied JSON ✓","msg.imported":"Imported ✓","msg.invalid":"Invalid JSON file","msg.loaded":"Loaded",
+    "confirm.reset":"Reset all rules to the confirmed defaults? Your edits will be lost.",
+    langName:"عربي"
+  },
+  ar:{
+    title:"قواعد مكافآت الأسطول — بولت وأوبر",
+    sub:"دليل قابل للتعديل لمكافآت إحالة السفراء ومكافآت السائقين. كل شيء هنا إعدادات — عدّل أو أضف أو احذف الصفوف؛ يرى الفريق نفس الأرقام.",
+    "tab.overview":"الملخص","tab.bolt":"بولت","tab.uber":"أوبر","tab.referral":"الإحالات","tab.engines":"خريطة المحركات","tab.export":"التصدير",
+    "overview.h2":"المصفوفة الرئيسية",
+    "overview.hint":"نوع السائق × المنصة. تُحتسب مكافأة السفير في كل حالة؛ يتغيّر فقط محرك مكافأة السائق.",
+    "overview.constants":"ثابتان",
+    const1:"يحصل السفير دائمًا على مكافأة إحالة لمرة واحدة (يختلف المبلغ حسب الحالة).",
+    const2:"الأجنبي على حساب سعودي = دعم على مدار الساعة فقط، بدون مكافأة سائق، على أي منصة.",
+    "bolt.h2":"بولت — مكافأة السائق الشهرية",
+    "bolt.hint":"يحصل السائق السعودي على مكافأة شهرية ثابتة حسب شريحة صافي الأرباح التي يحققها ذلك الشهر (شرائح، غير تراكمية).",
+    "bolt.tiers":"شرائح صافي الأرباح","chip.monthly":"شهري · يُعاد احتسابه كل شهر","add.tier":"+ إضافة شريحة",
+    "uber.h2":"أوبر — مكافأة السائق لكل رحلة (مشروطة بالمؤشرات)",
+    "uber.hint":"يحصل السائق السعودي على حد أقصى لكل رحلة بناءً على أداء المؤشرات. عرّف المؤشرات، حدّد الأهداف، واربط الأداء بقيمة لكل رحلة.",
+    "uber.model":"نموذج الاحتساب","uber.modelq":"كيف تُكتسب «حتى 2.5 لكل رحلة»:",
+    "model.gate":"بوابة — تحقيق كل المؤشرات ← القيمة الكاملة، وإلا صفر",
+    "model.graduated":"تدريجي — كل مؤشر يكسب جزءًا",
+    "model.tier":"شرائح — مستويات الأداء تُقابل قيمة",
+    "uber.modelhint":"اختر واحدًا؛ يُقرأ جدول القيم أدناه وفق هذا النموذج.",
+    "uber.kpidef":"تعريفات المؤشرات","add.kpi":"+ إضافة مؤشر",
+    "uber.kpitargets":"أهداف المؤشرات","chip.editable":"حدود قابلة للتعديل","add.target":"+ إضافة هدف",
+    "uber.rates":"قواعد القيمة لكل رحلة","chip.ph":"قيم مبدئية","add.rate":"+ إضافة قيمة",
+    "referral.h2":"مكافآت إحالة السفراء",
+    "referral.hint":"مرة واحدة لكل سائق ولكل جهة إحالة. تُحتسب في أول شهر يبلغ فيه السائق صافي المحفّز؛ لا تتكرر لنفس الجهة.",
+    "referral.note":"ثلاث قنوات منفصلة، كل منها تُدفع بعملتها: سفير السعودية (ريال)، كول سنتر مصر (جنيه)، وإحالة سائق سعودي لسائق سعودي آخر (ريال). يُنسب كل سائق إلى قناة واحدة — التي جلبته. لا يوجد تراكم.",
+    "referral.rules":"قواعد الإحالة","chip.oneshot":"مرة واحدة لكل سائق","add.ref":"+ إضافة قاعدة إحالة",
+    "engines.h2":"خريطة محركات المكافآت",
+    "engines.hint":"أي محرك مكافأة + مستوى دعم ينطبق على كل (منصة، نوع سائق). هذا ما يجعل الأجنبي «دعمًا فقط».",
+    "add.map":"+ إضافة تعيين",
+    "export.h2":"التصدير / المخطط",
+    "export.hint":"الدليل الكامل بصيغة JSON — سلّمه للفريق أو غذِّ به محرك الاحتساب. انسخ أو نزّل.",
+    "btn.copy":"نسخ JSON","btn.download":"تنزيل .json","btn.import":"استيراد .json","btn.save":"حفظ التغييرات","btn.reset":"استعادة الإعدادات الافتراضية",
+    "matrix.driver":"السائق","matrix.amb":"جهات الإحالة (مرة واحدة)","matrix.nobonus":"لا مكافأة للسائق","matrix.support":"دعم على مدار الساعة",
+    "matrix.upto":"حتى","matrix.pertrip":"ريال/رحلة","matrix.kpis":"(مؤشرات)","matrix.at":"عند","matrix.net":"صافي",
+    "dt.saudi_self":"سعودي (حسابه الخاص)","dt.foreigner_on_saudi_acct":"أجنبي (على حساب سعودي)",
+    "msg.saved":"تم الحفظ ✓","msg.reset":"تمت الاستعادة","msg.copied":"تم نسخ JSON ✓","msg.imported":"تم الاستيراد ✓","msg.invalid":"ملف JSON غير صالح","msg.loaded":"تم التحميل",
+    "confirm.reset":"استعادة كل القواعد إلى الإعدادات الافتراضية المعتمدة؟ ستفقد تعديلاتك.",
+    langName:"EN"
+  }
+};
+// translated DISPLAY labels for enum option values (value stays the same in data)
+const OPT = {
+  bolt:{en:"Bolt",ar:"بولت"}, uber:{en:"Uber",ar:"أوبر"},
+  saudi_self:{en:"saudi (own acct)",ar:"سعودي"}, foreigner_on_saudi_acct:{en:"foreigner",ar:"أجنبي"},
+  monthly_net_tier:{en:"monthly net tier",ar:"شرائح شهرية"}, per_trip_kpi:{en:"per-trip KPI",ar:"لكل رحلة (مؤشرات)"}, none:{en:"none",ar:"لا شيء"},
+  cs_24_7:{en:"24/7 support",ar:"دعم ٢٤/٧"}, one_shot:{en:"one-shot",ar:"مرة واحدة"},
+  ksa_ambassador:{en:"KSA ambassador",ar:"سفير السعودية"},
+  egypt_callcenter:{en:"Egypt call center",ar:"كول سنتر مصر"},
+  saudi_driver_referral:{en:"Saudi driver referral",ar:"إحالة سائق سعودي"}
+};
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+let lang = lsGet("fleet_lang") || "en";
+function t(k){ return (I18N[lang] && I18N[lang][k]) || (I18N.en[k]) || k; }
+function optLabel(v){ return OPT[v] ? OPT[v][lang] : v; }
+
+// ================= RULEBOOK DATA =================
+const DEFAULTS = {
+  meta: { uber_payout_model: "tier", currency: "SAR", updated: "" },
+  reward_engine: [
+    { product:"bolt", driver_type:"saudi_self",              engine:"monthly_net_tier", support:"none"    },
+    { product:"bolt", driver_type:"foreigner_on_saudi_acct", engine:"none",             support:"cs_24_7" },
+    { product:"uber", driver_type:"saudi_self",              engine:"per_trip_kpi",     support:"none"    },
+    { product:"uber", driver_type:"foreigner_on_saudi_acct", engine:"none",             support:"cs_24_7" }
+  ],
+  net_tier_rules: [
+    { product:"bolt", tier:"5k", min_net:5000, amount:400 },
+    { product:"bolt", tier:"6k", min_net:6000, amount:800 }
+  ],
+  kpi_definitions: [
+    { product:"uber", name:"Available hours",   comparison:">=", unit:"hrs/week" },
+    { product:"uber", name:"Acceptance rate",   comparison:">=", unit:"%" },
+    { product:"uber", name:"Peak-hours work %", comparison:">=", unit:"%" }
+  ],
+  kpi_targets: [
+    { product:"uber", kpi:"Available hours",   tier:"Tier 1", target:40 },
+    { product:"uber", kpi:"Acceptance rate",   tier:"Tier 1", target:80 },
+    { product:"uber", kpi:"Peak-hours work %", tier:"Tier 1", target:30 }
+  ],
+  per_trip_rate_rules: [
+    { product:"uber", tier:"Tier 1", rate_per_trip:1.0, note:"placeholder" },
+    { product:"uber", tier:"Tier 2", rate_per_trip:1.5, note:"placeholder" },
+    { product:"uber", tier:"Tier 3", rate_per_trip:2.0, note:"placeholder" },
+    { product:"uber", tier:"Tier 4", rate_per_trip:2.5, note:"max — placeholder" }
+  ],
+  referral_rules: [
+    { party:"ksa_ambassador",        driver_type:"saudi_self",              tier:"5k", amount:200, currency:"SAR", type:"one_shot" },
+    { party:"ksa_ambassador",        driver_type:"foreigner_on_saudi_acct", tier:"6k", amount:500, currency:"SAR", type:"one_shot" },
+    { party:"egypt_callcenter",      driver_type:"saudi_self",              tier:"5k", amount:500, currency:"EGP", type:"one_shot" },
+    { party:"egypt_callcenter",      driver_type:"foreigner_on_saudi_acct", tier:"6k", amount:500, currency:"EGP", type:"one_shot" },
+    { party:"saudi_driver_referral", driver_type:"saudi_self",              tier:"5k", amount:200, currency:"SAR", type:"one_shot" }
+  ]
+};
+const PRODUCTS = ["bolt","uber"];
+const DRIVER_TYPES = ["saudi_self","foreigner_on_saudi_acct"];
+const PARTIES = ["ksa_ambassador","egypt_callcenter","saudi_driver_referral"];
+const COLS = {
+  reward_engine: [
+    { k:"product", t:"select", o:PRODUCTS, en:"Platform", ar:"المنصة" },
+    { k:"driver_type", t:"select", o:DRIVER_TYPES, en:"Driver type", ar:"نوع السائق" },
+    { k:"engine", t:"select", o:["monthly_net_tier","per_trip_kpi","none"], en:"Driver engine", ar:"محرك السائق" },
+    { k:"support", t:"select", o:["none","cs_24_7"], en:"Support", ar:"الدعم" }
+  ],
+  net_tier_rules: [
+    { k:"product", t:"select", o:PRODUCTS, en:"Platform", ar:"المنصة" },
+    { k:"tier", t:"text", en:"Tier", ar:"الشريحة" },
+    { k:"min_net", t:"num", en:"Min net (SAR)", ar:"أدنى صافي (ريال)" },
+    { k:"amount", t:"num", en:"Driver bonus (SAR/mo)", ar:"مكافأة السائق (ريال/شهر)" }
+  ],
+  kpi_definitions: [
+    { k:"product", t:"select", o:PRODUCTS, en:"Platform", ar:"المنصة" },
+    { k:"name", t:"text", en:"KPI name", ar:"اسم المؤشر" },
+    { k:"comparison", t:"select", o:[">=","<=","="], en:"Compare", ar:"المقارنة" },
+    { k:"unit", t:"text", en:"Unit", ar:"الوحدة" }
+  ],
+  kpi_targets: [
+    { k:"product", t:"select", o:PRODUCTS, en:"Platform", ar:"المنصة" },
+    { k:"kpi", t:"text", en:"KPI", ar:"المؤشر" },
+    { k:"tier", t:"text", en:"Tier", ar:"الشريحة" },
+    { k:"target", t:"num", en:"Target value", ar:"القيمة المستهدفة" }
+  ],
+  per_trip_rate_rules: [
+    { k:"product", t:"select", o:PRODUCTS, en:"Platform", ar:"المنصة" },
+    { k:"tier", t:"text", en:"Tier", ar:"الشريحة" },
+    { k:"rate_per_trip", t:"num", en:"Rate (SAR/trip)", ar:"القيمة (ريال/رحلة)" },
+    { k:"note", t:"text", en:"Note", ar:"ملاحظة" }
+  ],
+  referral_rules: [
+    { k:"party", t:"select", o:PARTIES, en:"Referrer", ar:"جهة الإحالة" },
+    { k:"driver_type", t:"select", o:DRIVER_TYPES, en:"Driver type", ar:"نوع السائق" },
+    { k:"tier", t:"text", en:"Trigger (net)", ar:"المحفّز (صافي)" },
+    { k:"amount", t:"num", en:"Bonus", ar:"المكافأة" },
+    { k:"currency", t:"select", o:["SAR","EGP"], en:"Currency", ar:"العملة" },
+    { k:"type", t:"select", o:["one_shot"], en:"Type", ar:"النوع" }
+  ]
+};
+const BLANK = {
+  reward_engine:{product:"bolt",driver_type:"saudi_self",engine:"none",support:"none"},
+  net_tier_rules:{product:"bolt",tier:"",min_net:0,amount:0},
+  kpi_definitions:{product:"uber",name:"",comparison:">=",unit:""},
+  kpi_targets:{product:"uber",kpi:"",tier:"",target:0},
+  per_trip_rate_rules:{product:"uber",tier:"",rate_per_trip:0,note:""},
+  referral_rules:{party:"ksa_ambassador",driver_type:"saudi_self",tier:"",amount:0,currency:"SAR",type:"one_shot"}
+};
+
+const KEY = "fleet_bonus_rules_v3";
+let data = load();
+
+function load(){ try{ const s=lsGet(KEY); if(s) return JSON.parse(s);}catch(e){} return structuredClone(DEFAULTS); }
+function save(){
+  data.meta.uber_payout_model = document.getElementById('uberModel').value;
+  data.meta.updated = new Date().toISOString();
+  lsSet(KEY, JSON.stringify(data));
+  flash(t("msg.saved")); renderMatrix(); renderJSON();
+}
+function resetAll(){ if(!confirm(t("confirm.reset"))) return; data=structuredClone(DEFAULTS); renderAll(); flash(t("msg.reset")); }
+function flash(m){ const s=document.getElementById('status'); s.textContent=m; setTimeout(()=>{ if(s.textContent===m) s.textContent=""; },2500); }
+
+// ================= TABLES =================
+function renderTable(name){
+  const tbl = document.querySelector(`[data-table="${name}"]`); if(!tbl) return;
+  const cols = COLS[name];
+  let html = "<thead><tr>";
+  cols.forEach(c => html += `<th>${lang==='ar'?c.ar:c.en}</th>`);
+  html += "<th></th></tr></thead><tbody>";
+  data[name].forEach((row,i) => {
+    html += "<tr>";
+    cols.forEach(c => {
+      const v = row[c.k] ?? "";
+      if(c.t === "select"){
+        html += `<td><select data-t="${name}" data-i="${i}" data-k="${c.k}">` +
+          c.o.map(o=>`<option value="${o}" ${o==v?"selected":""}>${optLabel(o)}</option>`).join("") + `</select></td>`;
+      } else if(c.t === "num"){
+        html += `<td><input class="num" type="number" step="any" data-t="${name}" data-i="${i}" data-k="${c.k}" value="${v}"></td>`;
+      } else {
+        html += `<td><input type="text" data-t="${name}" data-i="${i}" data-k="${c.k}" value="${String(v).replace(/"/g,'&quot;')}"></td>`;
+      }
+    });
+    html += `<td><button class="del" onclick="delRow('${name}',${i})">✕</button></td></tr>`;
+  });
+  tbl.innerHTML = html + "</tbody>";
+}
+document.addEventListener('input', e=>{
+  const el = e.target;
+  if(el.dataset && el.dataset.t){
+    const {t:tn,i,k} = el.dataset;
+    let v = el.value; if(el.type==="number") v = v===""?"":parseFloat(v);
+    data[tn][+i][k] = v;
+    if(["reward_engine","net_tier_rules","referral_rules","per_trip_rate_rules"].includes(tn)) renderMatrix();
+    renderJSON();
+  }
+});
+function delRow(name,i){ data[name].splice(i,1); renderTable(name); renderMatrix(); renderJSON(); }
+function addRow(name){ data[name].push(structuredClone(BLANK[name])); renderTable(name); renderMatrix(); renderJSON(); }
+
+// ================= MATRIX =================
+function renderMatrix(){
+  const tEl = document.getElementById('matrixTable');
+  let html = "<thead><tr><th></th>";
+  PRODUCTS.forEach(p=> html += `<th>${optLabel(p)}</th>`);
+  html += "</tr></thead><tbody>";
+  DRIVER_TYPES.forEach(dt => {
+    html += `<tr><td class="rowhead">${t("dt."+dt)}</td>`;
+    PRODUCTS.forEach(p => {
+      const eng = data.reward_engine.find(r=>r.product===p && r.driver_type===dt) || {};
+      let driver = "";
+      if(eng.engine === "monthly_net_tier"){
+        const tiers = data.net_tier_rules.filter(r=>r.product===p);
+        driver = tiers.map(r=>`<span class="amt">${r.amount}</span> ${t("matrix.at")} ${r.min_net} ${t("matrix.net")}`).join("<br>") || "—";
+      } else if(eng.engine === "per_trip_kpi"){
+        const max = data.per_trip_rate_rules.filter(r=>r.product===p).reduce((m,r)=>Math.max(m,+r.rate_per_trip||0),0);
+        driver = `<span class="amt">${t("matrix.upto")} ${max}</span> ${t("matrix.pertrip")} <span class="muted">${t("matrix.kpis")}</span>`;
+      } else {
+        driver = `<span class="none">${t("matrix.nobonus")}</span>`;
+      }
+      const sup = eng.support==="cs_24_7" ? `<br><span class='chip'>${t("matrix.support")}</span>` : "";
+      const refs = data.referral_rules.filter(r=>r.driver_type===dt);
+      const ref = refs.length ? refs.map(r=>`${optLabel(r.party)}: <span class="amt">${r.amount} ${r.currency||''}</span>${r.tier&&r.tier!=='-'? " @"+r.tier:""}`).join("<br>") : "—";
+      html += `<td class="cell"><span class="who">${t("matrix.driver")}</span>${driver}${sup}
+        <div style="margin-top:8px"></div>
+        <span class="who">${t("matrix.amb")}</span>${ref}</td>`;
+    });
+    html += "</tr>";
+  });
+  tEl.innerHTML = html + "</tbody>";
+}
+
+// ================= JSON =================
+function renderJSON(){ document.getElementById('jsonOut').textContent = JSON.stringify(data,null,2); }
+function copyJSON(){ navigator.clipboard.writeText(JSON.stringify(data,null,2)).then(()=>flash(t("msg.copied"))); }
+function downloadJSON(){ const b=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download="fleet_bonus_rules.json"; a.click(); }
+function importJSON(){ document.getElementById('fileIn').click(); }
+document.getElementById('fileIn').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return; const r=new FileReader();
+  r.onload=()=>{ try{ data=JSON.parse(r.result); renderAll(); flash(t("msg.imported")); }catch(err){ alert(t("msg.invalid")); } };
+  r.readAsText(f);
+});
+
+// ================= TABS =================
+const TAB_IDS = ["overview","bolt","uber","referral","engines","export"];
+function buildTabs(){
+  const el = document.getElementById('tabs'); el.innerHTML="";
+  TAB_IDS.forEach((id,idx)=>{
+    const cur = document.querySelector('section.active')?.id || "overview";
+    const d=document.createElement('div'); d.className="tab"+(id===cur?" active":""); d.textContent=t("tab."+id);
+    d.onclick=()=>{ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('section').forEach(x=>x.classList.remove('active'));
+      d.classList.add('active'); document.getElementById(id).classList.add('active'); };
+    el.appendChild(d);
+  });
+}
+
+// ================= LANG =================
+function applyLang(){
+  document.documentElement.lang = lang;
+  document.documentElement.dir = lang==='ar' ? 'rtl' : 'ltr';
+  document.querySelectorAll('[data-i18n]').forEach(el=> el.textContent = t(el.getAttribute('data-i18n')));
+  document.getElementById('langBtn').textContent = t("langName");
+  buildTabs();
+}
+function toggleLang(){ lang = lang==='en'?'ar':'en'; lsSet("fleet_lang",lang); renderAll(); }
+
+// ================= INIT =================
+function renderAll(){
+  applyLang();
+  Object.keys(COLS).forEach(renderTable);
+  document.getElementById('uberModel').value = data.meta.uber_payout_model || "tier";
+  renderMatrix(); renderJSON();
+}
+document.getElementById('uberModel').addEventListener('change', e=>{ data.meta.uber_payout_model=e.target.value; renderJSON(); });
+renderAll();
+</script>
+</body>
+</html>

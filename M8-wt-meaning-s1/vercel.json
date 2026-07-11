@@ -1,0 +1,43 @@
+{
+  "fluid": true,
+  "rewrites": [
+    { "source": "/api/ingest-full",             "destination": "/api/knowledge?fn=ingest-full" },
+    { "source": "/api/ingest-extract-existing", "destination": "/api/knowledge?fn=extract-existing" },
+    { "source": "/api/knowledge-inventory",     "destination": "/api/knowledge?fn=inventory" },
+    { "source": "/api/memory-consolidate",      "destination": "/api/knowledge?fn=memory-consolidate" },
+    { "source": "/api/platform-sync",           "destination": "/api/knowledge?fn=platform-sync" },
+    { "source": "/api/presign",                 "destination": "/api/files?fn=presign" },
+    { "source": "/api/upload-file",             "destination": "/api/files?fn=upload" },
+    { "source": "/api/deck",                    "destination": "/api/export?fn=deck" },
+    { "source": "/api/fleet-export",            "destination": "/api/export?fn=fleet" },
+    { "source": "/api/health",                  "destination": "/api/ops?fn=health" },
+    { "source": "/api/loop-attest",             "destination": "/api/ops?fn=loop-attest" },
+    { "source": "/api/notify-prefs",            "destination": "/api/ops?fn=notify-prefs" },
+    { "source": "/api/wallet",                  "destination": "/api/ops?fn=wallet" },
+    { "source": "/api/push-subscribe",          "destination": "/api/ops?fn=push-subscribe" },
+    { "source": "/api/push-cron",               "destination": "/api/ops?fn=push-cron" },
+    { "source": "/api/notes",                   "destination": "/api/ops?fn=notes" },
+    { "source": "/api/chat-stream",             "destination": "/api/chat?fn=stream" },
+    { "source": "/api/tasks",                   "destination": "/api/util?fn=tasks" },
+    { "source": "/api/transcribe",              "destination": "/api/util?fn=transcribe" },
+    { "source": "/api/(.*)", "destination": "/api/$1" }
+  ],
+  "functions": {
+    "api/chat.js": { "maxDuration": 180 },
+    "api/cron-summarize.js": { "maxDuration": 60 },
+    "api/cron-explore.js": { "maxDuration": 120 },
+    "api/cron-verify.js": { "maxDuration": 150 },
+    "api/morning-brief.js": { "maxDuration": 30 },
+    "api/knowledge.js": { "maxDuration": 180 },
+    "api/files.js": { "maxDuration": 300 },
+    "api/export.js": { "maxDuration": 30 },
+    "api/ops.js": { "maxDuration": 30 }
+  },
+  "crons": [
+    { "path": "/api/cron-summarize", "schedule": "0 2 * * *" },
+    { "path": "/api/cron-explore", "schedule": "0 1 * * *" },
+    { "path": "/api/cron-verify", "schedule": "15 1 * * *" },
+    { "path": "/api/morning-brief", "schedule": "0 3 * * *" },
+    { "path": "/api/push-cron", "schedule": "0 4 * * *" }
+  ]
+}

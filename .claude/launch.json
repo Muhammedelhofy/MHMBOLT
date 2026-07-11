@@ -4,8 +4,69 @@
     {
       "name": "MOHM Fleet",
       "runtimeExecutable": "powershell",
-      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "serve.ps1"],
-      "port": 3000
+      "runtimeArgs": ["-ExecutionPolicy", "Bypass", "-File", "serve.ps1"],
+      "port": 3000,
+      "autoPort": true
+    },
+    {
+      "name": "fleet-worktree",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "$env:PORT=3017; & 'C:/Users/m7ofy/OneDrive/Documents/Claude/Projects/Bolt/.claude/worktrees/bolt-starmap-tier-labels/serve.ps1'"],
+      "port": 3017,
+      "autoPort": true
+    },
+    {
+      "name": "fleet-s3",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "$env:PORT=3018; & 'C:/Users/m7ofy/OneDrive/Documents/Claude/Projects/Bolt/.claude/worktrees/bolt-s3/serve.ps1'"],
+      "port": 3018,
+      "autoPort": true
+    },
+    {
+      "name": "fleet-s4",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "$env:PORT=3019; & 'C:/Users/m7ofy/OneDrive/Documents/Claude/Projects/Bolt/.claude/worktrees/bolt-s4/serve.ps1'"],
+      "port": 3019,
+      "autoPort": true
+    },
+    {
+      "name": "fleet-r6r3",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "$env:PORT=3020; & 'C:/Users/m7ofy/OneDrive/Documents/Claude/Projects/Bolt-wt-r6r3/serve.ps1'"],
+      "port": 3020,
+      "autoPort": true
+    },
+    {
+      "name": "fleet-command-center",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "$env:PORT=3021; & 'C:/Users/m7ofy/OneDrive/Documents/Claude/Projects/Bolt-wt-command-center/serve.ps1'"],
+      "port": 3021,
+      "autoPort": true
+    },
+    {
+      "name": "m8-static",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-ExecutionPolicy", "Bypass", "-File", ".claude/serve-m8.ps1"],
+      "port": 8099
+    },
+    {
+      "name": "m8-scifi",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:/Users/m7ofy/OneDrive/Documents/Claude/Projects/Bolt/m8-scifi/serve.ps1"],
+      "port": 4188,
+      "autoPort": true
+    },
+    {
+      "name": "familywallet",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-ExecutionPolicy", "Bypass", "-File", "C:/Users/m7ofy/OneDrive/Documents/Claude/Projects/FamilyWallet/serve.ps1"],
+      "port": 4173
+    },
+    {
+      "name": "vault",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8778", "--bind", "127.0.0.1", "--directory", "C:/Users/m7ofy/OneDrive/Documents/Claude/Projects/VAULT"],
+      "port": 8778
     }
   ]
 }

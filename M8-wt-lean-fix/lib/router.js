@@ -1,0 +1,96 @@
+/**
+ * M8 Knowledge-Decision Router — api/router.js
+ *
+ * The anti-whack-a-mole layer. Instead of enumerating every topic in regex,
+ * we ask the model the only question that matters:
+ *   "Can I answer this from what I know, do I need CURRENT info, do I need to
+ *    COMPUTE an exact figure, or am I missing a key detail?"
+ *      →  answer | search | compute | clarify
+ *
+ * This is the L4 TOOL-DECISION LAYER (Build-4): the LLM picks WHICH tool to use
+ * for the slice the deterministic gates haven't already claimed. Fleet, state,
+ * and open-problem are deterministic HARD-ROUTES decided upstream — the LLM
+ * never gets to route away from them (that's the integrity moat). Within the
+ * remaining knowledge slice it chooses: answer from knowledge, web search for
+ * current/external facts, or CODE EXECUTION for an exact computed number. The
+ * regex compute auto-route (orchestrator) stays as a deterministic fast-path;
+ * this layer catches the compute-worthy queries the regex didn't match.
+ *
+ * Used ONLY for messages the regex classifier left as NONE and that aren't
+ * personal/fleet (those go to memory). Runs on a FAST FREE provider to spare
+ * Gemini quota, with a single short JSON output. Fails SAFE: any error → answer.
+ */
+const { generate } = require("./llm");
+
+// Free, fast providers first — this is a cheap routing decision, not the answer.
+const ROUTER_PROVIDER_ORDER = process.env.ROUTER_PROVIDER_ORDER || "groq,gemini,gemini2,openrouter"; // B-185: cerebras dropped, dead 400 hop
+
+function parseJsonLoose(text) {
+  if (!text || typeof text !== "string") return null;
+  let s = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const a = s.indexOf("{"), b = s.lastIndexOf("}");
+  if (a === -1 || b === -1 || b < a) return null;
+  try { return JSON.parse(s.slice(a, b + 1)); } catch { return null; }
+}
+
+/**
+ * Decide which tool handles a message.
+ * @param {object}  args
+ * @param {string}  args.message    the (possibly slot-filled) user message
+ * @param {Array}   args.history    recent turns
+ * @param {string} [args.topicHint] Build-76: when the latest message is a
+ *        contextless follow-up, the active conversation topic so the router
+ *        resolves it in-topic instead of treating it as a brand-new question.
+ * @returns {{action:"answer"|"search"|"compute"|"clarify", query?:string, question?:string}}
+ */
+async function decideAction({ message, history, topicHint }) {
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Asia/Riyadh", year: "numeric", month: "long", day: "numeric",
+  });
+
+  const system =
+`You are M8's routing brain (Muhammad is in Riyadh, Saudi Arabia). Today is ${today}.
+Decide WHICH TOOL handles the user's latest message. Output ONLY JSON, nothing else:
+{"action":"answer"|"search"|"compute"|"clarify","query":"<web query if search>","question":"<one short question if clarify>"}
+
+Pick "search" when a good answer needs CURRENT or external info that may not be in your training:
+- live schedules/results (sports kickoff times, fixtures, scores), prices, flights, FX, weather
+- news, today's status, recent or post-2023 developments
+- specific real-world facts about people/companies/events you may not reliably know
+- ANY question ABOUT a specific named product, tool, app, library, company, service, or project — "what is X", "how does X work", "how can X help", "tell me about X", "is X any good", "X vs Y". Decide by the QUESTION SHAPE, not by whether you think you know X: named things are often new/niche or share a name with something else, so a confident description from memory is the #1 fabrication risk. When in doubt about a named entity, search — set query to the entity name.
+Pick "compute" when the answer hinges on an EXACT figure you should NOT eyeball — number theory (factorials, primes, large powers/roots), statistics, a simulation/Monte-Carlo, financial math (compound interest, amortization), unit conversion, or multi-step arithmetic with large or many numbers. The tool RUNS code to get the precise result, so choose compute over answer whenever estimating the number in your head would risk being wrong. Do NOT pick compute for a CONCEPTUAL math question that needs no specific number ("why are primes infinite", "explain compound interest"), or for opinions, advice, or chat — those are "answer".
+Pick "answer" when it's conceptual, historical, explanatory, advice, opinion, or personal/chat about GENERAL ideas (not a specific named external product, not an exact calculation) — answerable from knowledge.
+Pick "clarify" ONLY when the request is too vague to search, compute, or answer well (a key detail is missing).
+For "search", write a precise query that includes the current year and obvious context (e.g. Riyadh).`;
+
+  // Build-76: bias a contextless follow-up toward the conversation's active topic.
+  const topicLine = topicHint
+    ? `\n\nCONVERSATION CONTEXT: the recent conversation has been about ${topicHint}. If the user's latest message is a SHORT FOLLOW-UP with no subject of its own ("and the other one?", "why?", "what about last week?", "more"), interpret it as CONTINUING that topic when you pick the tool and when you write the search query — do NOT treat it as a brand-new, context-free question.`
+    : "";
+
+  const recent = (history || [])
+    .slice(-4)
+    .filter((m) => m && typeof m.content === "string")
+    .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+  recent.push({ role: "user", parts: [{ text: message }] });
+
+  let out;
+  try {
+    out = await generate({
+      systemInstruction: system + topicLine,
+      contents: recent,
+      providerOrder: ROUTER_PROVIDER_ORDER,
+      genConfig: { temperature: 0, maxOutputTokens: 200 },
+    });
+  } catch (err) {
+    console.error("[M8] router decide error (non-fatal):", err.message);
+    return { action: "answer" };
+  }
+
+  const parsed = parseJsonLoose(out);
+  if (!parsed || !parsed.action) return { action: "answer" };
+  const action = ["answer", "search", "compute", "clarify"].includes(parsed.action) ? parsed.action : "answer";
+  return { action, query: (parsed.query || message).toString(), question: (parsed.question || "").toString() };
+}
+
+module.exports = { decideAction };

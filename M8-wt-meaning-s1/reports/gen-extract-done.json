@@ -1,0 +1,32 @@
+{
+  "build": "gen-extract",
+  "branch": "feat/general-extraction",
+  "date": "2026-06-22",
+  "model": "Opus 4.8",
+  "status": "DEPLOYED + LIVE-VERIFIED (general AND religious/classical content). 100% free stack.",
+  "prod": { "url": "m8-alpha.vercel.app", "main_sha": "b3cb084", "deploy_path": "fast-forward to main -> Vercel auto-build" },
+  "test_results": {
+    "gate": { "file": "tests/B-gen-extract-verify.ps1", "pass": 80, "fail": 0 },
+    "required_regression": { "file": "tests/B-rag-content-verify.ps1", "pass": 52, "fail": 0 }
+  },
+  "schema_change": false,
+  "what_shipped": [
+    "1. General extraction mode: GENERAL_EXTRACTION_SYSTEM prompt + mode routing (selectExtractionSystem/deriveExtractionMode); default flipped math->general, math opt-in via extraction_mode=math / cls=mathematical.",
+    "2. parseExtractionOutput general branch normalizes {label,content,type} into the math candidate shape (type->kind, confidence default high). Schema-free (m8_graph_nodes has no type column).",
+    "3. extraction_mode wired end-to-end incl. orchestrator.js:1436 (per explicit instruction).",
+    "4. FIX (silent 0-extraction): parseJsonArrayLoose salvages prose-wrapped/fenced JSON arrays that a strict JSON.parse was discarding; extractConceptsWithStatus returns a debug reason; buildKnowledgeIngestContext surfaces it; maxOutputTokens 1200->2048.",
+    "5. OPTION 3 (religious/classical reliability): EXTRACT_PROVIDER_ORDER = groq,cerebras,gemini,gemini2,openrouter,mistral (env M8_EXTRACT_PROVIDER_ORDER override, NO paid providers) passed as providerOrder to extraction. Gemini RECITATION-blocks famous religious text, so extraction now tries groq/cerebras FIRST."
+  ],
+  "live_verification": {
+    "general_english": "Treaty of Westphalia paragraph -> 5 nodes",
+    "general_arabic": "original made-up Arabic (company/Riyadh) -> 4 nodes",
+    "religious_classical": "user's البداية والنهاية paste (source_id 25): 0 (pre-option-3) -> 10 real nodes (post-option-3): Quranic verse, Heraclius<->Abu Sufyan, Prophet's names, al-Bayhaqi, lineage عبد الله/عبد المطلب, al-Zuhri",
+    "diagnosis_note": "0-extractions were (a) strict JSON.parse discarding fallback-provider output [fixed by #4], and (b) Gemini RECITATION on famous religious text + rate-limited free fallbacks [fixed by #5]. Vercel logs are blind to extraction internals; the debug field is the visibility channel."
+  },
+  "live_verify_pending": false,
+  "deploy": "DEPLOYED to production (main b3cb084). All on the free stack.",
+  "known_followups_minor": [
+    "Chat narration: an Arabic-ONLY ingest paste can make the model ignore the packet directive and reply oddly even though nodes ARE created. Cosmetic; did not affect real usage. Robust fix = deterministic hard-return for ingest (sacrifices model narration of the clarification summary) — deliberately NOT done.",
+    "Free-provider per-minute rate limits: ingest a book at a time, not many in 2 minutes. Book path is chapter-paced + resumable."
+  ]
+}
