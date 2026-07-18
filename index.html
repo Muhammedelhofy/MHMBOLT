@@ -11339,10 +11339,15 @@ function renderAnalytics() {
   // blockedCount comes from computeRosterForMonth — matches the Blocks tab (current status).
 
   // ── Pipeline (projectable months only) ──
+  // R6 follow-up: this bucket's band comes from computeRosterForMonth's live calendar-day
+  // run-rate (d.band), NOT Finance's invoice-accurate _tierClassify (Command Center/Finance/
+  // Today's "(proj.)" ladder). Same family as Captains' "Tier pace — live (not final)" strip —
+  // deliberately a different, simpler metric (see commit dff4ea3), so it won't match Command
+  // Center's counts. Labelled explicitly here so that's obvious instead of looking like a bug.
   const buckets = [
-    { f:'band3', label:'6k tier',  sub:'≥6,000 proj',        color:'var(--bolt-green)', list: current.filter(d=>!d.idle && d.band===3) },
-    { f:'band2', label:'5k tier',  sub:'5,000–5,999',        color:'var(--cyan)',       list: current.filter(d=>!d.idle && d.band===2) },
-    { f:'band1', label:'4k tier',  sub:'4,000–4,999',        color:'var(--amber)',      list: current.filter(d=>!d.idle && d.band===1) },
+    { f:'band3', label:'6k tier',  sub:'≥6,000 proj',         color:'var(--bolt-green)', list: current.filter(d=>!d.idle && d.band===3) },
+    { f:'band2', label:'5k tier',  sub:'5,000–5,999 proj',    color:'var(--cyan)',       list: current.filter(d=>!d.idle && d.band===2) },
+    { f:'band1', label:'4k tier',  sub:'4,000–4,999 proj',    color:'var(--amber)',      list: current.filter(d=>!d.idle && d.band===1) },
     { f:'band0', label:'Below 4k', sub:'working · no bonus',  color:'var(--red)',        list: current.filter(d=>!d.idle && d.band===0) },
     { f:'idle',  label:'0 trips',  sub:'idle this period',    color:'var(--text-muted)', list: current.filter(d=>d.idle) },
   ];
@@ -11445,8 +11450,12 @@ function renderAnalytics() {
     ${['all', ...months].map(m => { const lbl = m === 'all' ? 'All time' : monthLabel(m); return `<button class="dk-chip mono${analyticsMonth === m ? ' on' : ''}" onclick="setAnalyticsMonth('${m}')">${lbl}</button>`; }).join('')}
   </div></div>`;
   // Tier distribution funnel — the "where they are now" half of Tier movement (click a band → list).
+  // Reuses tierLadderLive's copy so this reads the same "not final" warning as Captains'
+  // strip — same underlying metric (computeRosterForMonth's d.band), not Finance's invoice
+  // number, so the counts won't match Command Center. See buckets' comment above.
   const pipeline = projectable ? `<div class="dk-card" style="gap:9px">
-      <div class="dk-card-t"><span class="t">Bonus-tier pipeline — ${periodLabel}</span><span class="go" style="color:var(--dk-brand);font-weight:700">≈ +${fmt(totalCompanyBonus)} SAR projected</span></div>
+      <div class="dk-card-t"><span class="t">Bonus-tier pipeline (projected) — ${periodLabel}</span><span class="go" style="color:var(--dk-brand);font-weight:700">≈ +${fmt(totalCompanyBonus)} SAR projected</span></div>
+      <div style="font-size:10px;color:var(--dk-dim)" title="Live calendar-day pace, re-estimated every refresh — not the same engine as Command Center/Finance's tier count, which mirrors Bolt's actual invoice math. Expect the two to disagree.">${t('tierLadderLive')} · not Finance's invoice number</div>
       <div style="display:flex;flex-direction:column;gap:7px">
         ${buckets.map(b => { const pct = Math.round(b.list.length / maxBucket * 100); const bonus = b.f === 'idle' ? 0 : b.list.reduce((s, d) => s + d.companyBonus, 0); const projNet = b.list.reduce((s, d) => s + (d.idle ? d.net : d.proj), 0);
           return `<div onclick="setAnalyticsDrill('${b.f}')" title="Click to list these drivers" style="cursor:pointer;display:flex;align-items:center;gap:10px">
