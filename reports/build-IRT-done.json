@@ -1,0 +1,10 @@
+{
+  "build": "Build-IRT",
+  "status": "done",
+  "committed_sha": "2c063c3430886135fb545be48c28604267f715fe",
+  "files_changed": ["index.html", "tests/BUILD_IRT_LIVE_TEST.md"],
+  "test_result": "node --check on extracted script = SYNTAX_OK; node harness ran the verbatim helpers against the real boltTier/bonusForDriver + real tier values -> Abdulrahman '1d - 250/d - 83 SAR' with won't-bank-6,000 warn, Saed '20d - 296/d - 2,000 SAR' no-warn (filed in 5k), closed-Jun '1,500 SAR' invoice-gross no-warn; page boots on :3022 with zero console errors. Not driven live with real fleet data (PULL needs a human; app script is module-scoped).",
+  "migration_needed": false,
+  "migration_file": null,
+  "notes": "Display-only. Money fns untouched (called, never modified). Landing read from computeRosterForMonth.proj; bonus from bonusForDriver.gross. ARIA/i18n: only the un-bankable tooltip routed through t() (en+ar added: irtRateOnly); short number labels stay inline English like their neighbours. Finance keeps tierStatusStrip counts (it has no per-driver tier drill) so only Command Center + Today changed. New CSS uses dk-* vars (both themes)."
+}
