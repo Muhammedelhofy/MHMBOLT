@@ -12,6 +12,9 @@
     },
     "api/bolt/sync-sheet-now.js": {
       "maxDuration": 60
+    },
+    "api/bolt/sync-barbary.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -26,6 +29,10 @@
     {
       "path": "/api/bolt/sync-sheet",
       "schedule": "45 21 * * *"
+    },
+    {
+      "path": "/api/bolt/sync-barbary",
+      "schedule": "0 22 * * *"
     }
   ]
 }
