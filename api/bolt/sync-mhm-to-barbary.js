@@ -9,8 +9,9 @@
  * Barbary needs NO infrastructure: our Vercel does the work and writes into their sheet.
  * They only had to share their sheet with our service account as EDITOR.
  *
- * Thin wrapper over roster-sheet-core.js. Reads Bolt with OUR OWN creds (BOLT_CLIENT_ID/SECRET
- * — fetchRoster defaults to them when no creds are passed); writes the partner's sheet.
+ * Thin wrapper reusing `syncRosterToTab` exported from sync-barbary.js (kept there, not in a
+ * separate module, to stay under Vercel Hobby's 12-Serverless-Function cap). Reads Bolt with
+ * OUR OWN creds (BOLT_CLIENT_ID/SECRET — fetchRoster defaults to them); writes the partner's sheet.
  *
  * Auth: Bearer token — CRON_SECRET (scheduled cron) OR BARBARY_SYNC_KEY (manual/dry-run),
  *       same keys as sync-barbary. Add ?dry=1 to fetch + report WITHOUT writing the sheet.
@@ -19,7 +20,7 @@
  *                    GOOGLE_SHEETS_CREDENTIALS_JSON, CRON_SECRET, BARBARY_SYNC_KEY.
  */
 
-const { syncRosterToTab } = require("./roster-sheet-core");
+const { syncRosterToTab } = require("./sync-barbary");
 
 // Barbary's spreadsheet (they shared it with our service account as Editor).
 const PARTNER_SHEET_ID = "1FUA3usy5lbk8ZBnOPXT3p01AqLuKbZB-DFNPDiyDF3c";
