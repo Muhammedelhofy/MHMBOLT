@@ -4,14 +4,27 @@
  * Single source of truth — fixes here apply to both manual and auto sync.
  */
 
-let cachedToken = null;
-let tokenExpiry = 0;
+// Token cache keyed by client_id so multiple fleets (your own + Barbary) each keep
+// their own cached token instead of clobbering a single shared one. Callers that pass
+// no creds fall back to the env BOLT_CLIENT_ID/SECRET — i.e. existing behaviour is
+// byte-for-byte unchanged; the second-fleet path is purely additive.
+const tokenCache = new Map(); // client_id -> { token, expiry }
 
-async function getBoltToken() {
-  if (cachedToken && Date.now() < tokenExpiry) return cachedToken;
+function resolveCreds(creds) {
+  return {
+    clientId:     creds?.clientId     || process.env.BOLT_CLIENT_ID,
+    clientSecret: creds?.clientSecret || process.env.BOLT_CLIENT_SECRET,
+  };
+}
+
+async function getBoltToken(creds) {
+  const { clientId, clientSecret } = resolveCreds(creds);
+  if (!clientId || !clientSecret) throw new Error("Bolt credentials missing (clientId/clientSecret)");
+  const cached = tokenCache.get(clientId);
+  if (cached && Date.now() < cached.expiry) return cached.token;
   const body = new URLSearchParams({
-    client_id:     process.env.BOLT_CLIENT_ID,
-    client_secret: process.env.BOLT_CLIENT_SECRET,
+    client_id:     clientId,
+    client_secret: clientSecret,
     grant_type:    "client_credentials",
     scope:         "fleet-integration:api",
   });
@@ -21,14 +34,14 @@ async function getBoltToken() {
     body:    body.toString(),
   });
   if (!resp.ok) throw new Error(`Bolt token error: ${resp.status} ${await resp.text()}`);
-  const data = await resp.json();
-  cachedToken = data.access_token;
-  tokenExpiry = Date.now() + (data.expires_in - 30) * 1000;
-  return cachedToken;
+  const data  = await resp.json();
+  const token = data.access_token;
+  tokenCache.set(clientId, { token, expiry: Date.now() + (data.expires_in - 30) * 1000 });
+  return token;
 }
 
-async function boltAPI(method, path, payload) {
-  const token = await getBoltToken();
+async function boltAPI(method, path, payload, creds) {
+  const token = await getBoltToken(creds);
   const opts  = { method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } };
   if (payload) opts.body = JSON.stringify(payload);
   const resp = await fetch(`https://node.bolt.eu/fleet-integration-gateway${path}`, opts);
@@ -41,13 +54,13 @@ async function boltAPI(method, path, payload) {
 // if the API ever misreports its total.
 const PAGINATE_MAX_PAGES = 200;
 
-async function paginateAll(path, body, listKey, totalKey) {
+async function paginateAll(path, body, listKey, totalKey, creds) {
   const all = [];
   let offset = 0;
   const limit = 1000;
   let total = Infinity; // unknown until the first response tells us
   for (let page = 0; page < PAGINATE_MAX_PAGES; page++) {
-    const resp  = await boltAPI("POST", path, { ...body, offset, limit });
+    const resp  = await boltAPI("POST", path, { ...body, offset, limit }, creds);
     const items = resp.data?.[listKey] ?? [];
     total       = Number(resp.data?.[totalKey] ?? 0) || 0;
     for (const i of items) all.push(i);
@@ -228,4 +241,47 @@ async function fetchAndAggregateFleet(date) {
   return { allOrders, drivers, startTs, endTs, rosterComplete: profileErrors === 0, profileErrors, companyCount: companyIds.length };
 }
 
-module.exports = { fetchAndAggregateFleet };
+/**
+ * Roster-only pull for a SECOND fleet (e.g. Barbary) using its own credentials.
+ * Returns the raw getDrivers profile objects across every company on that account —
+ * no orders/earnings aggregation (this feeds the onboarding sheet's lookup tab, which
+ * only needs identity: name, email, phone, uuid, state, categories, vehicle).
+ *
+ * `creds` = { clientId, clientSecret }. Fully paginates, so a fleet with >1000 drivers
+ * comes back complete (the probe only saw page 1). De-dupes on driver_uuid across
+ * companies. `rosterComplete` is false if any company's pull threw, so the caller can
+ * refuse to overwrite a good tab with a partial roster.
+ */
+async function fetchRoster(creds) {
+  const compResp   = await boltAPI("GET", "/fleetIntegration/v1/getCompanies", null, creds);
+  const companyIds = compResp.data?.company_ids ?? [];
+  if (!companyIds.length) throw new Error("getCompanies returned no company IDs for these credentials");
+
+  const now     = Math.floor(Date.now() / 1000);
+  const startTs = now - 30 * 86400; // window; getDrivers returns the full registered roster regardless
+  const seen    = new Set();
+  const drivers = [];
+  let companyErrors = 0;
+
+  for (const cid of companyIds) {
+    try {
+      const list = await paginateAll(
+        "/fleetIntegration/v1/getDrivers",
+        { company_id: cid, start_ts: startTs, end_ts: now },
+        "drivers", "total", creds
+      );
+      for (const dr of list) {
+        const key = dr.driver_uuid || `${dr.first_name}|${dr.last_name}|${dr.phone}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        drivers.push(dr);
+      }
+    } catch (e) {
+      companyErrors++;
+      console.warn(`[bolt-lib] roster company ${cid}:`, e.message);
+    }
+  }
+  return { drivers, companyIds, companyErrors, rosterComplete: companyErrors === 0 };
+}
+
+module.exports = { fetchAndAggregateFleet, fetchRoster };
