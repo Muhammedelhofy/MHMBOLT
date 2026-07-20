@@ -8589,12 +8589,12 @@ function renderFleetBoltBonus() {
     </table>`;
 }
 
-// ── ★ _tierClassify(month) — the ONE driver-tier classification core (S4/SM-3/R6) ──
-// The single place a driver gets sorted into a 4k/5k/6k bucket. tierStatusFor() (Finance)
-// and smTierDetail() (Star Map / Today) both read this SAME loop instead of hand-copying
-// it, so their achieved/projected counts can never drift apart again. smTierDetail just
-// layers driver names + a `below` (earning, not yet tiered) bucket on top — tierStatusFor
-// doesn't need those, so it stays a thin projection of this result.
+// ── ★ _tierClassify(month) — the INVOICE-RATE tier classification core (S4/SM-3/R6) ──
+// Sorts a driver into a 4k/5k/6k bucket by what Bolt PAYS (invoice for a closed month,
+// pace-aware boltTier rate for an open one). tierStatusFor() (Finance) reads it for
+// money reports; smTierDetail() (Star Map / Today) reads it for closed months only —
+// for the current open month smTierDetail classifies by the LANDING projection instead
+// (2026-07-20), with the rate counts kept as secondary chips.
 function _tierClassify(monthKey) {
   const st = { 4000:{achieved:0,projected:0,names:[]}, 5000:{achieved:0,projected:0,names:[]}, 6000:{achieved:0,projected:0,names:[]} };
   const below = { count:0, names:[] };
@@ -12160,8 +12160,10 @@ function todayStatDrill(kind, ev) {
     const enriched = names.map(n => ({ n, net: computeDriverNetForPeriod(n, mk) })).sort((a, b) => b.net - a.net);
     // Pill = the tier THIS bucket represents (smTierDetail), filled if banked ≥ floor,
     // hollow if only on pace — so clicking "6K 18" shows 6K pills, not the banked <4K band.
-    list = enriched.map(x => ({ name: x.n, pill: floor ? dkTierPill(band, { hollow: x.net < floor }) : dkTierPill(0), sub: irtRowMeta(x.n, x.net, floor, mk, R).line, right: sar(x.net) }));
-    title = kind === 'below' ? '&lt;4k — below pace' : 'Paid at ' + (Number(kind) / 1000) + 'k rate (Bolt invoice)';
+    list = enriched.map(x => ({ name: x.n, pill: floor ? dkTierPill(band, { hollow: x.net < floor }) : dkTierPill(0), sub: irtAmbTag(x.n) + irtRowMeta(x.n, x.net, floor, mk, R).line, right: sar(x.net) }));
+    title = kind === 'below' ? '&lt;4k — below pace'
+      : smTierIsLanding(mk) ? 'Landing at ' + (Number(kind) / 1000) + 'k (projected)'
+      : 'Paid at ' + (Number(kind) / 1000) + 'k rate (Bolt invoice)';
   } else return;
   dkListOverlay(`${title} · ${list.length} · ${R.periodLabel}`, dkDriverRows(list, mk));
 }
@@ -12374,10 +12376,10 @@ function renderToday() {
   const reconDue = R.months.includes(prevKey) && typeof isMonthReconciled === 'function' && !isMonthReconciled(prevKey);
   const noProfile = current.filter(d => d.net > 0 && !Object.prototype.hasOwnProperty.call(profiles, d.key)).length;
 
-  // ── Tier ladder counts — Finance-consistent (smTierDetail replicates tierStatusFor
-  // exactly), so Today's 6K/5K/4K/<4K counts match Finance + Star Map byte-for-byte.
-  // Per-driver d.band (run-rate projection) stays untouched for the movers/push
-  // features below (dkTierMoves, easy-wins, needsPush) — only the ladder count moves.
+  // ── Tier ladder counts — smTierDetail: LANDING projection for the current open
+  // month (== Analytics d.band, 2026-07-20), invoice/banked for closed months. Today,
+  // Star Map and Growth all read the same classifier so they can't drift; Finance
+  // keeps its own invoice-rate tierStatusFor for money reports.
   const td = projectable ? smTierDetail(monthSel) : null;
   const bandCounts = td
     ? [td.below.count, td[4000].achieved + td[4000].projected, td[5000].achieved + td[5000].projected, td[6000].achieved + td[6000].projected]
@@ -12423,11 +12425,11 @@ function renderToday() {
   // tier pills each drill to their band (smTierDetail == Finance); the rest via todayStatDrill.
   const drill = `<span class="drill">▸</span>`;
   const clk = (on, kind) => on ? ` click" onclick="todayStatDrill('${kind}',event)` : '';
-  // Build-IRT: the pill counts are "paid at RATE" (Bolt invoice); a light second line shows
-  // how many actually LAND in each band this month (calendar engine == Analytics) — current
-  // month only. The two disagree exactly when a fast-pace/few-days driver is paid a tier he
-  // won't bank; the tier drill's ⚠ names who.
-  const irtLand = irtLandingByBand(R);
+  // Build-IRT flipped (2026-07-20): the pill counts are now the LANDING projection
+  // (== Analytics, == the Command Center bar); the light second line carries the Bolt
+  // invoice RATE counts. The two disagree exactly when a fast-pace/few-days driver is
+  // paid a tier he won't bank.
+  const irtRate = smTierIsLanding(monthSel) ? _tierClassify(monthSel).tiers : null;
   const tierPills = projectable ? `
     <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
       <span class="dk-tier t6 hollow drill" onclick="todayStatDrill('6000',event)">6K <b>${bandCounts[3]}</b></span>
@@ -12435,7 +12437,7 @@ function renderToday() {
       <span class="dk-tier t4 hollow drill" onclick="todayStatDrill('4000',event)">4K <b>${bandCounts[1]}</b></span>
       <span class="dk-tier t0 drill" onclick="todayStatDrill('below',event)">&lt;4K <b>${bandCounts[0]}</b></span>
     </div>
-    ${isCurrentMonth ? `<div class="d" style="margin-block-start:4px;color:var(--dk-dim)">paid at rate above · landing: 6K ${irtLand[3]} · 5K ${irtLand[2]} · 4K ${irtLand[1]}</div>` : ''}
+    ${irtRate ? `<div class="d" style="margin-block-start:4px;color:var(--dk-dim)">landing above · paid at rate: 6K ${irtRate[6000].achieved + irtRate[6000].projected} · 5K ${irtRate[5000].achieved + irtRate[5000].projected} · 4K ${irtRate[4000].achieved + irtRate[4000].projected}</div>` : ''}
     <div class="d" style="margin-block-start:6px">${dkTierMoves(R)}</div>` : `<div class="v">—</div>`;
   const strip = `
     <div class="dk-strip">
@@ -12835,8 +12837,8 @@ function smMonthAgg(mk) {
       if (!d.idle) agg.projBonus += d.companyBonus;      // live run-rate projection (== Today)
     });
   }
-  // Tier mix for the growth bars = Finance-consistent (smTierDetail), so I5 agrees with
-  // I1 and a partial early month reflects its Bolt invoice, not the thin daily history.
+  // Tier mix for the growth bars = smTierDetail (landing for the open month, invoice
+  // for closed ones), so I5 agrees with I1 for every month.
   const td = smTierDetail(mk);
   agg.bands = [td.below.count, td[4000].achieved + td[4000].projected,
                td[5000].achieved + td[5000].projected, td[6000].achieved + td[6000].projected];  // <4k,4k,5k,6k
@@ -12851,17 +12853,48 @@ function smMonthAgg(mk) {
   return (_smMonthCache[mk] = agg);
 }
 
-// ── Finance-consistent tier detail (SM-3) ────────────────────────────────────
-// Delegates to _tierClassify (the same loop tierStatusFor reads) so the counts equal
-// Finance's Executive tier block / Bolt-Bonus table for every month — invoice for a
-// closed month, pace projection for the open one — by construction, not by hand-copy.
-// Adds nothing of its own except reshaping the result: names stay attached for the
-// ladder segments' drill-down, and `below` (earning but below-pace) is the pipeline
-// segment tierStatusFor doesn't need. Not memoised across renders (cheap; the deck
-// clears its caches each render).
+// ── Operational tier detail (SM-3 → landing-first, 2026-07-20) ───────────────
+// The Command Center / Today / Growth buckets answer "who is going to LAND in each
+// tier this month" — so for the CURRENT OPEN month they classify by the calendar
+// landing projection (computeRosterForMonth's d.band: banked + pace × remaining days,
+// the exact number Analytics shows). The old basis — Bolt's invoice RATE (boltTier's
+// perDay×30) — put a 1-day 250/d driver in the 6K bucket, which is money-true (that
+// IS the rate Bolt pays, prorated) but misleading as a month-end headline (Muhammad,
+// 2026-07-20). The invoice-rate counts stay visible as secondary "paid at Nk rate"
+// chips (smTierLadder / Today strip), and Finance's tierStatusFor still reads
+// _tierClassify untouched — the money reports keep invoice logic.
+// Closed / invoiced / past months: banked truth via _tierClassify, unchanged
+// (nothing left to project, so landing == banked there anyway).
 function smTierDetail(monthKey) {
+  const now = new Date();
+  const curKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  if (monthKey === curKey && !boltBonusMonth(monthKey)) {
+    const R = computeRosterForMonth(monthKey);
+    if (R && R.projectable && R.isCurrentMonth) {
+      const st = { 4000:{achieved:0,projected:0,names:[]}, 5000:{achieved:0,projected:0,names:[]}, 6000:{achieved:0,projected:0,names:[]} };
+      const below = { count:0, names:[] };
+      // R.drivers (not R.current) so "earned this month, since left" still counts in
+      // the bar — same population _tierClassify used (income > 0, even 0-trip rows
+      // with adjustment earnings; their proj stays 0 → they land in `below`).
+      (R.drivers || []).forEach(d => {
+        if (!(d.net > 0)) return;
+        const f = d.band === 3 ? 6000 : d.band === 2 ? 5000 : d.band === 1 ? 4000 : 0;
+        if (!f) { below.count++; below.names.push(d.name); return; }
+        if (d.net >= f) st[f].achieved++; else st[f].projected++;
+        st[f].names.push(d.name);
+      });
+      return { 6000: st[6000], 5000: st[5000], 4000: st[4000], below };
+    }
+  }
   const { tiers, below } = _tierClassify(monthKey);
   return { 6000: tiers[6000], 5000: tiers[5000], 4000: tiers[4000], below };
+}
+
+// Is smTierDetail currently in landing mode for this month? (current open month only)
+function smTierIsLanding(monthKey) {
+  const now = new Date();
+  const curKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  return monthKey === curKey && !boltBonusMonth(monthKey);
 }
 
 // ── Drill overlay (opens OVER the deck; the one soft shadow allowed on overlays) ──
@@ -12896,15 +12929,6 @@ function irtLanding(name, net, R) {
   const elapsed = Math.max(1, R.elapsedDays || 1);  // defensive mirror (roster names ~always hit above)
   const proj = Math.round((net || 0) + ((net || 0) / elapsed) * (R.remainingDays || 0));
   return { proj, band: R.bandOf(proj) };
-}
-
-// Exclusive landing tally per band (calendar engine == the Tier ladder bar). Current month
-// only; !idle; blocked drivers already have proj capped to net inside computeRosterForMonth,
-// so d.band is the blocked-capped band by construction.
-function irtLandingByBand(R) {
-  const c = { 0:0, 1:0, 2:0, 3:0 };
-  if (R && R.projectable && R.isCurrentMonth) (R.current || []).forEach(d => { if (!d.idle) c[d.band] = (c[d.band] || 0) + 1; });
-  return c;
 }
 
 // The Bolt-invoice gross for a driver in a CLOSED month = the imported "Max Value" (banked
@@ -12946,8 +12970,18 @@ function irtRowMeta(name, net, floor, monthKey, R) {
   return { line, warn: !!warn };
 }
 
+// Ambassador tag for a tier-drill row — who brought this driver, visible straight
+// from the Command Center (2026-07-20). Empty string when no attribution.
+function irtAmbTag(name) {
+  const p = getCourierProfile(name);
+  const a = p && p.ambassador ? String(p.ambassador).trim() : '';
+  if (!a) return '';
+  const esc = a.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return ` <span style="font-size:10px;color:var(--dk-info);border:1px solid var(--dk-line);border-radius:999px;padding:0 6px;white-space:nowrap" title="Ambassador">${esc}</span>`;
+}
+
 // Scoped driver list for a ladder / funnel segment. kind:
-//   '6000'|'5000'|'4000'|'below'  → the Finance-consistent tier buckets (smTierDetail)
+//   '6000'|'5000'|'4000'|'below'  → the smTierDetail buckets (landing / invoice)
 //   'tiers'                        → all tiered drivers (funnel's TIERED chip)
 //   'activated'|'earning'          → the funnel's ACTIVATED / EARNING stages (roster)
 //   'idle'|'blocked'              → the roster reconciliation buckets
@@ -12961,7 +12995,7 @@ function smLadderDrill(kind) {
   // floor, hollow if only on pace — so clicking "6K 18" shows 6K pills, not the banked
   // <4K net-band. floor 0 → the plain <4K pill (below-pace bucket).
   const row = (name, net, floor) => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(name)}','${R.monthSel}')">
-    <span class="k">${escH(name)} ${floor ? dkTierPill({ 6000: 3, 5000: 2, 4000: 1 }[floor], { hollow: net < floor }) : dkTierPill(0)}${irtRowMeta(name, net, floor, R.monthSel, R).line}</span>
+    <span class="k">${escH(name)} ${floor ? dkTierPill({ 6000: 3, 5000: 2, 4000: 1 }[floor], { hollow: net < floor }) : dkTierPill(0)}${irtAmbTag(name)}${irtRowMeta(name, net, floor, R.monthSel, R).line}</span>
     <span class="v"><span class="dk-num">${fmt(Math.round(net))}</span></span></div>`;
   let rows, title, count;
   if (kind === 'idle' || kind === 'blocked' || kind === 'activated' || kind === 'earning') {
@@ -12986,7 +13020,8 @@ function smLadderDrill(kind) {
     } else if (kind === 'below') {
       items = td.below.names.map(n => ({ n, floor: 0 })); title = '<4k — below pace';
     } else {
-      const f = Number(kind); items = ((td[f] || {}).names || []).map(n => ({ n, floor: f })); title = 'Paid at ' + (f / 1000) + 'k rate (Bolt invoice)';
+      const f = Number(kind); items = ((td[f] || {}).names || []).map(n => ({ n, floor: f }));
+      title = smTierIsLanding(R.monthSel) ? 'Landing at ' + (f / 1000) + 'k (projected)' : 'Paid at ' + (f / 1000) + 'k rate (Bolt invoice)';
     }
     const enriched = items.map(it => ({ n: it.n, floor: it.floor, net: computeDriverNetForPeriod(it.n, R.monthSel) })).sort((a, b) => b.net - a.net);
     count = enriched.length;
@@ -13068,12 +13103,12 @@ function smStatStrip(R, roll) {
   </div>`;
 }
 
-// ── I1 · TIER LADDER — fleet-wide distribution (tier counts == FINANCE, SM-3) ─────
-// The tier segments + achieved/on-pace chips come from smTierDetail, which replicates
-// Finance's tierStatusFor exactly (invoice for a closed month, pace projection for the
-// open one) — so Star Map never contradicts the Executive tier block. The roster is
-// still fully reconciled on the footer line (active · idle · blocked), and every
-// segment drills to the real drivers, month-scoped.
+// ── I1 · TIER LADDER — fleet-wide distribution (landing-first, 2026-07-20) ─────
+// The tier segments come from smTierDetail: current open month = the LANDING
+// projection (== Analytics), closed month = Bolt's invoice — so the bar answers
+// "who actually gets there". The invoice-rate counts (== Finance's tierStatusFor)
+// live on the secondary chips. The roster is still fully reconciled on the footer
+// line (active · idle · blocked), and every segment drills to the real drivers.
 function smTierLadder(R) {
   const cur = R.current || [];
   const blocked = cur.filter(d => d.blocked).length;
@@ -13108,20 +13143,23 @@ function smTierLadder(R) {
     return `<div style="width:${w}%;background:${s.bg}" title="${s.lbl} · ${s.n}" onclick="smLadderDrill('${s.k}')"><span style="background:rgba(9,12,16,.36);color:#F4F7FA;border-radius:4px;padding:0 5px;font-size:11px">${s.n}</span></div>`;
   }).join('')}</div>` : `<div style="color:var(--dk-dim);font-size:12px">No earning drivers this period.</div>`;
   // Roster reconciliation — every current driver still accounted for (idle/blocked drillable).
-  const foot = `<div class="sm2-foot">Roster ${cur.length} · ${active} active · <span style="cursor:pointer;border-block-end:1px dotted var(--dk-dim)" onclick="smLadderDrill('idle')">${idle} idle</span> · <span style="cursor:pointer;border-block-end:1px dotted var(--dk-dim)" onclick="smLadderDrill('blocked')">${blocked} blocked</span> · tiers = Finance</div>`;
-  // Build-IRT dual-count chips: "paid at Nk RATE" (Bolt invoice engine, == the bar) vs
-  // "landing" (calendar engine == Analytics). The two engines answer different questions —
-  // a fast pace on few days is PAID a high tier now but may LAND lower this month — so both
-  // are shown, the landing as a light secondary number (current month only; a closed/past
-  // month has nothing left to land, so it shows the rate count alone).
-  const land = irtLandingByBand(R);
-  const chips = `<div style="display:flex;flex-wrap:wrap;gap:8px 14px;margin-block-start:11px">${[[3, 6000], [2, 5000], [1, 4000]].map(([band, floor]) => {
-    const t = td[floor], pay = t.achieved + t.projected;
-    const on = R.isCurrentMonth ? ` · <span style="color:var(--dk-dim)">${land[band]} landing</span>` : '';
-    return `<span style="display:inline-flex;align-items:center;gap:6px">${dkTierPill(band)}<span style="font-size:12px;color:var(--dk-mut)">${pay} paid at ${floor / 1000}k rate${on}</span></span>`;
-  }).join('')}</div>`;
+  const foot = `<div class="sm2-foot">Roster ${cur.length} · ${active} active · <span style="cursor:pointer;border-block-end:1px dotted var(--dk-dim)" onclick="smLadderDrill('idle')">${idle} idle</span> · <span style="cursor:pointer;border-block-end:1px dotted var(--dk-dim)" onclick="smLadderDrill('blocked')">${blocked} blocked</span> · ${smTierIsLanding(R.monthSel) ? 'tiers = projected landing (Analytics)' : 'tiers = Bolt invoice'}</div>`;
+  // Build-IRT flipped (2026-07-20): the BAR now classifies by LANDING (calendar engine
+  // == Analytics — banked + pace × remaining), the honest "who gets there" headline.
+  // The Bolt-invoice RATE counts (a fast pace on few days is PAID a high tier prorated)
+  // move to these secondary chips, so Finance money-truth stays one glance away.
+  // Closed month: bar == invoice already → no chips needed.
+  let chips = '';
+  if (smTierIsLanding(R.monthSel)) {
+    const rate = _tierClassify(R.monthSel).tiers;
+    chips = `<div style="display:flex;flex-wrap:wrap;gap:8px 14px;margin-block-start:11px">${[[3, 6000], [2, 5000], [1, 4000]].map(([band, floor]) => {
+      const n = rate[floor].achieved + rate[floor].projected;
+      return `<span style="display:inline-flex;align-items:center;gap:6px">${dkTierPill(band)}<span style="font-size:12px;color:var(--dk-mut)">${n} paid at ${floor / 1000}k rate <span style="color:var(--dk-dim)">(invoice)</span></span></span>`;
+    }).join('')}</div>`;
+  }
+  const sub = smTierIsLanding(R.monthSel) ? 'projected month-end landing per tier →' : 'earned at each tier this month →';
   return `<div class="dk-card">
-    <div class="dk-card-t"><span class="t">Tier ladder</span><span class="go">earned at each tier this month →</span></div>
+    <div class="dk-card-t"><span class="t">Tier ladder</span><span class="go">${sub}</span></div>
     ${bar}${gapNote}${foot}${chips}</div>`;
 }
 
