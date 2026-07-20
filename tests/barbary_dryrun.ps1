@@ -7,15 +7,15 @@
 # HOW TO RUN (one line — it prompts for the two values):
 #   powershell -ExecutionPolicy Bypass -File tests\barbary_dryrun.ps1
 #
-#   - "Dashboard base URL"  -> your deployed dashboard, e.g. https://your-dash.vercel.app
-#   - "CRON_SECRET"         -> the value you set in Vercel (input hidden)
+#   - "Dashboard base URL"  -> your deployed dashboard, e.g. https://mhmbolt.vercel.app
+#   - "BARBARY_SYNC_KEY"    -> the value YOU set in Vercel for this key (input hidden)
 #
 # Copy the whole output back to me.
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$base = (Read-Host "Dashboard base URL (e.g. https://your-dash.vercel.app)").Trim().TrimEnd("/")
-$secure = Read-Host "CRON_SECRET (input hidden)" -AsSecureString
+$base = (Read-Host "Dashboard base URL (e.g. https://mhmbolt.vercel.app)").Trim().TrimEnd("/")
+$secure = Read-Host "BARBARY_SYNC_KEY (the value you set in Vercel; input hidden)" -AsSecureString
 $bstr   = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
 $secret = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr).Trim()
 [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)

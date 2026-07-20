@@ -15,13 +15,18 @@
  * probe), so the lookup key is PHONE (normalized to the 9-digit local form the sheet uses)
  * plus the Driver UUID as a hard unique key. Email is included (the API does return it).
  *
- * Auth: Bearer CRON_SECRET (Vercel sends it automatically on the scheduled cron).
- *       Add ?dry=1 to fetch + report WITHOUT writing the sheet (safe verification).
+ * Auth: Bearer token — accepts EITHER
+ *   - CRON_SECRET      (Vercel sends this automatically on the scheduled cron), OR
+ *   - BARBARY_SYNC_KEY (a value YOU set in Vercel and choose yourself, for manual/dry-run
+ *                       triggers — CRON_SECRET can't be read back once saved, so this gives
+ *                       you a key you already know).
+ * Add ?dry=1 to fetch + report WITHOUT writing the sheet (safe verification).
  *
  * Requires env vars on this Vercel project:
  *   BARBARY_CLIENT_ID, BARBARY_CLIENT_SECRET   (the second fleet's Bolt API creds)
  *   GOOGLE_SHEETS_CREDENTIALS_JSON              (service account — must be EDITOR on the sheet)
- *   CRON_SECRET
+ *   CRON_SECRET       (already set — used by the daily cron)
+ *   BARBARY_SYNC_KEY  (you set this — used for manual triggers like the dry-run)
  */
 
 const crypto = require("crypto");
@@ -174,8 +179,10 @@ async function runBarbarySync({ dry } = {}) {
 
 // ── Handler (nightly cron — CRON_SECRET auth; ?dry=1 for verification) ──────────
 module.exports = async function handler(req, res) {
-  const auth = req.headers["authorization"] || "";
-  if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  const provided = (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
+  const cronOk   = process.env.CRON_SECRET      && provided === process.env.CRON_SECRET;      // the daily cron
+  const manualOk = process.env.BARBARY_SYNC_KEY && provided === process.env.BARBARY_SYNC_KEY; // your manual trigger
+  if (!cronOk && !manualOk) {
     return res.status(401).json({ ok: false, error: "unauthorized" });
   }
   const dry = req.query?.dry === "1" || req.query?.dry === "true";
