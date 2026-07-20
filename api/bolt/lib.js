@@ -259,29 +259,42 @@ async function fetchRoster(creds) {
 
   const now     = Math.floor(Date.now() / 1000);
   const startTs = now - 30 * 86400; // window; getDrivers returns the full registered roster regardless
+  const limit   = 1000;
   const seen    = new Set();
   const drivers = [];
   let companyErrors = 0;
+  let apiTotal = 0; // total the API itself reports (0 if it omits the field)
 
+  // Own pagination rather than paginateAll(): getDrivers can OMIT the `total` field, and
+  // the shared helper breaks on `all.length >= total` — with total=0 that ends the pull
+  // after the first 1000 rows (the exact-1000 bug). Here we also stop on a short/empty page,
+  // so a missing total can't silently truncate the roster.
   for (const cid of companyIds) {
     try {
-      const list = await paginateAll(
-        "/fleetIntegration/v1/getDrivers",
-        { company_id: cid, start_ts: startTs, end_ts: now },
-        "drivers", "total", creds
-      );
-      for (const dr of list) {
-        const key = dr.driver_uuid || `${dr.first_name}|${dr.last_name}|${dr.phone}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        drivers.push(dr);
+      let offset = 0;
+      for (let page = 0; page < 500; page++) {
+        const resp  = await boltAPI("POST", "/fleetIntegration/v1/getDrivers",
+          { company_id: cid, start_ts: startTs, end_ts: now, offset, limit }, creds);
+        const items = resp.data?.drivers ?? [];
+        const total = Number(resp.data?.total ?? 0) || 0;
+        if (page === 0) apiTotal += total;
+        for (const dr of items) {
+          const key = dr.driver_uuid || `${dr.first_name}|${dr.last_name}|${dr.phone}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          drivers.push(dr);
+        }
+        offset += items.length;
+        if (items.length === 0) break;              // no more rows
+        if (total && offset >= total) break;        // reached the reported total
+        if (!total && items.length < limit) break;  // no total reported -> a short page ends it
       }
     } catch (e) {
       companyErrors++;
       console.warn(`[bolt-lib] roster company ${cid}:`, e.message);
     }
   }
-  return { drivers, companyIds, companyErrors, rosterComplete: companyErrors === 0 };
+  return { drivers, companyIds, companyErrors, apiTotal, rosterComplete: companyErrors === 0 };
 }
 
 module.exports = { fetchAndAggregateFleet, fetchRoster };

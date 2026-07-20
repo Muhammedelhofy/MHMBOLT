@@ -148,7 +148,7 @@ async function runBarbarySync({ dry } = {}) {
   }
 
   const creds = { clientId: process.env.BARBARY_CLIENT_ID, clientSecret: process.env.BARBARY_CLIENT_SECRET };
-  const { drivers, companyIds, rosterComplete, companyErrors } = await fetchRoster(creds);
+  const { drivers, companyIds, rosterComplete, companyErrors, apiTotal } = await fetchRoster(creds);
 
   // Never overwrite a good tab with an empty or partial roster (mirrors sync-sheet's guard).
   if (!drivers.length) {
@@ -164,7 +164,7 @@ async function runBarbarySync({ dry } = {}) {
 
   if (dry) {
     return {
-      ok: true, dryRun: true, companies: companyIds.length, drivers: rows.length, sample,
+      ok: true, dryRun: true, companies: companyIds.length, drivers: rows.length, apiTotalReported: apiTotal, sample,
       message: `DRY RUN — fetched ${rows.length} Barbary drivers; sheet NOT written`,
     };
   }
@@ -172,7 +172,7 @@ async function runBarbarySync({ dry } = {}) {
   await clearRange(CLEAR_RANGE);
   await writeRange(WRITE_ANCHOR, [HEADER, ...rows]);
   return {
-    ok: true, dryRun: false, companies: companyIds.length, drivers: rows.length, sample, syncedAt,
+    ok: true, dryRun: false, companies: companyIds.length, drivers: rows.length, apiTotalReported: apiTotal, sample, syncedAt,
     message: `Wrote ${rows.length} Barbary drivers to "${TAB}"`,
   };
 }
