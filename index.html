@@ -2293,14 +2293,14 @@ function sumDriverNetForMonth(driverName, month, year, driverId) {
   _netCache.set(key, v);
   return v;
 }
-function rawDailyNetForMonth(driverName, month, year, driverId) {
-  const nk = driverKey(driverName);
+function rawDailyNetForMonth(driverName, month, year, driverId, phone) {
+  const target = { name: driverName, driverId, phone };   // S3: identity-strict only when a collision name is queried WITH an identity
   const seen = new Set(); let total = 0;
   for (const h of getHistory()) {
     if (!entryInMonth(h, month, year) || seen.has(h.period)) continue;
     seen.add(h.period);
     const drivers = Array.isArray(h.drivers) ? h.drivers : [];
-    const d = drivers.find(x => (driverId && x.driverId === driverId) || driverKey(x.name) === nk);
+    const d = drivers.find(x => driverRowMatches(x, target));
     if (d) total += sN(d.netEarnings);
   }
   return total;
@@ -2322,10 +2322,10 @@ function getMonthlyNet(driverId, driverName, month, year) {
 }
 // All history rows for one driver, oldest→newest, since they first appear.
 // No periodInfo requirement — falls back to period-string ordering.
-function getDriverAllHistory(driverId, name) {
-  const nk = driverKey(name); // normalised key for case-insensitive, trim-safe matching
+function getDriverAllHistory(driverId, name, phone) {
+  const target = { name, driverId, phone };   // S3: identity-strict for a collision name queried with an identity
   return getHistory()
-    .map(h => ({ period:h.period, d:h.drivers.find(d=>(driverId&&d.driverId===driverId)||driverKey(d.name)===nk) }))
+    .map(h => ({ period:h.period, d:(Array.isArray(h.drivers)?h.drivers:[]).find(d=>driverRowMatches(d, target)) }))
     .filter(x => x.d)
     .sort((a,b) => periodSortKey(a.period) - periodSortKey(b.period));
 }
@@ -2838,11 +2838,20 @@ function driverPanelActions(d) {
 function openModal(id, periodFilter, ctx) {
   // ctx.monthFilter (A1 contract) lets the calling tab scope the panel to its
   // selected month — the #9 fix "pick a month → the driver window shows THAT period".
-  // Find the driver in currentDrivers first; if missing (e.g. they didn't work on
-  // the latest uploaded day), scan all history for the most recent entry for them.
-  let d = (currentDrivers||[]).find(x => x.driverId===id || driverKey(x.name)===driverKey(id));
+  // S3 · resolve the RIGHT driver. When the caller (a captain row) hands us an identity
+  // (ctx.ident = {driverId, phone}), match on that FIRST so a same-name collision opens the
+  // clicked driver — not whichever same-named driver happens to sort first. Name is the
+  // fallback only when no identity is supplied.
+  const ident  = (ctx && ctx.ident) || null;
+  const wantId = ident && String(ident.driverId || '').trim();
+  const wantPh = ident && normPhoneForMatch(ident.phone);
+  let d = null;
+  if (wantId) d = (currentDrivers||[]).find(x => String(x.driverId||'').trim() === wantId);
+  if (!d && wantPh) d = (currentDrivers||[]).find(x => normPhoneForMatch(x.phone) === wantPh);
+  if (!d) d = (currentDrivers||[]).find(x => x.driverId===id || driverKey(x.name)===driverKey(id));
   if (!d) {
-    const hist = getDriverAllHistory('', id);
+    // Not on the latest uploaded day → scan history, scoped to the identity when we have one.
+    const hist = getDriverAllHistory(wantId || '', (ident && ident.name) || id, wantPh || '');
     if (!hist.length) return;
     d = hist[hist.length - 1].d; // most recent day's record
   }
@@ -2863,7 +2872,10 @@ function openModal(id, periodFilter, ctx) {
   let tierLensPill = '';
   if (typeof dkTierPill === 'function' && typeof computeRosterForMonth === 'function') {
     const _er = computeRosterForMonth('');
-    const _ed = _er ? _er.drivers.find(x => x.key === driverKey(d.name)) : null;
+    // S3: match the roster entry by IDENTITY (its .ik / driverId) first so a collision name
+    // shows THIS driver's tier, not whichever same-named entry sorts first; name is fallback.
+    const _dk = getIdentityResolver().canonOf(d);
+    const _ed = _er ? (_er.drivers.find(x => (x.ik && x.ik === _dk) || (d.driverId && x.driverId === d.driverId)) || _er.drivers.find(x => x.key === driverKey(d.name))) : null;
     if (_er && _er.projectable && _ed && !_ed.idle && !_ed.blocked)
       tierLensPill = dkTierPill(_ed.band, { hollow: _ed.band > _er.bandOf(_ed.net), title: `net ${fmt(Math.round(_ed.net))} · projected ${fmt(_ed.proj)} SAR (${_er.periodLabel})` });
   }
@@ -2878,7 +2890,7 @@ function openModal(id, periodFilter, ctx) {
   const ratFlag = d.rating>0?(d.rating<s.flagRatRed?'flag-red':d.rating<s.flagRatAmber?'flag-amber':'flag-green'):'';
   const tc      = ({Bronze:'tier-bronze',Silver:'tier-silver',Gold:'tier-gold',Platinum:'tier-platinum',Diamond:'tier-diamond',Active:'tier-active'})[d.tier?.englishName]||'tier-none';
   // Full history for this driver (since their first working day), not just one month.
-  const fullHistory = getDriverAllHistory(d.driverId, d.name);
+  const fullHistory = getDriverAllHistory(d.driverId, d.name, d.phone);   // S3: phone helps scope a collision name
   // "First seen" = earliest day this captain appears in the dashboard's history.
   const _firstSeenMs = driverFirstSeenMs(d.name);
   const firstSeenStr = _firstSeenMs ? new Date(_firstSeenMs).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : null;
@@ -4058,7 +4070,7 @@ function loadBonusSplitSched() { try { return JSON.parse(localStorage.getItem(BO
 function saveBonusSplitSched(o) { localStorage.setItem(BONUS_SPLIT_SCHED_KEY, JSON.stringify(o)); }
 function companySplitPct(monthKey, driverName) {
   if (driverName) {
-    const p = loadCourierProfiles()[driverKey(driverName)];
+    const p = getCourierProfile(driverName);   // S3: identity-resolved (defaultProfile has no bonusSplitPct → same fallthrough)
     const v = p && p.bonusSplitPct;
     if (v != null && v !== '' && !isNaN(+v)) return +v;
   }
@@ -4278,9 +4290,10 @@ function buildCourierSummaryTable(entries, searchFilter) {
       }
     });
   });
-  // Also include profile-only drivers (have a profile but no CSV entry in this period)
-  Object.keys(loadCourierProfiles()).forEach(k => {
-    if (!Object.keys(map).some(n => driverKey(n) === k)) map[k] = blank(k);
+  // Also include profile-only drivers (have a profile but no CSV entry in this period).
+  // S3: profiles are identity-keyed now, so surface them by display name.
+  courierProfileNames().forEach(nm => {
+    if (!Object.keys(map).some(n => driverKey(n) === driverKey(nm))) map[nm] = blank(nm);
   });
 
   // Compute derived values. Note: d.netEarnings already includes campaign (Bolt includes it in gross→net).
@@ -4302,6 +4315,14 @@ function buildCourierSummaryTable(entries, searchFilter) {
     });
   }
 
+  // Model/referral helpers. S3: accept the driver-like row (identity) OR a bare name —
+  // getCourierProfile resolves either, so two same-named drivers read their OWN profile.
+  // Defined BEFORE the sort (which references them) to avoid a const TDZ hazard.
+  const getModel  = arg => { const p = getCourierProfile(arg); const raw = p.model === 'Custom' ? (p.modelCustom||'Custom') : (p.model||'none'); return resolveModelDisplay(raw); };
+  const getFunnel = arg => getCourierProfile(arg)?.funnel || '';
+  const modelBadge  = arg => { const m = getModel(arg);  return `<span class="${modelCircleClass(m)}" title="Model ${m}">${m}</span>`; };
+  const funnelBadge = arg => { const f = getFunnel(arg); return f ? `<span class="funnel-badge funnel-${f}" title="Referral ${f}">${f}</span>` : ''; };
+
   // Sort
   couriers.sort((a, b) => {
     const key = sumCourierSortCol;
@@ -4316,8 +4337,8 @@ function buildCourierSummaryTable(entries, searchFilter) {
     // still shown in the cell for context; it just no longer drives the ranking.
     // String-based sort keys (model/funnel/combo) need localeCompare; numeric keys use subtraction
     if (key === 'model' || key === 'funnel' || key === 'combo') {
-      const sa = key==='model' ? getModel(a.name) : key==='funnel' ? getFunnel(a.name) : getModel(a.name)+getFunnel(a.name);
-      const sb = key==='model' ? getModel(b.name) : key==='funnel' ? getFunnel(b.name) : getModel(b.name)+getFunnel(b.name);
+      const sa = key==='model' ? getModel(a) : key==='funnel' ? getFunnel(a) : getModel(a)+getFunnel(a);
+      const sb = key==='model' ? getModel(b) : key==='funnel' ? getFunnel(b) : getModel(b)+getFunnel(b);
       return sumCourierSortAsc ? sa.localeCompare(sb) : sb.localeCompare(sa);
     }
     const va = key==='days'?a.days : key==='gross'?a.gross : key==='net'?a.net
@@ -4346,16 +4367,10 @@ function buildCourierSummaryTable(entries, searchFilter) {
     return `<th class="${cls} ${isActive?'th-sort-active':''}" style="cursor:pointer;user-select:none;white-space:nowrap" onclick="setSumCourierSort('${col}')">${inner}</th>`;
   };
 
-  // Model/referral helpers
-  const getModel  = name => { const p = getCourierProfile(name); const raw = p.model === 'Custom' ? (p.modelCustom||'Custom') : (p.model||'none'); return resolveModelDisplay(raw); };
-  const getFunnel = name => getCourierProfile(name)?.funnel || '';
-  const modelBadge  = name => { const m = getModel(name);  return `<span class="${modelCircleClass(m)}" title="Model ${m}">${m}</span>`; };
-  const funnelBadge = name => { const f = getFunnel(name); return f ? `<span class="funnel-badge funnel-${f}" title="Referral ${f}">${f}</span>` : ''; };
-
   // Apply model + funnel filters
   let filtered = couriers;
-  if (sumModelFilter !== 'all') { const t = resolveModelDisplay(sumModelFilter); filtered = filtered.filter(c => getModel(c.name) === t); }
-  if (sumFunnelFilter !== 'all') { filtered = filtered.filter(c => getFunnel(c.name) === sumFunnelFilter); }
+  if (sumModelFilter !== 'all') { const t = resolveModelDisplay(sumModelFilter); filtered = filtered.filter(c => getModel(c) === t); }
+  if (sumFunnelFilter !== 'all') { filtered = filtered.filter(c => getFunnel(c) === sumFunnelFilter); }
   if (!filtered.length && (sumModelFilter !== 'all' || sumFunnelFilter !== 'all')) filtered = couriers;
   // Apply status filter. Current = the whole fleet minus the departed; Left = only
   // the departed. (No "roster known" guard needed: with no departures the departed
@@ -4373,17 +4388,19 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const rows = filtered.map((c, idx) => {
     const foreign = lookupForeignName(c.name);
     const displayName = foreign || c.name;
-    const isBlocked = isLiveBlocked(liveIdx, c) || !!getCourierProfile(c.name)?.blocked;
+    const isBlocked = isLiveBlocked(liveIdx, c) || !!getCourierProfile(c)?.blocked;   // S3: identity
     const hasLeft = departedKeys.has(driverKey(c.name)) && !isLiveBlocked(liveIdx, c);
-    const badge = dkAmbTag(c.name)   // #9 retag: ambassador-name tag replaces MODEL/REF letters
+    const badge = dkAmbTag(c)   // S3: identity → each same-named driver shows his OWN ambassador
       + (isBlocked ? `<span style="display:inline-flex;align-items:center;font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;margin-left:4px;background:rgba(255,68,102,.15);border:1px solid rgba(255,68,102,.4);color:var(--red);letter-spacing:.06em">🚫 BLOCKED</span>` : '')
       + (hasLeft ? `<span class="left-badge">LEFT FLEET</span>` : '');
     const nameHTML = foreign
       ? `<div class="d-name">${c.name}${badge}</div><div class="d-foreign">${foreign}</div>`
       : `<div class="d-name">${c.name}${badge}</div>`;
+    // S3: thread the row's identity (driverId/phone) so a same-name collision opens THIS driver.
+    const _did = esc(String(c.driverId||'')), _ph = esc(String(c.phone||''));
     const clickAttr = singlePeriod
-      ? `onclick="bioScanThenOpen('${esc(c.name)}',this,'${esc(singlePeriod)}')"`
-      : `onclick="bioScanThenOpen('${esc(c.name)}',this)"`;
+      ? `onclick="bioScanThenOpen('${esc(c.name)}',this,'${esc(singlePeriod)}','${_did}','${_ph}')"`
+      : `onclick="bioScanThenOpen('${esc(c.name)}',this,null,'${_did}','${_ph}')"`;
 
     // TIER-BASED projection. Translate the captain's daily pace into a projected month
     // (×26 working days) and colour by which bonus tier it lands in: red below 4k, amber 4k,
@@ -6255,6 +6272,10 @@ async function fetchFromCloud() {
     // Newest-wins per captain so another device's profile/model/referrer edit propagates
     // here instead of being clobbered by our stale local copy.
     saveCourierProfiles(mergeStampedByKey(r.khair_courier_profiles, loadCourierProfiles()));
+    // S3 (Build-179): re-key name→identity after the cloud merge. Idempotent; a legacy
+    // name-key arriving from a not-yet-migrated device is re-homed here (localStorage only —
+    // the cloud copy is rewritten only on the next user-gated syncToCloud).
+    await migrateProfilesToIdentity();
   }
   if ('khair_courier_overrides' in r) {
     saveOverrides(mergeStampedByKey(r.khair_courier_overrides, loadOverrides()));
@@ -6588,6 +6609,12 @@ function manualConnectBin() {
 // ═══════════════════════════════════════════
 // NAME MAPPING
 // ═══════════════════════════════════════════
+// S3 note — the Saudi→foreigner map stays NAME-keyed (deferred, not migrated): its ONLY
+// data source is the uploaded Excel (Col A Saudi name, Col B real name) which carries NO
+// phone/uuid, so a same-name collision cannot be split here without a new phone column in
+// that upload. When a display name maps to ≥2 real drivers, both currently show the same
+// foreign name — a known limitation, reported alongside the profile migration. (The profile,
+// panel, ambassador, model and funnel layers ARE identity-keyed — see courierIdentityKey.)
 function lookupForeignName(saudiName) {
   if (!saudiName || !nameMapping?.length) return '';
   const key = saudiName.trim().toLowerCase();
@@ -6707,10 +6734,147 @@ function showPayoutPopup(e, projected, actual, gap) {
   }, 50);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// S3 · PROFILE IDENTITY (Build-179) — courier profiles keyed by IDENTITY, not name
+// ═══════════════════════════════════════════════════════════════════════════════
+// S1/S2 (Build-175/176) fixed BLOCK STATE and cross-report MERGES by driver identity
+// (identSigsOf → uuid/phone; buildIdentityResolver/canonOf; ambiguous names never bridge).
+// They LEFT the courier-profile / ambassador / model / funnel store name-keyed — so two
+// REAL same-named drivers (e.g. "Mohammed Alsubaie" +…081 active vs "MOHAMMED ALSUBAIE"
+// +…337 suspended) collapsed onto ONE profile: same ambassador, same model, and clicking
+// either row opened the same panel. This block is that leftover migration.
+//
+// buildProfileResolver extends the S2 union-find with a PHONE-PREFERRED canonical label
+// (phone-9 chosen over uuid because that's what sheet_ambassador_sync and legacy CSV rows
+// carry, so the key is stable across the sources the migration joins). Two invocations over
+// the same row set agree, so the migration's key and every runtime lookup's key match.
+function buildProfileResolver(rows) {
+  const parent = new Map();
+  const find = x => { let r = x; while (parent.get(r) !== r) r = parent.get(r);
+    while (parent.get(x) !== r) { const n = parent.get(x); parent.set(x, r); x = n; } return r; };
+  const add = x => { if (!parent.has(x)) parent.set(x, x); return x; };
+  const union = (a, b) => { add(a); add(b); parent.set(find(a), find(b)); };
+  // hard union: uuid ⟷ phone observed together on one row (same physical driver)
+  for (const d of (rows || [])) { const s = identSigsOf(d); s.forEach(add); for (let i = 1; i < s.length; i++) union(s[0], s[i]); }
+  // ambiguity census: name key → set of distinct hard-component roots carrying it
+  const compsByName = new Map();
+  for (const d of (rows || [])) {
+    const nk = driverKey(d.name); if (!nk) continue;
+    const s = identSigsOf(d);
+    if (!compsByName.has(nk)) compsByName.set(nk, new Set());
+    if (s.length) compsByName.get(nk).add(find(s[0]));
+  }
+  const ambiguousNames = new Set();
+  for (const [nk, comps] of compsByName) if (comps.size >= 2) ambiguousNames.add(nk);
+  // per-root label: prefer the smallest 'ph:' sig; fall back to the smallest sig overall.
+  const phoneLabel = new Map(), anyLabel = new Map();
+  for (const sig of parent.keys()) {
+    const r = find(sig);
+    const a = anyLabel.get(r); if (a === undefined || sig < a) anyLabel.set(r, sig);
+    if (sig.startsWith('ph:')) { const p = phoneLabel.get(r); if (p === undefined || sig < p) phoneLabel.set(r, sig); }
+  }
+  const labelOfRoot = r => (phoneLabel.get(r) !== undefined ? phoneLabel.get(r) : anyLabel.get(r));
+  // unambiguous name → its single component's label, so a name-only lookup still reaches it
+  const nameToLabel = new Map();
+  for (const [nk, comps] of compsByName) if (comps.size === 1) nameToLabel.set(nk, labelOfRoot(find([...comps][0])));
+  // profileKeyOf(d) → canonical identity key: 'ph:<9>' / 'id:<uuid>' (phone-preferred), or
+  // 'nm:'+nameKey for a profile with NO identity at all (a manual deal never seen in data)
+  // or an ambiguous bare name that cannot be resolved without an identity hint.
+  const profileKeyOf = d => {
+    const s = identSigsOf(d || {});
+    if (s.length) return labelOfRoot(find(s[0]));
+    const nk = driverKey(d && d.name);
+    if (nk && nameToLabel.has(nk)) return nameToLabel.get(nk);
+    return nk ? 'nm:' + nk : 'nm:';
+  };
+  // identitiesForName(nameKey) → the distinct identity labels carrying that name (0, 1, or ≥2).
+  // ≥2 ⇒ a real same-name collision the migration must SPLIT (or flag), never merge.
+  const identitiesForName = nk => {
+    const comps = compsByName.get(nk);
+    return comps ? [...comps].map(r => labelOfRoot(r)) : [];
+  };
+  return { profileKeyOf, ambiguousNames, identitiesForName };
+}
+// Memoised profile resolver over history + the currently-loaded day + the synced onboarding
+// sheet (which carries phone-only rows). Rebuilds only when one of those inputs changes.
+let _profRes = null, _profResHraw = null, _profResCd = -1, _profResSc = -1;
+function getProfileResolver() {
+  const hraw = localStorage.getItem('khair_perf_history') || '';
+  const cd = (typeof currentDrivers !== 'undefined' && Array.isArray(currentDrivers)) ? currentDrivers.length : 0;
+  const sc = (typeof sheetAmbassadorSyncCache !== 'undefined' && Array.isArray(sheetAmbassadorSyncCache)) ? sheetAmbassadorSyncCache.length : 0;
+  if (hraw === _profResHraw && cd === _profResCd && sc === _profResSc && _profRes) return _profRes;
+  const rows = [];
+  for (const h of getHistory()) for (const d of (h.drivers || [])) rows.push(d);
+  if (typeof currentDrivers !== 'undefined' && Array.isArray(currentDrivers)) for (const d of currentDrivers) rows.push(d);
+  if (typeof sheetAmbassadorSyncCache !== 'undefined' && Array.isArray(sheetAmbassadorSyncCache))
+    for (const s of sheetAmbassadorSyncCache) rows.push({ name: s.name, driverId: s.id, phone: s.phone });
+  _profRes = buildProfileResolver(rows);
+  _profResHraw = hraw; _profResCd = cd; _profResSc = sc;
+  return _profRes;
+}
+// The single key function used by BOTH the migration and every runtime profile lookup.
+// arg = a driver-like object {name, driverId, phone} (captain rows carry all three) or a
+// bare name string. Bare AMBIGUOUS names return 'nm:'+key and therefore never resolve to
+// either colliding driver's identity profile — the caller gets defaultProfile (a "—"), which
+// is the intended "never show the OTHER driver's data" behaviour.
+function courierIdentityKey(arg) {
+  const d = (typeof arg === 'string') ? { name: arg } : (arg || {});
+  return getProfileResolver().profileKeyOf(d);
+}
+// Does a history/CSV `row` belong to `target` ({name, driverId, phone})? Used by the driver
+// panel's history aggregation so a collision name can't blend two drivers. Behaviour:
+//   • target carries an identity (driverId/phone) AND the name is a known collision →
+//     IDENTITY-STRICT: same canonical profile key only (a legacy phone-only row of the same
+//     person still joins via the union; the other same-name driver's rows never do);
+//   • otherwise (unambiguous name, or a name-only caller like Finance) → the original
+//     id-or-phone-or-name match, so nothing that worked before changes.
+function driverRowMatches(row, target) {
+  const nk  = driverKey(target && target.name);
+  const did = String((target && target.driverId) || '').trim();
+  const tph = normPhoneForMatch(target && target.phone);
+  const hasIdent = !!(did || tph);
+  if (nk && hasIdent && getProfileResolver().ambiguousNames.has(nk))
+    return courierIdentityKey(row) === courierIdentityKey(target);
+  if (did && String(row.driverId || '').trim() === did) return true;
+  if (tph && normPhoneForMatch(row.phone) === tph) return true;
+  return !!nk && driverKey(row.name) === nk;
+}
+// Recover a display name from a profile store entry. Identity-keyed profiles carry _name;
+// legacy pre-migration entries ARE the name-key; 'nm:' entries hold the name after the prefix.
+function courierKeyToName(key, prof) {
+  if (prof && prof._name) return prof._name;
+  if (typeof key === 'string' && key.startsWith('nm:')) return key.slice(3);
+  return key;
+}
+// Distinct display names across the whole profile store — replaces the many
+// `Object.keys(loadCourierProfiles())` sites that treated the KEY as a driver name.
+function courierProfileNames() {
+  const store = loadCourierProfiles();
+  const out = [], seen = new Set();
+  for (const k of Object.keys(store)) {
+    const nm = courierKeyToName(k, store[k]);
+    const nk = driverKey(nm);
+    if (nk && !seen.has(nk)) { seen.add(nk); out.push(nm); }
+  }
+  return out;
+}
+// True when a SAVED cost profile exists for this driver (identity key, or a legacy/unambiguous
+// name key). Ambiguous bare names without an identity hint do NOT match a legacy name bucket.
+function hasCourierProfile(arg) {
+  const store = loadCourierProfiles();
+  const idk = courierIdentityKey(arg);
+  if (Object.prototype.hasOwnProperty.call(store, idk)) return true;
+  const nm = (typeof arg === 'string') ? arg : (arg && arg.name);
+  const nk = driverKey(nm);
+  return !!(nk && Object.prototype.hasOwnProperty.call(store, nk) && !getProfileResolver().ambiguousNames.has(nk));
+}
+
 // ═══════════════════════════════════════════
 // FINANCE v2 — Locked Design (2026-05-20)
 // ═══════════════════════════════════════════
 const COURIER_PROFILES_KEY  = 'khair_courier_profiles';
+const COURIER_PROFILES_BACKUP_KEY = 'khair_courier_profiles_backup_preS3'; // one-time pre-migration snapshot
+const COURIER_PROFILES_SCHEMA_KEY = 'khair_courier_profiles_schema';       // 's3-identity' once migrated
 const COURIER_OVERRIDES_KEY = 'khair_courier_overrides';
 const CYCLE_RECEIPTS_KEY    = 'khair_cycle_receipts';
 const CYCLE_ANCHOR_KEY      = 'khair_cycle_anchor';
@@ -6783,16 +6947,134 @@ function getProratedTarget(driverName, baseTarget, pInfo) {
   const daysInMonth = pInfo.daysInMonth;
   return Math.round(baseTarget * (daysInMonth - startDay + 1) / daysInMonth);
 }
-// S2 note — courier profiles + name-mapping (below) are keyed by driverKey(name) BY DESIGN:
-// they are manual, human-entered deals / friendly-name mappings with no driver_uuid source
-// to migrate to. Two same-named drivers sharing one profile is a known, accepted limitation;
-// re-keying this store to identity is a data migration that needs Muhammad's explicit OK (it
-// would strand every existing profile). The identity ladder is applied to the DERIVED state
-// (blocked/earnings/roster/ledger) where collisions actually corrupt data, not here.
+// S3 (Build-179) — courier profiles are keyed by IDENTITY (courierIdentityKey): 'ph:<9>' /
+// 'id:<uuid>' where the driver is known from data, else 'nm:'+nameKey for a pure manual deal
+// never seen in history/sheet. Each entry carries _name (display) so enumeration code can
+// still recover a driver name. Accessors take a driver-like object {name,driverId,phone}
+// (captain rows pass all three) OR a bare name; a bare UNAMBIGUOUS name still resolves to its
+// identity, while a bare AMBIGUOUS name falls through to defaultProfile (never the other
+// same-name driver's). A legacy name-keyed entry (pre-migration, or an unmigrated device)
+// is still read as a fallback for UNAMBIGUOUS names so nothing goes blank before migrateProfiles.
 function loadCourierProfiles() { try{return JSON.parse(localStorage.getItem(COURIER_PROFILES_KEY)||'{}');}catch(e){return{};} }
 function saveCourierProfiles(o) { localStorage.setItem(COURIER_PROFILES_KEY, JSON.stringify(o)); }
-function getCourierProfile(name) { return loadCourierProfiles()[driverKey(name)] || defaultProfile(); }
-function upsertCourierProfile(name, profile) { const p = loadCourierProfiles(); p[driverKey(name)] = { ...profile, _t: Date.now() }; saveCourierProfiles(p); }
+function getCourierProfile(arg) {
+  const store = loadCourierProfiles();
+  const idk = courierIdentityKey(arg);
+  if (store[idk]) return store[idk];
+  const nm = (typeof arg === 'string') ? arg : (arg && arg.name);
+  const nk = driverKey(nm);
+  if (nk && store[nk] && !getProfileResolver().ambiguousNames.has(nk)) return store[nk]; // legacy/unmigrated
+  return defaultProfile();
+}
+function upsertCourierProfile(arg, profile) {
+  const store = loadCourierProfiles();
+  const idk = courierIdentityKey(arg);
+  const nm = (typeof arg === 'string') ? arg : (arg && arg.name);
+  const nk = driverKey(nm);
+  // Migrate-on-write: if a legacy name-keyed entry for an UNAMBIGUOUS name is being replaced
+  // by an identity key, drop the stale legacy copy so the two never drift apart.
+  if (nk && store[nk] && idk !== nk && !getProfileResolver().ambiguousNames.has(nk)) delete store[nk];
+  store[idk] = { ...profile, _name: (nm != null ? String(nm) : (profile && profile._name) || courierKeyToName(idk, profile)), _t: Date.now() };
+  saveCourierProfiles(store);
+}
+
+// ── S3 · one-time, idempotent, reversible profile re-key (Build-179) ───────────────
+// Re-keys the localStorage profile store from name-keys to identity keys. Runs at boot
+// after the cloud merge (and again after the sheet loads, to finish splits). Safety:
+//   • writes a one-time pre-migration BACKUP before its first change (reversible),
+//   • never DROPS a profile it can't confidently re-home — an unsplittable collision name
+//     stays name-keyed under 'nm:'+key and is reported, never merged onto one driver,
+//   • idempotent — an already-identity/'nm:'-keyed store is a cheap no-op,
+//   • localStorage only; the cloud copy is rewritten by the normal syncToCloud path (gated
+//     on a user action), never by the migration itself.
+// A collision name is SPLIT using the onboarding sheet's per-phone ambassador: the stored
+// profile is attached to the identity whose sheet-ambassador matches profile.ambassador; the
+// other identity gets no profile (defaultProfile at runtime). If the ambassador can't decide
+// (blank, or matches none/both), the name stays name-keyed + flagged.
+function rekeyProfileStore(store, R, sheetAmbByPhone) {
+  const out = {};
+  const flagged = [];       // collision names kept name-keyed (couldn't split by phone)
+  let split = 0, rekeyed = 0, kept = 0;
+  const put = (key, prof) => {                          // newest-_t wins on key collision
+    const cur = out[key];
+    if (!cur) { out[key] = prof; return; }
+    out[key] = ((prof && prof._t) || 0) >= ((cur && cur._t) || 0) ? prof : cur;
+  };
+  const phoneOfLabel = lbl => (typeof lbl === 'string' && lbl.startsWith('ph:')) ? lbl.slice(3) : '';
+  for (const oldKey of Object.keys(store)) {
+    const prof = store[oldKey] || {};
+    // Already migrated (identity or explicit name-only key) → carry through untouched.
+    if (/^(ph:|id:)/.test(oldKey)) { put(oldKey, prof); continue; }
+    const name = courierKeyToName(oldKey, prof);
+    const nk = driverKey(name);
+    if (!nk) { put(oldKey, prof); continue; }
+    const idents = R.identitiesForName(nk);
+    if (idents.length === 0) {                           // pure manual deal, never in data
+      put('nm:' + nk, { ...prof, _name: prof._name || name });
+      kept++;
+    } else if (idents.length === 1) {                    // unambiguous → its identity
+      put(idents[0], { ...prof, _name: prof._name || name });
+      rekeyed++;
+    } else {                                             // collision → try to split by sheet phone
+      const ambWant = (prof.ambassador || '').trim().toLowerCase();
+      let target = null, matches = 0;
+      if (ambWant) {
+        for (const lbl of idents) {
+          const ph = phoneOfLabel(lbl);
+          const amb = ph && sheetAmbByPhone ? (sheetAmbByPhone.get(ph) || '') : '';
+          if (amb && amb.trim().toLowerCase() === ambWant) { target = lbl; matches++; }
+        }
+      }
+      if (target && matches === 1) {                     // confident single match → attach there
+        put(target, { ...prof, _name: prof._name || name });
+        split++;
+      } else {                                           // cannot decide → keep name-keyed + flag
+        put('nm:' + nk, { ...prof, _name: prof._name || name, _collision: true });
+        flagged.push(name);
+        kept++;
+      }
+    }
+  }
+  return { migrated: out, report: { split, rekeyed, kept, flagged } };
+}
+async function migrateProfilesToIdentity(opts) {
+  const store = loadCourierProfiles();
+  const keys = Object.keys(store);
+  if (!keys.length) { localStorage.setItem(COURIER_PROFILES_SCHEMA_KEY, 's3-identity'); return null; }
+  const legacy = keys.filter(k => !/^(ph:|id:|nm:)/.test(k));
+  const already = localStorage.getItem(COURIER_PROFILES_SCHEMA_KEY) === 's3-identity';
+  if (!legacy.length && already && !(opts && opts.force)) return null;   // nothing to do
+  // one-time reversible backup (before the first re-key on this device)
+  if (!localStorage.getItem(COURIER_PROFILES_BACKUP_KEY)) {
+    try { localStorage.setItem(COURIER_PROFILES_BACKUP_KEY, JSON.stringify(store)); } catch (e) {}
+  }
+  const R = getProfileResolver();
+  // Fetch the sheet only if a legacy collision name actually needs splitting.
+  const needSheet = legacy.some(k => R.identitiesForName(driverKey(courierKeyToName(k, store[k]))).length >= 2);
+  const sheetAmbByPhone = new Map();
+  if (needSheet) {
+    let rows = [];
+    try { rows = await fetchSheetAmbassadorSync(); } catch (e) { rows = []; }
+    (Array.isArray(rows) ? rows : []).forEach(r => {
+      const p9 = normPhoneForMatch(r.phone);
+      if (p9 && r.ambassador && String(r.ambassador).trim()) sheetAmbByPhone.set(p9, String(r.ambassador).trim());
+    });
+  }
+  const { migrated, report } = rekeyProfileStore(store, R, sheetAmbByPhone);
+  saveCourierProfiles(migrated);
+  localStorage.setItem(COURIER_PROFILES_SCHEMA_KEY, 's3-identity');
+  if (report.flagged.length) console.warn('[S3] profile collisions kept name-keyed (could not split by phone):', report.flagged);
+  console.info('[S3] profile migration:', report);
+  return report;
+}
+// Restore the pre-migration snapshot (console escape hatch if a re-key ever looks wrong).
+function restoreProfilesPreS3() {
+  const b = localStorage.getItem(COURIER_PROFILES_BACKUP_KEY);
+  if (!b) { console.warn('[S3] no pre-migration backup found'); return false; }
+  localStorage.setItem(COURIER_PROFILES_KEY, b);
+  localStorage.removeItem(COURIER_PROFILES_SCHEMA_KEY);
+  console.info('[S3] profiles restored from pre-migration backup'); return true;
+}
 
 // Per-key newest-wins merge. Used so an edit made on another device (carrying a newer
 // _t timestamp) actually overrides this device's stale copy — the old `{...cloud,...local}`
@@ -6830,7 +7112,10 @@ const OVERRIDABLE_FIELDS = ['model','modelCustom','accountRent','carRent','salar
 function getEffectiveProfile(name, monthKey) {
   const base = getCourierProfile(name);
   if (!monthKey) return base;
-  const nk  = driverKey(name);
+  // Base is identity-resolved (S3); monthly OVERRIDES stay name-keyed (out of S3 scope — no
+  // per-identity override UI). Consistent for the unambiguous names that carry overrides.
+  const nm  = (typeof name === 'string') ? name : (name && name.name);
+  const nk  = driverKey(nm);
   const all = loadOverrides();
   const keys = Object.keys(all)
     .filter(k => k.startsWith(nk + '::') && k.slice(nk.length + 2) <= monthKey) // 'YYYY-MM' string compare
@@ -7126,7 +7411,7 @@ function computeDriverPnL(name, monthKey) {
   const netPnL    = income + acctRent + carRent + salary + fleetCut + other + bonusCost;
   // hasProfile = the driver has a SAVED cost profile (vs falling back to defaultProfile()).
   // Without this, "Fleet keeps" is just raw net with no rent/salary/cut applied.
-  const hasProfile = Object.prototype.hasOwnProperty.call(loadCourierProfiles(), driverKey(name));
+  const hasProfile = hasCourierProfile(name);   // S3: identity-aware
   return { name, model:p.model, modelCustom:p.modelCustom, income, acctRent, carRent, salary, fleetCut, other,
            ambOwed, saudiA, bonusCost, ambPayout:ambP, ambassador:p.ambassador||null, ambModel:p.ambassadorModel||null, netPnL, hasProfile, profile:p };
 }
@@ -7142,7 +7427,7 @@ function getDriversInMonth(monthKey) {
 }
 function computeModelRollup(monthKey) {
   const drivers = getDriversInMonth(monthKey);
-  Object.keys(loadCourierProfiles()).forEach(k => { if (!drivers.some(d => driverKey(d) === k)) drivers.push(k); });
+  courierProfileNames().forEach(nm => { if (!drivers.some(d => driverKey(d) === driverKey(nm))) drivers.push(nm); });   // S3: profile-only by name
   const pls = drivers.map(name => computeDriverPnL(name, monthKey));
   const groups = {};
   pls.forEach(pl => {
@@ -7737,7 +8022,7 @@ function renderFinanceCourierView() {
       if (d.name) nameMap.set(driverKey(d.name), d.name.trim());
     });
   });
-  Object.keys(loadCourierProfiles()).forEach(k => { if (!nameMap.has(k)) nameMap.set(k, k); });
+  courierProfileNames().forEach(nm => { const k = driverKey(nm); if (k && !nameMap.has(k)) nameMap.set(k, nm); });   // S3: profile-only by name
   const allDriverNames = [...nameMap.values()].sort((a,b) => a.localeCompare(b));
   if (!allDriverNames.length) {
     document.getElementById('financeMainContent').innerHTML =
@@ -7886,7 +8171,7 @@ function renderFinanceCourierView() {
 // this view can never disagree with the detail views.
 function computeExecMonth(monthKey) {
   const names = getDriversInMonth(monthKey);
-  Object.keys(loadCourierProfiles()).forEach(k => { if (!names.some(d => driverKey(d) === k)) names.push(k); });
+  courierProfileNames().forEach(nm => { if (!names.some(d => driverKey(d) === driverKey(nm))) names.push(nm); });   // S3: profile-only by name
   const pls = names.map(n => computeDriverPnL(n, monthKey));
   // ★ HIS INCOME MODEL (Build-159 fix): the driver's Bolt net is the DRIVER'S money —
   // it is NEVER company revenue. The company earns from (1) rentals/deal income on the
@@ -9524,8 +9809,7 @@ function ambPayoutFor(name, profile, monthlyNet, monthKey) {
 function getAllDriverNames() {
   const map = new Map();
   getHistory().forEach(h => (Array.isArray(h.drivers)?h.drivers:[]).forEach(d => { if (d.name) map.set(driverKey(d.name), d.name.trim()); }));
-  const profiles = loadCourierProfiles();
-  Object.keys(profiles).forEach(k => { if (!map.has(k)) map.set(k, k); });
+  courierProfileNames().forEach(nm => { const k = driverKey(nm); if (k && !map.has(k)) map.set(k, nm); });   // S3: profile-only drivers by display name
   return [...map.values()].sort((a,b)=>a.localeCompare(b));
 }
 
@@ -10402,7 +10686,7 @@ function handleAmbassadorFile(file) {
       // Known driver names from data + existing profiles, for typo warnings.
       const knownKeys = new Set();
       getHistory().forEach(h => (Array.isArray(h.drivers)?h.drivers:[]).forEach(d => { if (d.name) knownKeys.add(driverKey(d.name)); }));
-      Object.keys(loadCourierProfiles()).forEach(k => knownKeys.add(k));
+      courierProfileNames().forEach(nm => knownKeys.add(driverKey(nm)));   // S3: by display name
 
       const profiles = loadCourierProfiles();
       const mapping  = Array.isArray(nameMapping) ? [...nameMapping] : [];
@@ -10422,9 +10706,14 @@ function handleAmbassadorFile(file) {
         const key = driverKey(saudi);
         if (!knownKeys.has(key)) unknown.push(saudi);   // still applied — activates when data arrives
 
+        // S3: write on the driver's IDENTITY key (unambiguous name → its phone/uuid; else
+        // 'nm:'+key). The Excel carries no phone, so a collision name lands on the shared
+        // 'nm:' bucket — documented; per-identity ambassador import needs a phone column.
+        const idk = courierIdentityKey(saudi);
         const num = v => (v != null && String(v).trim() !== '') ? (parseFloat(String(v).replace(/[^\d.\-]/g,'')) || 0) : null;
-        const base = profiles[key] || defaultProfile();
-        profiles[key] = { ...base,
+        const base = profiles[idk] || getCourierProfile(saudi) || defaultProfile();
+        profiles[idk] = { ...base,
+          _name:           base._name || saudi,
           ambassador:      amb || null,
           ambassadorModel: model || null,
           ambFirstTrip:    ambNormDate(r[4]) || base.ambFirstTrip || null,
@@ -10626,10 +10915,9 @@ function renderAmbassadorsView() {
   const [yy, mm] = monthKey.split('-').map(Number);
   const monthIdx = mm - 1, year = yy;
 
-  const profiles = loadCourierProfiles();
   const allNames = getAllDriverNames();
   const pickerOpts = ['<option value="">— pick a driver to assign / edit —</option>']
-    .concat(allNames.map(n => { const p = profiles[driverKey(n)]; const tag = p&&p.ambassador?` · 🎖 ${p.ambassador}`:''; return `<option value="${n.replace(/"/g,'&quot;')}">${n}${tag}</option>`; })).join('');
+    .concat(allNames.map(n => { const p = getCourierProfile(n); const tag = p&&p.ambassador?` · 🎖 ${p.ambassador}`:''; return `<option value="${n.replace(/"/g,'&quot;')}">${n}${tag}</option>`; })).join('');
   const monthOpts = (months.length ? months : [monthKey]).map(m => `<option value="${m}" ${m===monthKey?'selected':''}>${monthLabel(m)}</option>`).join('');
 
   const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -10703,7 +10991,7 @@ function renderAmbassadorsView() {
         const w = W.map[d.key];
         const paceCollapse = w && w.priorDays >= 3 && w.priorNet >= 800 && w.recentNet < w.priorNet * 0.5;
         const tierSlip = R.projectable && !d.idle && netTierBand(d.net) > d.band;
-        if (paceCollapse || tierSlip) { const a = (getCourierProfile(d.name) && getCourierProfile(d.name).ambassador || '').trim().toLowerCase();
+        if (paceCollapse || tierSlip) { const a = courierAmbassadorFor(d).toLowerCase();   // S3: identity
           if (a) { slippingByAmb[a] = (slippingByAmb[a] || 0) + 1; slippingTotal++; } }
       });
     }
@@ -11172,7 +11460,7 @@ function escCsv(s) {
 function exportFinanceCSV() {
   const monthKey = financeMonth;
   const drivers = getDriversInMonth(monthKey);
-  Object.keys(loadCourierProfiles()).forEach(k => { if (!drivers.some(d => driverKey(d) === k)) drivers.push(k); });
+  courierProfileNames().forEach(nm => { if (!drivers.some(d => driverKey(d) === driverKey(nm))) drivers.push(nm); });   // S3: profile-only by name
   const pls = drivers.map(name => computeDriverPnL(name, monthKey));
   const lines = [];
   lines.push(`# Bolt Finance v2 export — generated ${new Date().toISOString()}`);
@@ -11599,7 +11887,7 @@ function dkAnalyticsTierMovement(R) {
   });
   ups.sort((a, b) => (b.tb - b.lb) - (a.tb - a.lb));
   downs.sort((a, b) => (a.tb - a.lb) - (b.tb - b.lb));
-  const row = (x, arrow, col) => `<div class="dk-mini" onclick="dkOpenDriver('${esc(x.d.name)}','${R.monthSel}')"><span class="nm">${lookupForeignName(x.d.name) || x.d.name}</span><span class="rt" style="color:${col}">${arrow} ${bandLabel(x.lb)}→${bandLabel(x.tb)}</span></div>`;
+  const row = (x, arrow, col) => `<div class="dk-mini" onclick="dkOpenDriver('${esc(x.d.name)}','${R.monthSel}','${esc(String(x.d.driverId||''))}','${esc(String(x.d.phone||''))}')"><span class="nm">${lookupForeignName(x.d.name) || x.d.name}</span><span class="rt" style="color:${col}">${arrow} ${bandLabel(x.lb)}→${bandLabel(x.tb)}</span></div>`;
   const col2 = (title, list, arrow, col) => `<div class="dk-card"><div class="dk-card-t"><span class="t">${title}</span><span class="go">${list.length}</span></div>${list.length ? list.slice(0, 10).map(x => row(x, arrow, col)).join('') : `<div style="color:var(--dk-dim);font-size:12px;padding:4px">none</div>`}</div>`;
   return `<div class="dk-grid">
     ${col2(`▲ Climbed vs ${prevLabel}`, ups, '▲', 'var(--dk-brand)')}
@@ -11613,7 +11901,7 @@ function dkAnalyticsPushable(R) {
   if (!list.length) return `<div class="dk-card" style="color:var(--dk-mut);font-size:12px">No realistic tier pushes right now — everyone's on track or out of reach.</div>`;
   const esc = s => String(s || '').replace(/'/g, "\\'");
   const totalUnlocks = list.reduce((s, d) => s + d.unlocks, 0);
-  const rows = list.map(d => `<tr class="click" onclick="dkOpenDriver('${esc(d.name)}','${R.monthSel}')">
+  const rows = list.map(d => `<tr class="click" onclick="dkOpenDriver('${esc(d.name)}','${R.monthSel}','${esc(String(d.driverId||''))}','${esc(String(d.phone||''))}')">
     <td class="name">${lookupForeignName(d.name) || d.name}${d.accDrop ? ` <span style="color:var(--dk-danger);font-size:10px">↘${d.accDrop}pp</span>` : ''}</td>
     <td>${dkTierPill(d.band, { hollow: true })} <span style="color:var(--dk-dim)">→</span> ${dkTierPill(R.bandOf(d.nextFloor), { hollow: true })}</td>
     <td class="num">${fmt(d.proj)}</td>
@@ -11632,8 +11920,8 @@ function dkAnalyticsIdleRecovery(R) {
   const idle = R.current.filter(d => d.idle && !d.blocked).map(d => ({ d, v: recentEarn(d.key) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
   const drops = R.current.filter(d => d.accDrop && !d.blocked).sort((a, b) => (b.accDrop || 0) - (a.accDrop || 0));
   const recoverable = idle.reduce((s, x) => s + x.v, 0);
-  const idleRows = idle.slice(0, 12).map(x => `<div class="dk-mini" onclick="dkOpenDriver('${esc(x.d.name)}','${R.monthSel}')"><span class="nm">${lookupForeignName(x.d.name) || x.d.name}</span><span class="rt" style="color:var(--dk-warn)">~${fmt(Math.round(x.v))} SAR / 28d</span></div>`).join('') || `<div style="color:var(--dk-dim);font-size:12px;padding:4px">no idle earners to recover</div>`;
-  const dropRows = drops.slice(0, 12).map(d => `<div class="dk-mini" onclick="dkOpenDriver('${esc(d.name)}','${R.monthSel}')"><span class="nm">${lookupForeignName(d.name) || d.name}</span><span class="rt" style="color:var(--dk-danger)">↘ ${d.accDrop}pp acceptance</span></div>`).join('') || `<div style="color:var(--dk-dim);font-size:12px;padding:4px">no acceptance drops</div>`;
+  const idleRows = idle.slice(0, 12).map(x => `<div class="dk-mini" onclick="dkOpenDriver('${esc(x.d.name)}','${R.monthSel}','${esc(String(x.d.driverId||''))}','${esc(String(x.d.phone||''))}')"><span class="nm">${lookupForeignName(x.d.name) || x.d.name}</span><span class="rt" style="color:var(--dk-warn)">~${fmt(Math.round(x.v))} SAR / 28d</span></div>`).join('') || `<div style="color:var(--dk-dim);font-size:12px;padding:4px">no idle earners to recover</div>`;
+  const dropRows = drops.slice(0, 12).map(d => `<div class="dk-mini" onclick="dkOpenDriver('${esc(d.name)}','${R.monthSel}','${esc(String(d.driverId||''))}','${esc(String(d.phone||''))}')"><span class="nm">${lookupForeignName(d.name) || d.name}</span><span class="rt" style="color:var(--dk-danger)">↘ ${d.accDrop}pp acceptance</span></div>`).join('') || `<div style="color:var(--dk-dim);font-size:12px;padding:4px">no acceptance drops</div>`;
   return `<div class="dk-grid">
     <div class="dk-card"><div class="dk-card-t"><span class="t">Idle · was earning (recoverable)</span><span class="go">${idle.length}</span></div>
       <div class="dk-big">${fmt(Math.round(recoverable))}<small> SAR at stake</small></div>${idleRows}</div>
@@ -11742,7 +12030,7 @@ function renderAnalytics() {
     list.sort((a,b)=>{ const va=f(a),vb=f(b); const c=(typeof va==='string')?va.localeCompare(vb):va-vb; return analyticsDrillAsc?c:-c; });
     const dth=(lbl,col,r)=>{ const on=analyticsDrillSort===col,ar=!on?'⇅':analyticsDrillAsc?'▲':'▼';
       return `<th onclick="setAnalyticsDrillSort('${col}')" style="cursor:pointer;user-select:none;padding:6px 9px;font-size:9px;letter-spacing:.04em;font-weight:600;color:${on?'var(--cyan)':'var(--text-muted)'};text-align:${r?'right':'left'};white-space:nowrap">${lbl} <span style="opacity:${on?1:.3}">${ar}</span></th>`; };
-    const rows = list.length ? list.map(d=>`<tr onclick="dkOpenDriver('${String(d.name).replace(/'/g,"\\'")}','${analyticsMonth}')" style="cursor:pointer;border-bottom:1px solid rgba(255,255,255,.04)" title="Open driver panel">
+    const rows = list.length ? list.map(d=>`<tr onclick="dkOpenDriver('${String(d.name).replace(/'/g,"\\'")}','${analyticsMonth}','${String(d.driverId||'').replace(/'/g,"\\'")}','${String(d.phone||'').replace(/'/g,"\\'")}')" style="cursor:pointer;border-bottom:1px solid rgba(255,255,255,.04)" title="Open driver panel">
       <td style="padding:6px 9px;font-size:12px;color:var(--text);font-weight:600">${dn(d)}</td>
       <td style="padding:6px 9px">${statusChip(d)}</td>
       <td style="padding:6px 9px;text-align:right;font-family:var(--mono);font-size:12px;color:${d.orders?'var(--text)':'var(--red)'}">${d.orders}</td>
@@ -11888,7 +12176,8 @@ async function renderRampCohort() {
     else if (ageD <= 3)   { status = chip('JUST ACTIVATED','rgba(0,212,255,.14)','var(--cyan)'); }
     else                  { status = chip('NOT STARTED','rgba(255,170,0,.14)','var(--amber)'); notStarted++; }
     const dispName = m.driverId && known[m.driverId] ? known[m.driverId].name : c.name;
-    return `<tr onclick="dkOpenDriver('${String(dispName).replace(/'/g,"\\'")}')" style="cursor:pointer;border-bottom:1px solid rgba(255,255,255,.04)" title="Open driver panel">
+    const _kph = (m.driverId && known[m.driverId] && known[m.driverId].phone) || m.phone || '';
+    return `<tr onclick="dkOpenDriver('${String(dispName).replace(/'/g,"\\'")}',null,'${String(m.driverId||'').replace(/'/g,"\\'")}','${String(_kph).replace(/'/g,"\\'")}')" style="cursor:pointer;border-bottom:1px solid rgba(255,255,255,.04)" title="Open driver panel">
       <td style="padding:6px 9px;font-size:12px;font-weight:600;color:var(--text)">${he(lookupForeignName(dispName)||dispName)}</td>
       <td style="padding:6px 9px;font-size:11px;color:var(--text-muted);white-space:nowrap">${new Date(c.t).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} · ${ageD}d ago</td>
       <td style="padding:6px 9px;text-align:right;font-family:var(--mono);font-size:12px">${m.driverId ? workDays : '—'}</td>
@@ -11963,14 +12252,16 @@ async function openChaseList() {
   // Build-158: chase-outcome loop — annotate who was already chased recently, and report
   // whether the last chase actually moved anyone (a trip AFTER the chase date).
   const allProfiles = loadCourierProfiles();
-  const chasedAtOf = k => { const p = allProfiles[k]; const t = p && p.lastChased ? Date.parse(p.lastChased) : NaN; return isNaN(t) ? null : t; };
-  const chasedNote = d => { const t = chasedAtOf(d.key); if (t == null) return '';
+  // S3: profiles are identity-keyed; read by the driver-like row (getCourierProfile resolves),
+  // and cross-reference lastTrip by mapping each profile key back to its name-key.
+  const chasedAtOf = d => { const p = getCourierProfile(d); const t = p && p.lastChased ? Date.parse(p.lastChased) : NaN; return isNaN(t) ? null : t; };
+  const chasedNote = d => { const t = chasedAtOf(d); if (t == null) return '';
     const dd = Math.floor((now - t)/DAY); return dd <= 14 ? ` · ☎ chased ${dd === 0 ? 'today' : dd + 'd ago'}` : ''; };
   let chasedN = 0, movedN = 0;
-  Object.keys(allProfiles).forEach(k => {
-    const t = chasedAtOf(k); if (t == null) return;
+  Object.entries(allProfiles).forEach(([pk, p]) => {
+    const t = p && p.lastChased ? Date.parse(p.lastChased) : NaN; if (isNaN(t)) return;
     const age = (now - t)/DAY; if (age < 2 || age > 14) return;   // too fresh to judge / too old to credit
-    chasedN++; if (lastTrip[k] && lastTrip[k] > t) movedN++;
+    chasedN++; const nk = driverKey(courierKeyToName(pk, p)); if (lastTrip[nk] && lastTrip[nk] > t) movedN++;
   });
   const prevLabel = new Date(prevY, prevM0, 1).toLocaleDateString('en-GB', { month: 'short' });
   const monLabel  = new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'short' });
@@ -12398,17 +12689,40 @@ function dkDriverTierPill(d, R) {
   const banked = R.bandOf(d.net);
   return dkTierPill(d.band, { hollow: d.band > banked, title: `net ${fmt(Math.round(d.net))} · proj ${fmt(d.proj)}` });
 }
+// S3 · a driver's ambassador, attributed by IDENTITY. Prefers the manually-tagged
+// identity-keyed profile; falls back to the onboarding sheet matched by THIS driver's phone
+// (confidence 'high') — so two same-named drivers each get their own, and an unmatched one
+// gets '' (→ "—"), never the other driver's. arg = a driver-like {name,driverId,phone} or name.
+function courierAmbassadorFor(arg) {
+  const p = getCourierProfile(arg);
+  if (p && p.ambassador && String(p.ambassador).trim()) return String(p.ambassador).trim();
+  let ph = (arg && typeof arg === 'object' && arg.phone) ? normPhoneForMatch(arg.phone) : '';
+  if (!ph) { const idk = courierIdentityKey(arg); if (typeof idk === 'string' && idk.startsWith('ph:')) ph = idk.slice(3); }
+  if (ph && typeof sheetAmbassadorSyncCache !== 'undefined' && Array.isArray(sheetAmbassadorSyncCache)) {
+    const row = sheetAmbassadorSyncCache.find(s => normPhoneForMatch(s.phone) === ph);
+    if (row && row.ambassador && String(row.ambassador).trim()) return String(row.ambassador).trim();
+  }
+  return '';
+}
 // #9 · ambassador-name tag — replaces the legacy MODEL S/F/R + REF N/M/Y/H letters
-// everywhere. Reads the driver's tagged ambassador from their profile; dim — when unset.
-function dkAmbTag(name) {
-  const a = (getCourierProfile(name) && getCourierProfile(name).ambassador || '').trim();
+// everywhere. arg is a driver-like row (identity) or a bare name; dim — when unset.
+function dkAmbTag(arg) {
+  const a = courierAmbassadorFor(arg);
   return a ? `<span class="dk-amb" title="Ambassador: ${a.replace(/"/g, '&quot;')}">${a}</span>`
            : `<span class="dk-amb none" title="No ambassador tagged">—</span>`;
 }
 
 // ── A1 propagation: open the driver panel scoped to the tab's selected month ──
-function dkOpenDriver(name, monthKey) {
-  openModal(name, null, { monthFilter: (monthKey && monthKey !== 'all') ? monthKey : null });
+// S3: optional identity so callers holding a driver-like row open the RIGHT same-named
+// driver. The 3rd arg is either an {driverId, phone} object OR a driverId string (with the
+// phone as the 4th arg) — the latter form is what inline onclick handlers pass. Name-only
+// callers keep the old behaviour.
+function dkOpenDriver(name, monthKey, identOrDriverId, phone) {
+  const ident = (identOrDriverId && typeof identOrDriverId === 'object')
+    ? identOrDriverId : { driverId: identOrDriverId || '', phone: phone || '' };
+  const ctx = { monthFilter: (monthKey && monthKey !== 'all') ? monthKey : null };
+  if (ident.driverId || ident.phone) ctx.ident = { name, driverId: ident.driverId || '', phone: ident.phone || '' };
+  openModal(name, null, ctx);
 }
 
 // ── Shared drill overlay (body-level) — the Command Center list-overlay pattern,
@@ -12437,7 +12751,7 @@ function dkDriverRows(list, monthKey) {
   const jsq = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   if (!list || !list.length) return `<div style="color:var(--dk-dim);font-size:12px;padding:6px">No drivers here right now.</div>`;
-  return list.map(r => `<div class="dk-row click" onclick="dkCloseOverlay();dkOpenDriver('${jsq(r.name)}','${jsq(monthKey)}')">
+  return list.map(r => `<div class="dk-row click" onclick="dkCloseOverlay();dkOpenDriver('${jsq(r.name)}','${jsq(monthKey)}','${jsq(r.driverId||'')}','${jsq(r.phone||'')}')">
     <span class="k">${escH(lookupForeignName(r.name) || r.name)}${r.pill ? ' ' + r.pill : ''}${r.sub || ''}</span>
     <span class="v">${r.right || ''}</span></div>`).join('');
 }
@@ -12453,24 +12767,25 @@ function todayStatDrill(kind, ev) {
   const pill = d => dkDriverTierPill(d, R);
   const num = v => `<span class="dk-num">${fmt(Math.round(v))}</span>`;
   const sar = v => num(v) + ` <small style="color:var(--dk-dim)">SAR</small>`;
+  const idOf = d => ({ driverId: (d && d.driverId) || '', phone: (d && d.phone) || '' });   // S3: carry identity into the drill row
   let list = [], title = '';
   if (kind === 'active') {                             // Fleet Net card → drivers earning this month
     list = cur.filter(d => !d.idle && !d.blocked).slice().sort((a, b) => b.net - a.net)
-      .map(d => ({ name: d.name, pill: pill(d), right: sar(d.net) }));
+      .map(d => ({ name: d.name, ...idOf(d), pill: pill(d), right: sar(d.net) }));
     title = 'Active this month';
   } else if (kind === 'bonus') {                       // Proj Bonus card → drivers generating company bonus
     list = cur.filter(d => !d.idle && d.companyBonus > 0).slice().sort((a, b) => b.companyBonus - a.companyBonus)
-      .map(d => ({ name: d.name, pill: pill(d), right: `+${fmt(Math.round(d.companyBonus))} <small style="color:var(--dk-dim)">bonus</small>` }));
+      .map(d => ({ name: d.name, ...idOf(d), pill: pill(d), right: `+${fmt(Math.round(d.companyBonus))} <small style="color:var(--dk-dim)">bonus</small>` }));
     title = 'Projected company bonus — contributors';
   } else if (kind === 'needspush') {                   // Needs Push card → idle + below-pace (== stat strip)
     const idle = cur.filter(d => d.idle && !d.blocked).slice().sort((a, b) => (b.net || 0) - (a.net || 0));
     const slow = (R.projectable ? cur.filter(d => !d.idle && !d.blocked && d.band === 0) : []).slice().sort((a, b) => b.net - a.net);
-    list = idle.map(d => ({ name: d.name, pill: pill(d), right: `<span style="color:var(--dk-warn)">idle · no trips</span>` }))
-      .concat(slow.map(d => ({ name: d.name, pill: pill(d), right: `<span style="color:var(--dk-warn)">below 4k pace</span> · ${num(d.net)}` })));
+    list = idle.map(d => ({ name: d.name, ...idOf(d), pill: pill(d), right: `<span style="color:var(--dk-warn)">idle · no trips</span>` }))
+      .concat(slow.map(d => ({ name: d.name, ...idOf(d), pill: pill(d), right: `<span style="color:var(--dk-warn)">below 4k pace</span> · ${num(d.net)}` })));
     title = 'Needs a push — idle + below pace';
   } else if (kind === 'blocked') {                     // Blocked card → live-suspended drivers
     list = cur.filter(d => d.blocked).slice().sort((a, b) => (b.proj || b.net) - (a.proj || a.net))
-      .map(d => ({ name: d.name, pill: `<span class="dk-statechip blocked">blocked</span>`, right: sar(d.proj || d.net) }));
+      .map(d => ({ name: d.name, ...idOf(d), pill: `<span class="dk-statechip blocked">blocked</span>`, right: sar(d.proj || d.net) }));
     title = 'Blocked on Bolt';
   } else if (kind === 'latestday') {                   // Active Today card → that day's active drivers
     const hist = getHistory().slice().sort((a, b) => periodSortKey(b.period) - periodSortKey(a.period));
@@ -12479,12 +12794,12 @@ function todayStatDrill(kind, ev) {
     (latest && latest.drivers || []).forEach(d => {
       if (!d.name) return;
       const o = sN(d.orders), hrs = sN(d.hoursOnline), net = sN(d.netEarnings);
-      if (hrs > 0 || o > 0) rows.push({ name: d.name, key: driverKey(d.name), net, orders: o });
+      if (hrs > 0 || o > 0) rows.push({ name: d.name, key: driverKey(d.name), driverId: d.driverId || '', phone: d.phone || '', net, orders: o });
     });
     rows.sort((a, b) => b.net - a.net);
     list = rows.map(r => {
       const rd = byKey[r.key], p = rd ? dkDriverTierPill(rd, R) : dkTierPill(netTierBand(r.net));
-      return { name: r.name, pill: p, right: `${num(r.net)} <small style="color:var(--dk-dim)">${fmt(r.orders)} trips today</small>` };
+      return { name: r.name, driverId: r.driverId, phone: r.phone, pill: p, right: `${num(r.net)} <small style="color:var(--dk-dim)">${fmt(r.orders)} trips today</small>` };
     });
     title = `Active — ${latest ? String(latest.period).replace(/\s\d{4}$/, '') : 'latest day'}`;
   } else if (kind === '6000' || kind === '5000' || kind === '4000' || kind === 'below') {   // Tier pills → each band (== Finance)
@@ -12546,7 +12861,7 @@ function dkAlertRegistry(only) {
       const w = W.map[d.key];
       const paceCollapse = w && w.priorDays >= 3 && w.priorNet >= 800 && w.recentNet < w.priorNet * 0.5;
       const tierSlip = R.projectable && !d.idle && netTierBand(d.net) > d.band;
-      if (paceCollapse || tierSlip) { const a = (getCourierProfile(d.name) && getCourierProfile(d.name).ambassador || '').trim(); if (a) ambs.add(a.toLowerCase()); }
+      if (paceCollapse || tierSlip) { const a = courierAmbassadorFor(d); if (a) ambs.add(a.toLowerCase()); }   // S3: identity
     });
     if (ambs.size) out.push({ src:'amb-slipping', cls:'warn', n:ambs.size, txt:'ambassadors slipping', go:"todayGo('ambassadors')" });
   }
@@ -12949,6 +13264,7 @@ document.addEventListener('DOMContentLoaded', () => {
     autoLoadLatest();
     renderHistory();
     renderToday();               // Build-156: Today is the landing tab
+    migrateProfilesToIdentity().then(() => renderToday()).catch(() => {});  // S3: local-only re-key
     if (cloudReady) updateShareUI(binId);
   } else if (cloudReady) {
     fetchFromCloud().then(() => {
@@ -12980,6 +13296,7 @@ document.addEventListener('DOMContentLoaded', () => {
         autoLoadLatest();
         renderHistory();
         renderToday();               // Build-156: Today is the landing tab
+        migrateProfilesToIdentity().then(() => renderToday()).catch(() => {});  // S3: local-only re-key
       }
     });
   }
@@ -13026,8 +13343,11 @@ function initMissionClock() {
 
 // S0 de-cliché: the biometric-scan flourish is gone; this stays as a thin
 // pass-through so every Captains row still opens the driver panel unchanged.
-function bioScanThenOpen(id, rowEl, periodFilter) {
-  openModal(id, periodFilter || null);
+function bioScanThenOpen(id, rowEl, periodFilter, driverId, phone) {
+  // S3: captain rows pass their identity (driverId/phone) so a same-name collision opens the
+  // clicked driver, not whichever same-named driver sorts first.
+  const ident = (driverId || phone) ? { name: id, driverId: driverId || '', phone: phone || '' } : null;
+  openModal(id, periodFilter || null, ident ? { ident } : undefined);
 }
 
 // ═══════════════════════════════════════════
@@ -13114,7 +13434,7 @@ function ambassadorRollup(monthSel) {
   const get = name => { const k = name.trim().toLowerCase();
     return g[k] || (g[k] = { name: name.trim(), key: k, drivers: 0, active: 0, fleetNet: 0, slipping: 0, incSar: 0, incNative: 0, currency: 'SAR' }); };
   (R.current || []).forEach(d => {
-    const amb = (getCourierProfile(d.name) && getCourierProfile(d.name).ambassador || '').trim();
+    const amb = courierAmbassadorFor(d);   // S3: identity
     if (!amb) return;
     const row = get(amb);
     row.drivers++; if (!d.idle) row.active++; row.fleetNet += d.net;
@@ -13341,7 +13661,7 @@ function smLadderDrill(kind) {
     else                           { list = R.current.slice(); title = 'Activated (roster)'; }
     list = list.slice().sort((a, b) => (b.proj || b.net) - (a.proj || a.net));
     count = list.length;
-    rows = list.map(d => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(d.name)}','${R.monthSel}')">
+    rows = list.map(d => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(d.name)}','${R.monthSel}','${jsq(d.driverId||'')}','${jsq(d.phone||'')}')">
       <span class="k">${escH(d.name)} ${dkDriverTierPill(d, R)}</span><span class="v"><span class="dk-num">${fmt(Math.round(d.proj || d.net))}</span></span></div>`).join('');
   } else {
     const td = smTierDetail(R.monthSel);
@@ -13564,11 +13884,11 @@ function smAmbassadorDrill(name) {
   const jsq = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const key = String(name || '').trim().toLowerCase();
-  const list = R.current.filter(d => ((getCourierProfile(d.name) && getCourierProfile(d.name).ambassador || '').trim().toLowerCase()) === key)
+  const list = R.current.filter(d => courierAmbassadorFor(d).toLowerCase() === key)   // S3: identity
     .slice().sort((a, b) => b.net - a.net);
   const chip = d => d.blocked ? '<span class="dk-statechip blocked">blocked</span>'
     : d.idle ? '<span class="dk-statechip idle">idle</span>' : '<span class="dk-statechip active">active</span>';
-  const rows = list.map(d => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(d.name)}','${R.monthSel}')">
+  const rows = list.map(d => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(d.name)}','${R.monthSel}','${jsq(d.driverId||'')}','${jsq(d.phone||'')}')">
     <span class="k">${escH(d.name)} ${dkDriverTierPill(d, R)}</span>
     <span class="v">${chip(d)} · <span class="dk-num">${fmt(Math.round(d.net))}</span></span></div>`).join('');
   const openTab = `<div class="dk-row click" style="justify-content:center;color:var(--dk-info)" onclick="smCloseOverlay();openAmbassador('${jsq(name)}','${R.monthSel}')">open in Ambassadors tab →</div>`;
