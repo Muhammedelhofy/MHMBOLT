@@ -84,8 +84,46 @@ This confirms both detectors fire correctly on a known-bad day.
 
 ## Live run output
 
-_Not yet captured in this session (no live cloud history was loaded here). Paste the output
-of `auditHistoryCollisionsMarkdown()` from his live dashboard above this line._
+Captured from the live prod dashboard on 2026-07-21T13:04:41Z (74 history days loaded).
+
+- History days scanned: 74
+- Collision names (same name, ≥2 uuids, ≥2 phones): **2** — `abdullah alotaibi`, `meshari alanazi`
+- Findings (blended/dropped days): **11**, ALL cron-source, ALL in the 11–15 Jul 2026 window.
+
+| type | period | name | detail |
+|---|---|---|---|
+| BLEND | 15 Jul 2026 | ABDULLAH ALOTAIBI | row tagged uuid e03d8f58… but phone 500463526 is normally uuid 29bbf1e4… |
+| DROP | 12 Jul 2026 | ABDULLAH ALOTAIBI | uuid 29bbf1e4… present 25 Jun…21 Jul but MISSING 12 Jul |
+| DROP | 14 Jul 2026 | ABDULLAH ALOTAIBI | uuid 29bbf1e4… MISSING 14 Jul |
+| DROP | 15 Jul 2026 | ABDULLAH ALOTAIBI | uuid 29bbf1e4… MISSING 15 Jul |
+| DROP | 13 Jul 2026 | ABDULLAH ALOTAIBI | uuid e03d8f58… present 12–15 Jul but MISSING 13 Jul |
+| BLEND | 15 Jul 2026 | MESHARI ALANAZI | row tagged uuid b0f1545a… but phone 539708036 is normally uuid c3e33201… |
+| DROP | 11 Jul 2026 | Meshari Alanazi | uuid b0f1545a… present 01–15 Jul but MISSING 11 Jul |
+| DROP | 12 Jul 2026 | Meshari Alanazi | uuid b0f1545a… MISSING 12 Jul |
+| DROP | 13 Jul 2026 | Meshari Alanazi | uuid b0f1545a… MISSING 13 Jul |
+| DROP | 14 Jul 2026 | Meshari Alanazi | uuid b0f1545a… MISSING 14 Jul |
+| DROP | 15 Jul 2026 | MESHARI ALANAZI | uuid c3e33201… present 11–21 Jul but MISSING 15 Jul |
+
+**Note:** the original "Mohammed Alsubaie" pair is NOT flagged here — the suspended one has
+no order rows carrying a distinct phone in stored history, so it never met the ≥2-phones
+collision proof. S2 protects that pair going forward regardless (live block state is correct).
+
+**Repair path (chosen with Muhammad):** the API/Sync path has NO campaign field, so re-pulling
+via Bolt Sync would overwrite the campaign-inclusive net with a lower campaign-less number.
+Instead the damaged days were repaired via CSV (which carries BOTH campaign and phone — phone
+keys the two same-named drivers apart through the Build-176 identity merge). Because 15 Jul
+had blended rows (a corrupt uuid⟷phone union that poisons the merge), the uniform recipe was
+**delete the day, then re-upload its CSV** for each of 11–15 Jul 2026.
+
+**RESOLVED — 2026-07-21T13:19:54Z (post-repair re-run):**
+- History days scanned: 74
+- Collision names: **3** (`turki aldawsari`, `abdullah alotaibi`, `meshari alanazi`) — all
+  three are genuine same-named pairs, now correctly separated; `turki aldawsari` surfaced as a
+  collision name only after the clean CSV re-import exposed its second phone.
+- **Findings (blended/dropped days): 0** ✅ — no historical damage remains in loaded history.
+
+July monthly totals for the affected drivers are now correct (dropped days restored, campaign
+back in net), so their bonus-tier math is accurate. S2 prevents any recurrence going forward.
 
 ## If damaged days are found
 
