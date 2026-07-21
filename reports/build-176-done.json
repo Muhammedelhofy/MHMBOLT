@@ -1,0 +1,10 @@
+{
+  "build": "Build-176",
+  "status": "done",
+  "committed_sha": "1acc284611c9da3539c948f01f9a54b0b65c7054",
+  "files_changed": ["index.html", "tests/BUILD176_LIVE_TEST.md", "reports/build-176-history-audit.md"],
+  "test_result": "37/37 passed",
+  "migration_needed": false,
+  "migration_file": null,
+  "notes": "Extends S1 identity ladder to mergeDayEntries/aggregation/roster-split/blocks-worklist/transfer-ledger via a shared buildIdentityResolver; adds read-only history-collision audit (auditHistoryCollisions in console). No data rewrite. Courier profiles + foreign-name mapping deliberately left name-keyed (no uuid source; documented). Verified in-engine against the real inline script — browser preview couldn't reach the worktree (serve.ps1/preview bound to main checkout), so the live-cloud eyeball of the Alsubaie pair + the audit's Live-run output still need one run on his loaded dashboard (steps in the live-test doc)."
+}
