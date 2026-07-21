@@ -4572,6 +4572,12 @@ function saveHistory(arr) {
 
 // Build a day entry object from a drivers array (aggregates recomputed from `drivers`).
 function buildDayEntry(period, drivers, filename, pInfo, source) {
+  // Build-177 — a CSV upload OWNS the earnings numbers: its net includes campaign, which the
+  // Bolt API/cron pull has no field for at all. Stamp each CSV-sourced row so a later API
+  // re-sync (manual Bolt Sync / Pull / cloud merge) can NEVER overwrite its money — see
+  // mergeDriverEntry. Only stamped on a real 'csv' upload; merge-time rebuilds (source
+  // 'cron'/'api') leave any existing stamp untouched.
+  if (source === 'csv') drivers = drivers.map(d => (d.csvMoney ? d : { ...d, csvMoney: true }));
   const active = drivers.filter(d=>d.isActive);
   return {
     period, filename, uploadedAt:new Date().toISOString(), periodInfo:pInfo,
@@ -4605,22 +4611,38 @@ function buildDayEntry(period, drivers, filename, pInfo, source) {
 function mergeDriverEntry(older, newer) {
   if (!older) return newer;
   if (!newer) return older;
-  const out = { ...newer };
+  // Build-177 — MONEY AUTHORITY. A CSV upload owns the earnings numbers (its net includes
+  // campaign; the Bolt API/cron pull has no campaign field at all, so its net is lower and
+  // incomplete). So when the STORED (older) row's money is CSV-sourced and the INCOMING
+  // (newer) row is an API/cron re-sync (NOT csv), keep the CSV stats and let the API only
+  // backfill identity/live-state. This makes an accidental Bolt Sync / Pull harmless.
+  //   • csvMoney = the explicit stamp set on upload (buildDayEntry).
+  //   • campaign > 0 = a fallback so legacy rows saved before the stamp are still protected.
+  // A newer CSV (correction) is NOT blocked — it also reads as CSV-money, so it wins normally.
+  const isCsvMoney = d => !!(d.csvMoney || (d.campaign > 0));
+  const csvProtected = isCsvMoney(older) && !isCsvMoney(newer);
+  const base  = csvProtected ? older : newer;   // whose money/activity stats win
+  const other = csvProtected ? newer : older;   // fills only the gaps base is missing
+  const out = { ...base };
+  // Identity + live-state fields: prefer base, fall back to `other` when base lacks them.
+  // (Non-protected path: base=newer, other=older → byte-identical to the old keepStr behaviour.)
   const keepStr = ['boltState','boltSuspensionReason','boltSuspensionCategory','boltSuspendedSince',
     'vehicleState','vehicleSuspensionReason','vehiclePlate','activeCategories','inactiveCategories',
     'phone','email','driverId'];
   for (const f of keepStr) {
-    const nv = newer[f];
-    if ((nv == null || nv === '') && older[f] != null && older[f] !== '') out[f] = older[f];
+    const bv = base[f];
+    if ((bv == null || bv === '') && other[f] != null && other[f] !== '') out[f] = other[f];
   }
   // Numeric profile fields read back as 0 when absent (unpackDriver) → 0 means "no value":
-  // keep the older non-zero rating/score rather than let a state-less CSV zero it out.
-  for (const f of ['rating','score']) if (!newer[f] && older[f]) out[f] = older[f];
-  // Tri-state cash flag: null = unknown → keep the older known value (false is a real value).
-  if (newer.hasCashPayment == null && older.hasCashPayment != null) out.hasCashPayment = older.hasCashPayment;
-  // Tier is profile too: keep the older tier when the newer side has only the empty default.
+  // keep the non-zero rating/score rather than let a state-less side zero it out.
+  for (const f of ['rating','score']) if (!base[f] && other[f]) out[f] = other[f];
+  // Tri-state cash flag: null = unknown → keep the known value (false is a real value).
+  if (base.hasCashPayment == null && other.hasCashPayment != null) out.hasCashPayment = other.hasCashPayment;
+  // Tier is profile too: keep a real tier over the empty default.
   const tierLevel = t => (t && t.level != null) ? t.level : -1;
-  if (tierLevel(newer.tier) === -1 && tierLevel(older.tier) !== -1) out.tier = older.tier;
+  if (tierLevel(base.tier) === -1 && tierLevel(other.tier) !== -1) out.tier = other.tier;
+  // Sticky: once a driver-day carries CSV money it stays CSV-authoritative on every future merge.
+  if (isCsvMoney(older) || isCsvMoney(newer)) out.csvMoney = true;
   return out;
 }
 function mergeDayEntries(older, newer) {
@@ -6045,6 +6067,7 @@ function packDriver(d) {
   putS('vsr', d.vehicleSuspensionReason);
   putS('ic', d.inactiveCategories);        // disabled ride categories
   if (d.hasCashPayment != null) o.hcp = d.hasCashPayment ? 1 : 0;
+  if (d.csvMoney) o.csm = 1;   // Build-177: CSV-authoritative money (survives an API re-sync)
   if (d.isActive) o.a = 1;
   putN('gia', d.grossInApp); putN('act', d.acceptanceTotal); putN('ce', d.cashEarnings); putN('cf', d.cancellationFees);
   putN('tf', d.tollFees); putN('er', d.expenseReimbursements); putN('bf', d.bookingFees); putN('rr', d.refundsToRiders);
@@ -6064,7 +6087,7 @@ function unpackDriver(o) {
     tips: o.tp || 0, campaign: o.cm || 0, commission: o.co || 0, netPerHour: o.nph || 0, utilization: o.ut || 0,
     finishRate: o.fr || 0,
     fleetCut: o.fc ?? null, driverPayout: o.dp ?? null,
-    activeCategories: o.cat || '', isActive: !!o.a,
+    activeCategories: o.cat || '', isActive: !!o.a, csvMoney: !!o.csm,
     boltState: o.bs || '', boltSuspensionReason: o.bsr || '',
     boltSuspensionCategory: o.bsc || '', boltSuspendedSince: o.bss || '',
     vehiclePlate: o.vp || '', vehicleState: o.vs || '', vehicleSuspensionReason: o.vsr || '', inactiveCategories: o.ic || '',
