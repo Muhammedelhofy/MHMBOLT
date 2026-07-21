@@ -2434,7 +2434,11 @@ function getRosterReconciliation() {
 }
 
 function getDepartedKeys() {
-  const keyOf = d => (d.name || '').trim().toLowerCase() || (d.driverId || '').trim();
+  // S2 — key by canonical IDENTITY (uuid/phone ladder), not by lowercase name. This is
+  // what lets the suspended half of a name-collision pair be flagged departed on its own
+  // (absent from the roster) WITHOUT dragging the active same-named driver with it, and
+  // keeps the key space identical to buildAggregatedDrivers / computeRosterForMonth.
+  const keyOf = getIdentityResolver().canonOf;
   // F3 — the roster is the latest ROSTER-BEARING entry (F2), never a partial CSV day.
   // (A partial upload for today used to become "the roster" and wrongly badge ~28
   // idle-but-active drivers as LEFT FLEET.)
@@ -2453,13 +2457,18 @@ function getDepartedKeys() {
 // RENDER FLEET TAB
 // ═══════════════════════════════════════════
 function buildAggregatedDrivers(history) {
-  // Aggregate all periods into one virtual drivers array per unique driver
-  // Key: trimmed lowercase name (most consistent across different Bolt report types/periods).
-  // driverId can change between weekly vs daily report formats for the same physical driver.
+  // Aggregate all periods into one virtual drivers array per unique driver.
+  // S2 — key by canonical IDENTITY (uuid ⟷ phone union, name only when unambiguous),
+  // replacing the old lowercase-name key. Name-keying merged two DIFFERENT drivers who
+  // share a name into one row (blending earnings — the collision bug); identity-keying
+  // splits them while still bridging a single driver's uuid drift across report types
+  // whenever a shared phone ties the rows (the reason the old key used name at all).
+  // The resolver is built over the WHOLE history so its keys match getDepartedKeys.
+  const canonOf = getIdentityResolver().canonOf;
   const map = new Map();
   history.forEach(h => {
     h.drivers.forEach(d => {
-      const key = (d.name || '').trim().toLowerCase() || (d.driverId || '').trim();
+      const key = canonOf(d);
       if (!map.has(key)) {
         // Spread non-numeric identity fields (name, phone, tier, driverId…)
         // but zero-out ALL numeric accumulators so we never carry first-day values forward.
@@ -4615,7 +4624,15 @@ function mergeDriverEntry(older, newer) {
   return out;
 }
 function mergeDayEntries(older, newer) {
-  const keyOf = d => driverKey(d.name) || (d.driverId||'').trim();
+  // S2 — merge the two same-period entries by canonical IDENTITY, not by name. The old
+  // name key collapsed two DIFFERENT same-named drivers into ONE row: the second silently
+  // overwrote the first (data loss), and the suspended driver's boltState could land on the
+  // active driver's earnings row (state contamination — exactly the collision incident). A
+  // resolver built over just these two days' rows unions uuid ⟷ phone (so a legacy CSV
+  // phone-only row still merges with its cron uuid row) while keeping same-name-different-uuid
+  // rows as SEPARATE records. A fully anonymous row (no name, no sig) is dropped as before.
+  const { canonOf } = buildIdentityResolver([...(older.drivers||[]), ...(newer.drivers||[])]);
+  const keyOf = d => { const k = canonOf(d); return (k && k !== 'nm:') ? k : ''; };
   const byKey = new Map();
   (older.drivers||[]).forEach(d => { const k = keyOf(d); if (k) byKey.set(k, d); });
   (newer.drivers||[]).forEach(d => { const k = keyOf(d); if (k) byKey.set(k, mergeDriverEntry(byKey.get(k), d)); }); // newer wins on activity; state/profile retained
@@ -5182,6 +5199,188 @@ function isLiveBlocked(idx, d) {
   return !!nk && idx.byName.has(nk);
 }
 
+// ── S2 · cross-report identity RESOLVER (Build-176) ───────────────────────────
+// One PHYSICAL driver can surface under several keys across Bolt report types: a
+// driver_uuid here, a 9-digit phone there, a legacy CSV row carrying only a name +
+// phone (no uuid). This resolver unions those keys into ONE canonical identity so
+// aggregation / roster / merge logic count a driver exactly once — WITHOUT ever
+// collapsing two DIFFERENT drivers who merely share a display name (the "Mohammed
+// Alsubaie" vs "MOHAMMED ALSUBAIE" collision that S1 fixed for block state).
+//
+// Rules (extending S1's identSigsOf ladder — NOT a second scheme):
+//   1. HARD union — sigs that co-occur on the SAME row (uuid ⟷ phone) are the same
+//      driver. This is what lets a legacy phone-only CSV row join its API/cron uuid
+//      row, and bridges a uuid that "drifted" across weekly-vs-daily reports whenever
+//      a shared phone ties the two rows together.
+//   2. A NAME is a usable JOIN link ONLY when it is globally UNAMBIGUOUS — carried by
+//      at most ONE distinct hard component across all rows. A name carried by ≥2
+//      distinct identities (the collision) never bridges, so same-name-different-uuid
+//      rows stay SEPARATE and their earnings / state never blend.
+// canonOf(d) → a stable, iteration-order-INDEPENDENT key (smallest sig in the
+// component; falls back to 'nm:'+nameKey for a name-only row of an unambiguous name,
+// which is how a CSV-only row still reaches its identity). Two invocations over the
+// same row set always agree, so departed-keys and agg-keys line up.
+function buildIdentityResolver(rows) {
+  const parent = new Map();
+  const find = x => { let r = x; while (parent.get(r) !== r) r = parent.get(r);
+    while (parent.get(x) !== r) { const n = parent.get(x); parent.set(x, r); x = n; } return r; };
+  const add = x => { if (!parent.has(x)) parent.set(x, x); return x; };
+  const union = (a, b) => { add(a); add(b); parent.set(find(a), find(b)); };
+  // 1) hard union: uuid ⟷ phone observed together on one row
+  for (const d of (rows || [])) { const s = identSigsOf(d); s.forEach(add); for (let i = 1; i < s.length; i++) union(s[0], s[i]); }
+  // 2) ambiguity census: name key → set of distinct hard-component roots carrying it
+  const compsByName = new Map();
+  for (const d of (rows || [])) {
+    const nk = driverKey(d.name); if (!nk) continue;
+    const s = identSigsOf(d);
+    if (!compsByName.has(nk)) compsByName.set(nk, new Set());
+    if (s.length) compsByName.get(nk).add(find(s[0]));
+  }
+  const ambiguousNames = new Set();
+  for (const [nk, comps] of compsByName) if (comps.size >= 2) ambiguousNames.add(nk);
+  // stable, order-independent label per component = its smallest sig string
+  const labelByRoot = new Map();
+  for (const sig of parent.keys()) { const r = find(sig); const c = labelByRoot.get(r); if (c === undefined || sig < c) labelByRoot.set(r, sig); }
+  // unambiguous name → its single component's label, so a name-only row can attach
+  const nameToLabel = new Map();
+  for (const [nk, comps] of compsByName) if (comps.size === 1) nameToLabel.set(nk, labelByRoot.get(find([...comps][0])));
+  const canonOf = d => {
+    const s = identSigsOf(d);
+    if (s.length) return labelByRoot.get(find(s[0]));
+    const nk = driverKey(d.name);
+    if (nk && nameToLabel.has(nk)) return nameToLabel.get(nk); // name-only row → its person
+    return nk ? 'nm:' + nk : 'nm:';                            // ambiguous/sig-less → cannot be split further
+  };
+  return { canonOf, ambiguousNames };
+}
+// Memoised resolver over the WHOLE history, so every render-time consumer
+// (getDepartedKeys / buildAggregatedDrivers / computeRosterForMonth) shares ONE
+// identity space — their canonical keys must agree or departed/left flags misfire.
+// Re-reads the raw history string and rebuilds only when it changed (cheap; keeps
+// the labels in lock-step with getHistory's own cache).
+let _identResolver = null, _identResolverRaw = null;
+function getIdentityResolver() {
+  const raw = localStorage.getItem('khair_perf_history');
+  if (raw === _identResolverRaw && _identResolver) return _identResolver;
+  const flat = [];
+  for (const h of getHistory()) for (const d of (h.drivers || [])) flat.push(d);
+  _identResolver = buildIdentityResolver(flat);
+  _identResolverRaw = raw;
+  return _identResolver;
+}
+
+// ── S2 · ONE-TIME stored-history COLLISION AUDIT (Build-176, READ-ONLY) ────────
+// Scans khair_history for name keys that carry ≥2 distinct driver_uuids (real
+// same-name collisions, confirmed by ≥2 distinct phones) and reports days where the
+// OLD name-keyed merge likely BLENDED or DROPPED one of the pair. It NEVER writes —
+// the stored history only holds the post-merge result, so this flags days for review;
+// recovering the pre-merge originals (if needed) is a separate, explicitly-approved step.
+//   BLEND — a single row whose driver_uuid is A but whose phone globally belongs to B
+//           (identity fields from two people fused onto one earnings row).
+//   DROP  — an identity present on days BEFORE and AFTER is missing from a day that
+//           still carries the shared name (one of the pair silently vanished on merge).
+// Returns { collisionNames, findings, days, generatedAt }.
+function auditHistoryCollisions() {
+  const hist = [...getHistory()].sort((a,b)=>periodSortKey(a.period)-periodSortKey(b.period));
+  const norm9 = p => String(p||'').replace(/\D/g,'').slice(-9);
+  // Global identity maps
+  const uuidPhones = new Map();      // uuid -> Set(phone9)
+  const phoneUuids = new Map();      // phone9 -> Set(uuid)
+  const phoneUuidCount = new Map();  // phone9 -> Map(uuid -> #rows) — for the dominant owner
+  const nameUuids  = new Map();      // nameKey -> Set(uuid)
+  const namePhones = new Map();      // nameKey -> Set(phone9)
+  for (const h of hist) for (const d of (h.drivers||[])) {
+    const nk = driverKey(d.name); if (!nk) continue;
+    const id = String(d.driverId||'').trim(), ph = norm9(d.phone);
+    if (id) { if(!nameUuids.has(nk)) nameUuids.set(nk,new Set()); nameUuids.get(nk).add(id);
+              if(!uuidPhones.has(id)) uuidPhones.set(id,new Set()); if(ph) uuidPhones.get(id).add(ph); }
+    if (ph) { if(!namePhones.has(nk)) namePhones.set(nk,new Set()); namePhones.get(nk).add(ph);
+              if(!phoneUuids.has(ph)) phoneUuids.set(ph,new Set()); if(id) phoneUuids.get(ph).add(id);
+              if(id){ if(!phoneUuidCount.has(ph)) phoneUuidCount.set(ph,new Map());
+                      const cm=phoneUuidCount.get(ph); cm.set(id,(cm.get(id)||0)+1); } }
+  }
+  // Dominant uuid for a phone = the uuid that carries it on the MOST rows (a phone = one human).
+  const dominantUuid = ph => { const cm = phoneUuidCount.get(ph); if(!cm) return null;
+    let best=null,n=-1; for(const [u,c] of cm) if(c>n){n=c;best=u;} return best; };
+  // Collision names = same display name carried by ≥2 distinct uuids AND ≥2 distinct phones
+  const collisionNames = [];
+  for (const [nk, ids] of nameUuids) {
+    if (ids.size >= 2 && (namePhones.get(nk)?.size || 0) >= 2) {
+      collisionNames.push({ nameKey: nk, uuids: [...ids], phones: [...(namePhones.get(nk)||[])] });
+    }
+  }
+  const findings = [];
+  for (const c of collisionNames) {
+    const nk = c.nameKey;
+    // Per-day presence of each identity under this name
+    const dayRows = hist.map(h => ({
+      period: h.period, source: h.source||'',
+      rows: (h.drivers||[]).filter(d => driverKey(d.name) === nk)
+    })).filter(x => x.rows.length);
+    // BLEND — a row whose uuid's phone (globally) is not this row's phone, and the phone
+    // belongs to a DIFFERENT uuid → two identities fused on one row.
+    for (const dr of dayRows) for (const d of dr.rows) {
+      const id = String(d.driverId||'').trim(), ph = norm9(d.phone);
+      if (!id || !ph) continue;
+      const owners = phoneUuids.get(ph);
+      const dom = dominantUuid(ph);
+      // BLEND iff this phone is shared by ≥2 uuids AND this row's uuid is NOT its dominant
+      // owner → the row's uuid and phone belong to two different people (fused on one row).
+      if (owners && owners.size >= 2 && dom && dom !== id) {
+        findings.push({ type:'BLEND', period:dr.period, source:dr.source, name:d.name, nameKey:nk,
+          rowUuid:id, rowPhone:ph, phoneBelongsTo:[...owners],
+          note:`row tagged uuid ${id.slice(0,8)}… but its phone ${ph} is normally uuid ${dom.slice(0,8)}… — identity fields look blended` });
+      }
+    }
+    // DROP — an identity seen on an earlier AND a later day is absent from an in-between day
+    // that still carries the name (one of the pair vanished when that day was merged).
+    const seenDays = uuid => dayRows.filter(dr => dr.rows.some(d => String(d.driverId||'').trim()===uuid)).map(dr=>dr.period);
+    for (const uuid of c.uuids) {
+      const days = seenDays(uuid);
+      if (days.length < 2) continue;
+      const firstMs = periodSortKey(days[0]), lastMs = periodSortKey(days[days.length-1]);
+      for (const dr of dayRows) {
+        const ms = periodSortKey(dr.period);
+        if (ms <= firstMs || ms >= lastMs) continue;                 // only strictly between
+        const hasUuid = dr.rows.some(d => String(d.driverId||'').trim()===uuid);
+        if (!hasUuid) findings.push({ type:'DROP', period:dr.period, source:dr.source, name:c.uuids && dr.rows[0]?.name, nameKey:nk,
+          missingUuid:uuid, presentUuids:[...new Set(dr.rows.map(d=>String(d.driverId||'').trim()).filter(Boolean))],
+          note:`uuid ${uuid.slice(0,8)}… present ${days[0]}…${days[days.length-1]} but MISSING on ${dr.period} while the shared name is still there — likely collapsed on merge` });
+      }
+    }
+  }
+  return { collisionNames, findings, days: hist.length, generatedAt: new Date().toISOString() };
+}
+// Render the audit as a Markdown report string (for reports/build-176-history-audit.md).
+function auditHistoryCollisionsMarkdown() {
+  const a = auditHistoryCollisions();
+  const L = [];
+  L.push('## Live run output');
+  L.push('');
+  L.push(`- Generated: ${a.generatedAt}`);
+  L.push(`- History days scanned: ${a.days}`);
+  L.push(`- Collision names (same name, ≥2 uuids, ≥2 phones): **${a.collisionNames.length}**`);
+  L.push(`- Findings (blended/dropped days): **${a.findings.length}**`);
+  L.push('');
+  if (a.collisionNames.length) {
+    L.push('### Collision names');
+    L.push('| name key | # uuids | # phones |');
+    L.push('|---|---|---|');
+    a.collisionNames.forEach(c => L.push(`| ${c.nameKey} | ${c.uuids.length} | ${c.phones.length} |`));
+    L.push('');
+  }
+  if (a.findings.length) {
+    L.push('### Suspect days');
+    L.push('| type | period | source | name | detail |');
+    L.push('|---|---|---|---|---|');
+    a.findings.forEach(f => L.push(`| ${f.type} | ${f.period} | ${f.source||'—'} | ${f.name||f.nameKey} | ${f.note} |`));
+  } else {
+    L.push('_No blended/dropped days detected in the currently loaded history._');
+  }
+  return L.join('\n');
+}
+if (typeof window !== 'undefined') { window.auditHistoryCollisions = auditHistoryCollisions; window.auditHistoryCollisionsMarkdown = auditHistoryCollisionsMarkdown; }
+
 // R1 — reconcile the block LOG against the live-blocked SET so the log stays an honest
 // HISTORY (when/why + duration), not the source of "who is blocked now". Runs on every
 // data ARRIVAL — cron merges included, not only a manual sync — which is exactly what the
@@ -5578,18 +5777,25 @@ function renderBlocks() {
   if (q) filtered = filtered.filter(e => e.driverName.toLowerCase().includes(q) || stripHtml(e.reason).toLowerCase().includes(q));
   if (blocksCatFilter !== 'all') filtered = filtered.filter(e => blockCategoryOf(e) === blocksCatFilter);
 
-  // Group by driver for the table
-  const byDriver = {};
+  // Group by driver for the table. S2 — group by IDENTITY (driver_uuid when the row carries
+  // one, else the name key), so a driver whose name drifted in case across log rows collapses
+  // into one row, while two same-named drivers with DIFFERENT uuids stay separate (the
+  // collision). Representative display name + driverId come from the most recent block row.
+  const idGroups = new Map();
   for (const e of filtered) {
-    if (!byDriver[e.driverName]) byDriver[e.driverName] = [];
-    byDriver[e.driverName].push(e);
+    const did = String(e.driverId || '').trim();
+    const gk  = did ? 'id:' + did : 'nm:' + driverKey(e.driverName);
+    let g = idGroups.get(gk);
+    if (!g) { g = { name: e.driverName, driverId: did, latest: e.dateBlocked, events: [] }; idGroups.set(gk, g); }
+    g.events.push(e);
+    if (periodSortKey(e.dateBlocked) >= periodSortKey(g.latest)) { g.latest = e.dateBlocked; g.name = e.driverName; if (did) g.driverId = did; }
   }
   // Sort drivers: currently blocked first, then by event count desc
-  const driverList = Object.entries(byDriver).sort(([na, ea], [nb, eb]) => {
-    const aBlocked = ea.some(e => !e.dateUnblocked) ? 1 : 0;
-    const bBlocked = eb.some(e => !e.dateUnblocked) ? 1 : 0;
+  const driverList = [...idGroups.values()].sort((a, b) => {
+    const aBlocked = a.events.some(e => !e.dateUnblocked) ? 1 : 0;
+    const bBlocked = b.events.some(e => !e.dateUnblocked) ? 1 : 0;
     if (bBlocked !== aBlocked) return bBlocked - aBlocked;
-    return eb.length - ea.length;
+    return b.events.length - a.events.length;
   });
 
   const daysBetween = (d1, d2) => {
@@ -5605,7 +5811,7 @@ function renderBlocks() {
   const _byKey = {}; if (_R) _R.drivers.forEach(d => { _byKey[d.key] = d; });
   const _snap = (typeof latestDriverSnapshot === 'function') ? latestDriverSnapshot() : { drivers: [] };
   const worklist = driverList
-    .map(([name, events]) => ({ name, events, stake: blockAtStake(name, _R, _byKey) }))
+    .map(({ name, driverId, events }) => ({ name, driverId, events, stake: blockAtStake(name, _R, _byKey) }))
     .sort((a, b) => {
       const ab = a.events.some(e => !e.dateUnblocked) ? 1 : 0, bb = b.events.some(e => !e.dateUnblocked) ? 1 : 0;
       if (ab !== bb) return bb - ab;
@@ -5616,14 +5822,17 @@ function renderBlocks() {
     all.forEach(e => { if (!e.dateUnblocked) return; const tt = periodSortKey(e.dateUnblocked);
       if (!isNaN(tt) && (now - tt) <= 7 * 86400000) keys.add(driverKey(e.driverName)); }); return keys.size; })();
 
-  const driverRows = worklist.map(({ name, events, stake }) => {
+  const driverRows = worklist.map(({ name, driverId, events, stake }) => {
     const isCurrentlyBlocked = events.some(e => !e.dateUnblocked);
     const expanded = blocksExpanded.has(name);
     const latestBlock = events.find(e => !e.dateUnblocked) || [...events].sort((a,b) => periodSortKey(b.dateBlocked)-periodSortKey(a.dateBlocked))[0];
-    const totalEvents = (all.filter(e => e.driverName === name)).length;
+    // S2 — count this IDENTITY's events (uuid when known), not every same-named row.
+    const _did = String(driverId || '').trim();
+    const totalEvents = all.filter(e => _did ? String(e.driverId||'').trim() === _did : (!String(e.driverId||'').trim() && driverKey(e.driverName) === driverKey(name))).length || events.length;
     const driverCat = blockCategoryOf(latestBlock);
     const sinceDays = blockEventDays(latestBlock);
     const esc = name.replace(/'/g,"\\'");
+    const escId = _did.replace(/'/g,"\\'");
     const fullReason = he(stripHtml(latestBlock.reason)) || 'No reason provided';
     const tierPill = stake.sar > 0 ? dkTierPill(stake.band, { hollow: true, title: `~${fmt(stake.sar)} SAR company bonus at stake (pre-block pace)` }) : '';
     const sd = _snap.drivers.find(x => driverKey(x.name) === driverKey(name));
@@ -5666,8 +5875,8 @@ function renderBlocks() {
       <div class="reason">${fullReason}</div>
       <div class="acts">
         <button class="dk-btn sm" onclick="dkOpenDriver('${esc}')">Open panel</button>
-        <button class="dk-btn sm" onclick="copyUnblockMsg('${esc}')">Copy unblock msg</button>
-        ${isCurrentlyBlocked ? `<button class="dk-btn sm" onclick="markDriverUnblocked('${esc}')">Mark unblocked</button>` : ''}
+        <button class="dk-btn sm" onclick="copyUnblockMsg('${esc}','${escId}')">Copy unblock msg</button>
+        ${isCurrentlyBlocked ? `<button class="dk-btn sm" onclick="markDriverUnblocked('${esc}','${escId}')">Mark unblocked</button>` : ''}
       </div>
       ${expanded ? `<div style="grid-column:1/-1;margin-block-start:8px;border:1px solid var(--dk-line);border-radius:8px;overflow-x:auto">
         <table class="dk-table"><thead><tr>
@@ -5778,10 +5987,20 @@ function blockAtStake(name, R, byKey) {
   return { sar, band: R.bandOf ? R.bandOf(refNet) : 0 };
 }
 // #5 action · mark a driver's open block-log rows resolved (mirrors the block form's write path).
-function markDriverUnblocked(name) {
-  const log = getBlockLog(), k = driverKey(name), today = _todayPeriodStr();
+function markDriverUnblocked(name, driverId) {
+  // S2 — scope the close to ONE identity. When a driver_uuid is known, only rows carrying
+  // that uuid (or legacy id-less rows sharing the name) are closed — so unblocking one half
+  // of a name-collision pair never clears the OTHER same-named driver's open block. Without a
+  // uuid (legacy call site) it falls back to the old name-key behaviour.
+  const log = getBlockLog(), k = driverKey(name), did = String(driverId || '').trim(), today = _todayPeriodStr();
   let n = 0;
-  log.forEach(e => { if (driverKey(e.driverName) === k && !e.dateUnblocked) { e.dateUnblocked = today; n++; } });
+  log.forEach(e => {
+    if (e.dateUnblocked) return;
+    const eid = String(e.driverId || '').trim();
+    const match = did ? (eid ? eid === did : driverKey(e.driverName) === k)
+                      : driverKey(e.driverName) === k;
+    if (match) { e.dateUnblocked = today; n++; }
+  });
   if (!n) { toast('No open block for this driver'); return; }
   saveBlockLog(log);
   toast(`✓ Marked ${name} unblocked (${today})`);
@@ -5789,8 +6008,10 @@ function markDriverUnblocked(name) {
   renderBlocks();
 }
 // #5 action · copy a WhatsApp-ready unblock request for the team to send Bolt CS.
-function copyUnblockMsg(name) {
-  const hist = getDriverBlockHistory('', name);
+function copyUnblockMsg(name, driverId) {
+  // S2 — pull THIS identity's block history (getDriverBlockHistory prefers the uuid), so the
+  // "blocked since / reason" quoted in the message belongs to the right same-named driver.
+  const hist = getDriverBlockHistory(driverId || '', name);
   const open = hist.find(e => !e.dateUnblocked) || hist[0];
   const since = open ? open.dateBlocked : '';
   const days = open ? blockEventDays(open) : '';
@@ -6539,6 +6760,12 @@ function getProratedTarget(driverName, baseTarget, pInfo) {
   const daysInMonth = pInfo.daysInMonth;
   return Math.round(baseTarget * (daysInMonth - startDay + 1) / daysInMonth);
 }
+// S2 note — courier profiles + name-mapping (below) are keyed by driverKey(name) BY DESIGN:
+// they are manual, human-entered deals / friendly-name mappings with no driver_uuid source
+// to migrate to. Two same-named drivers sharing one profile is a known, accepted limitation;
+// re-keying this store to identity is a data migration that needs Muhammad's explicit OK (it
+// would strand every existing profile). The identity ladder is applied to the DERIVED state
+// (blocked/earnings/roster/ledger) where collisions actually corrupt data, not here.
 function loadCourierProfiles() { try{return JSON.parse(localStorage.getItem(COURIER_PROFILES_KEY)||'{}');}catch(e){return{};} }
 function saveCourierProfiles(o) { localStorage.setItem(COURIER_PROFILES_KEY, JSON.stringify(o)); }
 function getCourierProfile(name) { return loadCourierProfiles()[driverKey(name)] || defaultProfile(); }
@@ -6628,6 +6855,11 @@ function recordTransfersFromUpload(cycleDateYMD, drivers) {
     if (amount > 0 && !isBoltPayDay) return;
     entries.push({
       name:        d.name,
+      // S2 — persist the driver's identity alongside the name so a reversal for one
+      // same-named driver is never mis-attributed to the other (computeTransferStatus
+      // matches on uuid/phone first). Older entries lack these → name fallback, unchanged.
+      driverId:    String(d.driverId || '').trim(),
+      phone:       String(d.phone || '').replace(/\D/g, ''),
       amount:      +amount.toFixed(2),
       netEarnings: +(d.netEarnings || 0).toFixed(2)
     });
@@ -6642,8 +6874,20 @@ function recordTransfersFromUpload(cycleDateYMD, drivers) {
 //   REVERSED  — a negative entry for the same driver appears in ANY cycle within 3 days after
 //   CONFIRMED — today is ≥ 3 days after cycleDate and no reversal found
 //   PENDING   — less than 3 days have passed and no reversal found
-function computeTransferStatus(driverName, cycleDateYMD, log) {
+function computeTransferStatus(driverName, cycleDateYMD, log, driverId, phone) {
   const dk      = (driverName || '').trim().toLowerCase();
+  const did     = String(driverId || '').trim();
+  const ph      = String(phone || '').replace(/\D/g, '').slice(-9);
+  // S2 — a reversal belongs to THIS driver iff identity matches: same uuid, else same
+  // 9-digit phone, else (only when neither side carries an id) the name. This stops a
+  // negative entry for a same-named DIFFERENT driver being read as this driver's reversal.
+  const sameDriver = e => {
+    const eid = String(e.driverId || '').trim();
+    const eph = String(e.phone || '').replace(/\D/g, '').slice(-9);
+    if (did && eid) return eid === did;
+    if (ph && eph)  return eph === ph;
+    return (e.name || '').trim().toLowerCase() === dk;
+  };
   const cycleMs = parseLocalDate(cycleDateYMD).getTime();
   // A malformed/invalid cycle date gives NaN; every comparison below would then
   // be false, BYPASSING both the "must be after" and "within 3 days" guards and
@@ -6657,9 +6901,7 @@ function computeTransferStatus(driverName, cycleDateYMD, log) {
     if (otherMs <= cycleMs) continue;                          // must be strictly after
     const daysDiff = (otherMs - cycleMs) / 86400000;
     if (daysDiff > 3) continue;                                // outside the 3-day window
-    const reversed = (entries || []).find(
-      e => (e.name || '').trim().toLowerCase() === dk && e.amount < 0
-    );
+    const reversed = (entries || []).find(e => sameDriver(e) && e.amount < 0);
     if (reversed) return 'REVERSED';
   }
   const daysSince = (today.getTime() - cycleMs) / 86400000;
@@ -7159,7 +7401,7 @@ function _renderTransferResults() {
       if (finTransferMonth && !date.startsWith(finTransferMonth)) return;
       (entries||[]).forEach(e => {
         if (driverKey(e.name) !== driverKey(driverName)) return;
-        const status = e.amount < 0 ? 'REVERSED' : computeTransferStatus(e.name, date, log);
+        const status = e.amount < 0 ? 'REVERSED' : computeTransferStatus(e.name, date, log, e.driverId, e.phone);
         xfers.push({ date, amount: e.amount, netEarnings: e.netEarnings||0, status });
       });
     });
@@ -8256,7 +8498,7 @@ function renderTransferByDate(el, log) {
 
   // Enrich with auto-computed status
   const enriched = entries.map(e => {
-    const status = e.amount < 0 ? 'REVERSED' : computeTransferStatus(e.name, selectedCycle, log);
+    const status = e.amount < 0 ? 'REVERSED' : computeTransferStatus(e.name, selectedCycle, log, e.driverId, e.phone);
     return { ...e, status, isBacklog: false };
   });
 
@@ -11214,14 +11456,19 @@ function computeRosterForMonth(monthSel) {
   const TIERS = bonusTiers();                          // [4000, 5000, 6000]
   const bandOf = p => p>=TIERS[2]?3 : p>=TIERS[1]?2 : p>=TIERS[0]?1 : 0;
 
+  // S2 — aggregate by canonical IDENTITY. Two same-named drivers with different
+  // driver_uuids now become TWO rows, each with its OWN blocked state — replacing the S1
+  // stopgap that collapsed the pair into a single row flagged blocked=indeterminate. `key`
+  // stays the name key for the many downstream maps that look a driver up by name (alert
+  // cache, trailing-pace windows, phones, chase list); `ik` is the true per-row identity,
+  // used to split rows and to test departure.
+  const canonOf = getIdentityResolver().canonOf;
   const agg = {};
   viewData.forEach(h => (h.drivers||[]).forEach(d => {
     if (!d.name) return;
-    const k = driverKey(d.name);
-    if (!agg[k]) agg[k] = { key:k, name:d.name, driverId:'', phone:'', _ids:new Set(), orders:0, net:0, days:0, acSum:0, acDays:0 };
-    const a = agg[k];
-    // Track identity: distinct driver_uuids under one name key mean this row is really
-    // TWO drivers collapsed together — block state is then indeterminate by name.
+    const ik = canonOf(d);
+    if (!agg[ik]) agg[ik] = { key:driverKey(d.name), ik, name:d.name, driverId:'', phone:'', _ids:new Set(), orders:0, net:0, days:0, acSum:0, acDays:0 };
+    const a = agg[ik];
     if (d.driverId) { a._ids.add(String(d.driverId).trim()); if (!a.driverId) a.driverId = String(d.driverId).trim(); }
     if (!a.phone && d.phone) a.phone = d.phone;
     a.orders += sN(d.orders); a.net += sN(d.netEarnings);
@@ -11236,11 +11483,12 @@ function computeRosterForMonth(monthSel) {
     // so we DON'T call them "new" and we render the date as uncertain (≤) rather than guess.
     const firstSeenCertain = firstSeen !== null && firstSeen > dataStartMs;
     const isNew  = firstSeenCertain && (nowMs - firstSeen) <= NEW_MS;
-    // A key that aggregated ≥2 distinct driver_uuids is two real drivers collapsed under
-    // one name — block state is indeterminate for the pair, so never badge it BLOCKED
-    // (the Captains tab groups by exact name and shows each driver's own true state).
-    const blocked= a._ids.size >= 2 ? false : isLiveBlocked(liveIdx, a);
-    const left   = departedKeys.has(a.key) && !blocked; // a BLOCKED captain is not "left" — they
+    // S2 — each row is now a SINGLE identity (the collision pair is split above), so block
+    // state is read directly for this driver's own sigs. `a` carries this identity's uuid +
+    // phone, so isLiveBlocked matches the right person. (_ids can still hold >1 uuid only
+    // when a shared phone unions one driver's drifted uuids — still one person, still correct.)
+    const blocked= isLiveBlocked(liveIdx, a);
+    const left   = departedKeys.has(a.ik) && !blocked; // a BLOCKED captain is not "left" — they
     const idle   = a.orders === 0;                       // still count toward the bonus they earned
     // Run-rate denominator: elapsed CALENDAR days of the month, shortened to
     // days-since-join for someone who started mid-month (so newcomers aren't unfairly diluted).
