@@ -1,0 +1,10 @@
+{
+  "build": "Build-179",
+  "status": "done",
+  "committed_sha": "cc477511c4b56b444f727b9515eee042f610c943",
+  "files_changed": ["index.html", "tests/BUILD179_LIVE_TEST.md"],
+  "test_result": "44/44 passed",
+  "migration_needed": false,
+  "migration_file": null,
+  "notes": "Courier profiles + ambassador/model/funnel/nationality + driver panel now keyed by identity (phone-9 preferred, uuid fallback); reuses S1/S2 identSigsOf/union ladder. One-time idempotent+reversible migration (backup key + schema flag) runs at boot after cloud pull: re-keys name->identity, SPLITS a collision via the sheet's per-phone ambassador, keeps+flags anything it cannot confidently re-home (never merges), localStorage-only (cloud rewritten on next user-gated sync). Panel/openModal/dkAmbTag thread row identity so a same-name collision opens the right driver with his own ambassador. 44/44 in-page fixtures pass (incl. the confirmed bug: clicking the blocked row opens the BLOCKED driver); node --check OK. Collision names that can't be split by phone (no matching sheet ambassador) are kept name-keyed + logged as report.flagged (console '[S3] profile collisions kept name-keyed') - none in fixtures; the real count shows on Muhammad's loaded dashboard after deploy. Real-cloud eyeball of the actual Alsubaie pairs deferred to his dashboard (served worktree has no Supabase config, same as B-176). Deferred by design: foreign-name map stays name-keyed (Excel source has no phone), Finance By-Captain net + overrides + reconcile stay name-keyed (out of scope)."
+}
