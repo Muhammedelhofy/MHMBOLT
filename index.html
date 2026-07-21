@@ -4216,9 +4216,9 @@ function buildCourierSummaryTable(entries, searchFilter) {
   // A BLOCKED captain is still ON the fleet (just blocked on Bolt) — they must NEVER be
   // counted as "left", even if Bolt dropped them from the latest roster export. So we
   // subtract currently-blocked captains from the departed set. R1: blocked-now = the live
-  // Bolt state (liveBlockedKeys), not the block LOG — so a stale open row can't rescue a
+  // Bolt state (liveBlockedIndex), not the block LOG — so a stale open row can't rescue a
   // genuinely-departed driver, and a truly-suspended driver is never mis-badged "left".
-  const blockedKeys  = liveBlockedKeys();
+  const liveIdx = liveBlockedIndex();
 
   // Working-month basis for pace tracking, derived from the actual month in view.
   // Model: a captain takes ~1 day off per week, so a working month is ≈ 6/7 of the
@@ -4245,13 +4245,17 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const monthRemaining = singleMonth ? (_isCurMonth ? Math.max(0, daysInMonth - monthElapsed) : 0) : 0;
 
   const map = {};
-  const blank = name => ({ name, days:0, gross:0, net:0, campaign:0, rides:0, dist:0, hrs:0, frSum:0, acSum:0, utSum:0, rDays:0, cashEarnings:0, cashGap:0, minActualPayout:Infinity });
+  const blank = name => ({ name, driverId:'', phone:'', days:0, gross:0, net:0, campaign:0, rides:0, dist:0, hrs:0, frSum:0, acSum:0, utSum:0, rDays:0, cashEarnings:0, cashGap:0, minActualPayout:Infinity });
   entries.forEach(h => {
     // Include ALL drivers from CSV (not just isActive) so zero-order days still surface the captain
     h.drivers.forEach(d => {
       if (!d.name) return;
       if (!map[d.name]) map[d.name] = blank(d.name);
       const m = map[d.name];
+      // Carry identity so block-state lookups match by driver_uuid/phone, not name alone
+      // (two real drivers can share a name — case-variants group separately here).
+      if (!m.driverId && d.driverId) m.driverId = String(d.driverId).trim();
+      if (!m.phone && d.phone) m.phone = d.phone;
       // Only accumulate stats for days they actually worked (had orders)
       if (d.isActive) {
         m.days++; m.gross+=sN(d.grossEarnings); m.net+=sN(d.netEarnings); m.campaign+=sN(d.campaign);
@@ -4349,7 +4353,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
   // set is empty, so Current keeps everyone and Left shows nobody — both correct.)
   if (sumStatusFilter !== 'all') {
     filtered = filtered.filter(c => {
-      const left = departedKeys.has(driverKey(c.name)) && !blockedKeys.has(driverKey(c.name));
+      const left = departedKeys.has(driverKey(c.name)) && !isLiveBlocked(liveIdx, c);
       return sumStatusFilter === 'left' ? left : !left;
     });
   }
@@ -4360,8 +4364,8 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const rows = filtered.map((c, idx) => {
     const foreign = lookupForeignName(c.name);
     const displayName = foreign || c.name;
-    const isBlocked = blockedKeys.has(driverKey(c.name)) || !!getCourierProfile(c.name)?.blocked;
-    const hasLeft = departedKeys.has(driverKey(c.name)) && !blockedKeys.has(driverKey(c.name));
+    const isBlocked = isLiveBlocked(liveIdx, c) || !!getCourierProfile(c.name)?.blocked;
+    const hasLeft = departedKeys.has(driverKey(c.name)) && !isLiveBlocked(liveIdx, c);
     const badge = dkAmbTag(c.name)   // #9 retag: ambassador-name tag replaces MODEL/REF letters
       + (isBlocked ? `<span style="display:inline-flex;align-items:center;font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;margin-left:4px;background:rgba(255,68,102,.15);border:1px solid rgba(255,68,102,.4);color:var(--red);letter-spacing:.06em">🚫 BLOCKED</span>` : '')
       + (hasLeft ? `<span class="left-badge">LEFT FLEET</span>` : '');
@@ -5123,25 +5127,60 @@ function latestStateBearingEntry() {
     (Array.isArray(h.drivers) && h.drivers.some(d => (d.boltState||'').trim()))
   ) || null;
 }
-// Map: driverKey → { key, name, driverId, state, reason, since, category } for every driver
-// whose live boltState is a non-active suspension state (suspended / deactivated).
-function liveBlockedSet() {
+// ── Name-collision-safe blocked identity (S1 hotfix) ─────────────────────────
+// Identity is the Bolt driver_uuid (else phone), NEVER the display name: two REAL
+// drivers can share a name differing only in case ("Mohammed Alsubaie" active vs
+// "MOHAMMED ALSUBAIE" suspended — different people, different phones). A name is a
+// usable fallback key only when at most ONE identity on the state-bearing roster
+// carries it; ambiguous names never match, so one driver's block can't paint the other.
+function identSigsOf(d) {
+  const sigs = [];
+  const id = String(d.driverId || '').trim();
+  if (id) sigs.push('id:' + id);
+  const ph = String(d.phone || '').replace(/\D/g, '');
+  if (ph.length >= 9) sigs.push('ph:' + ph.slice(-9));
+  return sigs;
+}
+// Index of every driver whose live boltState is a non-active suspension state
+// (suspended / deactivated), keyed by identity sig AND (unambiguous) name key.
+function liveBlockedIndex() {
   const e = latestStateBearingEntry();
-  const m = new Map();
-  if (!e) return m;
+  const idx = { bySig: new Map(), byName: new Map(), ambiguousNames: new Set(), entries: [] };
+  if (!e) return idx;
+  // Ambiguity census: nameKey → distinct canonical identities on the roster
+  const identsByName = new Map();
+  for (const d of (e.drivers || [])) {
+    const nk = driverKey(d.name);
+    if (!nk) continue;
+    const canon = identSigsOf(d)[0] || '';
+    if (!identsByName.has(nk)) identsByName.set(nk, new Set());
+    if (canon) identsByName.get(nk).add(canon);
+  }
+  for (const [nk, ids] of identsByName) if (ids.size >= 2) idx.ambiguousNames.add(nk);
   for (const d of (e.drivers || [])) {
     const st = (d.boltState || '').trim().toLowerCase();
     if (!st || st === 'active') continue;
-    const k = driverKey(d.name) || (d.driverId || '').trim();
-    if (k && !m.has(k)) m.set(k, {
-      key: k, name: d.name, driverId: d.driverId || '', state: st,
-      reason: d.boltSuspensionReason || '', since: d.boltSuspendedSince || '',
+    const sigs = identSigsOf(d), nk = driverKey(d.name);
+    if (!sigs.length && !nk) continue;
+    if (sigs.length ? idx.bySig.has(sigs[0]) : idx.byName.has(nk)) continue; // de-dupe
+    const entry = {
+      key: sigs[0] || nk, name: d.name, driverId: String(d.driverId || '').trim(),
+      state: st, reason: d.boltSuspensionReason || '', since: d.boltSuspendedSince || '',
       category: normBoltCat(d.boltSuspensionCategory) || ''
-    });
+    };
+    idx.entries.push(entry);
+    for (const s of sigs) if (!idx.bySig.has(s)) idx.bySig.set(s, entry);
+    if (nk && !idx.ambiguousNames.has(nk) && !idx.byName.has(nk)) idx.byName.set(nk, entry);
   }
-  return m;
+  return idx;
 }
-function liveBlockedKeys() { return new Set(liveBlockedSet().keys()); }
+// d: any object carrying some of {driverId, phone, name}. A sig match is authoritative;
+// the name matches only when unambiguous on the roster (ambiguous names aren't in byName).
+function isLiveBlocked(idx, d) {
+  for (const s of identSigsOf(d)) if (idx.bySig.has(s)) return true;
+  const nk = driverKey(d.name);
+  return !!nk && idx.byName.has(nk);
+}
 
 // R1 — reconcile the block LOG against the live-blocked SET so the log stays an honest
 // HISTORY (when/why + duration), not the source of "who is blocked now". Runs on every
@@ -5156,7 +5195,7 @@ function reconcileBlockLog() {
   const stateDay = latestStateBearingEntry();
   if (!stateDay) return false;                       // nothing state-bearing yet → never touch the log
   const asOf = stateDay.period || _todayPeriodStr();
-  const live = liveBlockedSet();
+  const live = liveBlockedIndex();
   const log  = getBlockLog();
   let changed = false;
 
@@ -5172,26 +5211,36 @@ function reconcileBlockLog() {
     return periodSortKey(p) > periodSortKey(asOf) ? asOf : p;
   };
 
-  const openByKey = new Map();
+  // Open rows indexed by identity sig (authoritative) and by name key (legacy fallback)
+  const openBySig = new Map(), openByName = new Map();
   for (const ev of log) {
     if (ev.dateUnblocked) continue;
-    const k = driverKey(ev.driverName) || (ev.driverId || '').trim();
-    if (!openByKey.has(k)) openByKey.set(k, ev);
+    for (const s of identSigsOf({ driverId: ev.driverId })) if (!openBySig.has(s)) openBySig.set(s, ev);
+    const nk = driverKey(ev.driverName);
+    if (nk && !openByName.has(nk)) openByName.set(nk, ev);
   }
 
   // CLOSE stale opens — the driver is live-active now (not in the live-blocked set)
   for (const ev of log) {
     if (ev.dateUnblocked) continue;
-    const k = driverKey(ev.driverName) || (ev.driverId || '').trim();
-    if (live.has(k)) continue;                                         // still blocked → leave open
+    if (isLiveBlocked(live, { driverId: ev.driverId, name: ev.driverName })) continue; // still blocked → leave open
+    // A legacy row with no driverId and an ambiguous name is undecidable — which of the
+    // same-named drivers does it refer to? Never close on ambiguous evidence.
+    if (!String(ev.driverId || '').trim() && live.ambiguousNames.has(driverKey(ev.driverName))) continue;
     if (periodSortKey(ev.dateBlocked) > periodSortKey(asOf)) continue; // future-dated manual block → not yet in effect
     ev.dateUnblocked = asOf;
     changed = true;
   }
 
   // OPEN rows for live-suspended drivers with no open row (the invisible set)
-  for (const [k, d] of live) {
-    if (openByKey.has(k)) continue;
+  for (const d of live.entries) {
+    const k = d.key;
+    // Existing open row? Match by identity sig first; a name match only counts when the
+    // name is unambiguous (else a legacy row for the OTHER same-named driver would absorb it).
+    const nk = driverKey(d.name);
+    const open = identSigsOf(d).map(s => openBySig.get(s)).find(Boolean)
+      || ((nk && !live.ambiguousNames.has(nk)) ? openByName.get(nk) : null);
+    if (open) continue;
     const db = sinceToPeriod(d.since);
     log.push({
       id: k + '_' + db.replace(/\s/g,''),
@@ -5209,8 +5258,16 @@ function reconcileBlockLog() {
 }
 
 function getDriverBlockHistory(driverId, name) {
+  // Two real drivers can share a name — when BOTH sides carry a driverId, the ids decide
+  // (a name match must not pull the other same-named driver's history). Name matching
+  // remains the fallback only when either side lacks an id (legacy manual rows).
+  const did = String(driverId || '').trim();
   return getBlockLog()
-    .filter(e => (driverId && e.driverId === driverId) || driverKey(e.driverName) === driverKey(name))
+    .filter(e => {
+      const eid = String(e.driverId || '').trim();
+      if (did && eid) return eid === did;
+      return driverKey(e.driverName) === driverKey(name);
+    })
     .sort((a, b) => periodSortKey(b.dateBlocked) - periodSortKey(a.dateBlocked));
 }
 function htmlDateToPeriod(s) {
@@ -11147,11 +11204,11 @@ function computeRosterForMonth(monthSel) {
 
   // ── Per-driver aggregation ──
   const departedKeys = getDepartedKeys();
-  // R1: blocked-now = the LIVE Bolt state on the latest state-bearing day (liveBlockedKeys),
+  // R1: blocked-now = the LIVE Bolt state on the latest state-bearing day (liveBlockedIndex),
   // not the block LOG. This is what blockedCount + the per-driver `blocked` flag (projection
   // cap, "not left") read — so the count matches the real live-suspended set (stale opens
   // gone, invisible suspended surfaced) on Today / Captains / Star Map / the alert rail.
-  const blockedKeys  = liveBlockedKeys();
+  const liveIdx = liveBlockedIndex();
   const accAlerts = getAlertCache();
   const NEW_MS = 14 * 86400000, nowMs = Date.now();
   const TIERS = bonusTiers();                          // [4000, 5000, 6000]
@@ -11161,8 +11218,12 @@ function computeRosterForMonth(monthSel) {
   viewData.forEach(h => (h.drivers||[]).forEach(d => {
     if (!d.name) return;
     const k = driverKey(d.name);
-    if (!agg[k]) agg[k] = { key:k, name:d.name, orders:0, net:0, days:0, acSum:0, acDays:0 };
+    if (!agg[k]) agg[k] = { key:k, name:d.name, driverId:'', phone:'', _ids:new Set(), orders:0, net:0, days:0, acSum:0, acDays:0 };
     const a = agg[k];
+    // Track identity: distinct driver_uuids under one name key mean this row is really
+    // TWO drivers collapsed together — block state is then indeterminate by name.
+    if (d.driverId) { a._ids.add(String(d.driverId).trim()); if (!a.driverId) a.driverId = String(d.driverId).trim(); }
+    if (!a.phone && d.phone) a.phone = d.phone;
     a.orders += sN(d.orders); a.net += sN(d.netEarnings);
     if (d.isActive) { a.days++; const av = accVal(d); if (av>0){ a.acSum+=av; a.acDays++; } }
   }));
@@ -11175,7 +11236,10 @@ function computeRosterForMonth(monthSel) {
     // so we DON'T call them "new" and we render the date as uncertain (≤) rather than guess.
     const firstSeenCertain = firstSeen !== null && firstSeen > dataStartMs;
     const isNew  = firstSeenCertain && (nowMs - firstSeen) <= NEW_MS;
-    const blocked= blockedKeys.has(a.key);
+    // A key that aggregated ≥2 distinct driver_uuids is two real drivers collapsed under
+    // one name — block state is indeterminate for the pair, so never badge it BLOCKED
+    // (the Captains tab groups by exact name and shows each driver's own true state).
+    const blocked= a._ids.size >= 2 ? false : isLiveBlocked(liveIdx, a);
     const left   = departedKeys.has(a.key) && !blocked; // a BLOCKED captain is not "left" — they
     const idle   = a.orders === 0;                       // still count toward the bonus they earned
     // Run-rate denominator: elapsed CALENDAR days of the month, shortened to
@@ -11212,7 +11276,7 @@ function computeRosterForMonth(monthSel) {
 
   return { months, monthSel, viewData, periodLabel, projectable, isCurrentMonth, isPastMonth,
     daysInMonth, elapsedDays, remainingDays, remTotal, remWork, TIERS, bandOf,
-    drivers, current, blockedCount: blockedKeys.size };
+    drivers, current, blockedCount: liveIdx.entries.length };
 }
 
 // ── Trailing 14d-vs-prior-14d pace windows (Builds 161-165) ──────────────────
