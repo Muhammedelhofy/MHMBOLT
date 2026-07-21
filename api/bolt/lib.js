@@ -134,7 +134,19 @@ async function fetchAndAggregateFleet(date) {
         { company_id: cid, start_ts: startTs, end_ts: endTs },
         "drivers", "total"
       );
-      for (const dr of drivers) profileMap[dr.driver_uuid] = dr;
+      for (const dr of drivers) {
+        const prev = profileMap[dr.driver_uuid];
+        if (!prev) { profileMap[dr.driver_uuid] = dr; continue; }
+        // B-178: the same driver_uuid can come back MORE THAN ONCE — a driver with multiple
+        // vehicles or in multiple companies (e.g. one car active, another suspended / "being
+        // verified"). Bolt returns one record per vehicle/company. Blind last-wins let a
+        // SUSPENDED record for a car the driver isn't using overwrite the ACTIVE one, so a
+        // driver who is actually working (earning daily) gets flipped to "blocked" by arbitrary
+        // pull order — and shows the wrong car's plate. A driver active on ANY record can drive,
+        // so an active record must win; the idle car's suspension still surfaces via vehicleState.
+        const isActive = x => String(x.state || "").toLowerCase() === "active";
+        if (isActive(dr) && !isActive(prev)) profileMap[dr.driver_uuid] = dr;
+      }
     } catch (e) { profileErrors++; console.warn(`[bolt-lib] profiles company ${cid}:`, e.message); }
   }
 
