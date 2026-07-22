@@ -1898,6 +1898,9 @@ function handleFile(file) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
+    // A Bolt "Drivers Performance" / status export (a Status column, NO earnings) is a roster
+    // snapshot, not an earnings day — route it to the roster store (see importRosterSnapshot).
+    if (isRosterStatusFile(e.target.result)) { importRosterSnapshot(e.target.result, file.name); return; }
     const drivers = parseCSV(e.target.result);
     if (!drivers || !drivers.length) { toast('Could not parse file — check it is a Bolt CSV'); return; }
 
@@ -1916,6 +1919,43 @@ function handleFile(file) {
   reader.readAsText(file, 'UTF-8');
   // Reset input so same file can be re-uploaded
   document.getElementById('fileInput').value = '';
+}
+
+// A roster/status export has a standalone "Status" column (Active/Suspended) and NO
+// "Net earnings" column — the inverse of the Earnings export. That's how the two are told
+// apart on upload, with no extra button or user choice.
+function isRosterStatusFile(text) {
+  const first = (text || '').replace(/\r/g,'').split('\n')[0] || '';
+  const heads = splitLine(first);
+  const hasStatus = heads.some(h => h === 'Status');
+  const hasNet    = heads.some(h => h === 'Net earnings' || h.startsWith('Net earnings|'));
+  return hasStatus && !hasNet;
+}
+
+// Store a Drivers-Performance export as THE current fleet roster + live status. It replaces
+// the roster snapshot wholesale (this file is the definitive "who is in the fleet now"), so
+// anyone in your earnings history but absent from it is auto-flagged LEFT FLEET, and every
+// Suspended row lights up as suspended — without touching a single earnings/net number.
+function importRosterSnapshot(text, filename) {
+  const drivers = parseCSV(text);
+  if (!drivers.length) { toast('Could not read the roster file — check it is a Bolt export'); return; }
+  const period = parsePeriodFromFilename(filename);
+  const pInfo  = parsePeriodInfo(period);
+  const susp   = drivers.filter(d => (d.boltState||'').toLowerCase() === 'suspended').length;
+  const deact  = drivers.filter(d => (d.boltState||'').toLowerCase() === 'deactivated').length;
+  const active = drivers.length - susp - deact;
+  setRosterSnapshot({
+    asOf: new Date().toISOString(), source: 'performance', drivers, period, periodInfo: pInfo,
+    label: 'Fleet roster · ' + (period || new Date().toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })),
+  });
+  invalidateAlertCache();
+  renderCaptains();
+  if (typeof renderHistory === 'function') renderHistory();
+  if (typeof renderDataHealth === 'function') renderDataHealth();
+  if (document.getElementById('today')?.classList.contains('active')) renderToday();
+  const departed = getDepartedKeys().size;
+  toast(`Fleet roster updated → ${drivers.length} drivers · ${active} active · ${susp} suspended`
+        + (departed ? ` · ${departed} left-fleet flagged` : ''));
 }
 
 function confirmUpload() {
@@ -2235,6 +2275,11 @@ function mapDriver(row) {
     // hours-recovery note above) — without it their earnings were gated out of the captain
     // table, showing 0 SAR / 0 worked despite real income.
     isActive:                orders > 0 || grossTotal > 0,
+    // Live Bolt status — ONLY the roster/status export ("Drivers Performance") carries a
+    // standalone "Status" column (Active / Suspended). The Earnings export has none, so this
+    // reads '' there and never sets a state (byte-identical to the old behaviour). Normalised
+    // to the boltState convention used everywhere else ('active' | 'suspended' | 'deactivated').
+    boltState:               (col(row,'Status') || '').trim().toLowerCase(),
   };
 }
 function parseTier(raw) {
@@ -2402,7 +2447,31 @@ function aggregateDriverRows(rows) {
 // whose driver count is ≥ 80% of the recent 14-day max. This is the single number
 // every "fleet size" surface should read; period views instead count "with activity
 // in ⟨period⟩" (a genuinely different thing — union of who drove those days).
-function getRosterEntry() {
+// ── Fleet roster snapshot (Bolt "Drivers Performance" / status export) ─────────
+// This export is the AUTHORITATIVE list of who is in the fleet right now + each driver's live
+// Status (Active/Suspended) — but it carries NO earnings. Storing it as a normal history
+// period would (a) UNION with the same-date-range Earnings CSV and re-inflate the roster with
+// drivers who have since LEFT, and (b) pollute month/activity/net views with a zero-earning
+// day. So it lives in its OWN store, consulted only by the two "current-truth" accessors
+// (getRosterEntry + latestStateBearingEntry). Earnings / net / month / day views never see it.
+// A FRESHER cron/api pull still supersedes it (timestamp comparison), so nothing goes stale.
+const ROSTER_SNAPSHOT_KEY = 'boltFleetRosterSnapshot';
+function tsMs(x) { const t = new Date(x || 0).getTime(); return isNaN(t) ? 0 : t; }
+function getRosterSnapshot() {
+  try { const s = JSON.parse(localStorage.getItem(ROSTER_SNAPSHOT_KEY) || 'null');
+    return (s && Array.isArray(s.drivers) && s.drivers.length) ? s : null; } catch (e) { return null; }
+}
+function setRosterSnapshot(snap) { try { localStorage.setItem(ROSTER_SNAPSHOT_KEY, JSON.stringify(snap)); } catch (e) {} }
+function clearRosterSnapshot() { localStorage.removeItem(ROSTER_SNAPSHOT_KEY); }
+function rosterSnapshotEntry() {
+  const s = getRosterSnapshot();
+  return s ? { period: s.label || s.period || 'Fleet roster', drivers: s.drivers,
+               source: s.source || 'performance', uploadedAt: s.asOf || '', periodInfo: s.periodInfo || null } : null;
+}
+
+// The roster derived purely from uploaded history (a cron/api day, or the latest CSV whose
+// driver count is ≥80% of the recent max) — the ORIGINAL behaviour, kept as the fallback.
+function rosterEntryFromHistory() {
   const hist = getHistory();
   if (!hist.length) return null;
   const sorted = [...hist].sort((a,b) => periodSortKey(b.period) - periodSortKey(a.period));
@@ -2414,6 +2483,15 @@ function getRosterEntry() {
     return dc > 0 && dc >= threshold;
   };
   return sorted.find(isRoster) || sorted.find(h => (h.drivers||[]).length) || null;
+}
+// The ONE roster truth. Prefer an explicitly-imported roster snapshot when it is at least as
+// fresh as the best history-derived roster; otherwise fall back to history (byte-identical to
+// the old behaviour whenever no snapshot has ever been imported).
+function getRosterEntry() {
+  const hist = rosterEntryFromHistory();
+  const snap = rosterSnapshotEntry();
+  if (snap && (!hist || tsMs(snap.uploadedAt) >= tsMs(hist.uploadedAt))) return snap;
+  return hist;
 }
 function getFleetRoster() {
   const e = getRosterEntry();
@@ -5178,10 +5256,16 @@ function updateBlockLog(period, newDrivers) {
 // known state-bearing day rules — a partial upload can never derive block state.
 function latestStateBearingEntry() {
   const sorted = [...getHistory()].sort((a,b) => periodSortKey(b.period) - periodSortKey(a.period));
-  return sorted.find(h =>
+  const histEntry = sorted.find(h =>
     h.source === 'cron' || h.source === 'api' ||
     (Array.isArray(h.drivers) && h.drivers.some(d => (d.boltState||'').trim()))
   ) || null;
+  // An imported roster snapshot carries live Status too — prefer it when it is state-bearing
+  // AND at least as fresh as the newest state-bearing history day (a later cron still wins).
+  const snap = rosterSnapshotEntry();
+  const snapStateful = snap && (snap.drivers||[]).some(d => (d.boltState||'').trim());
+  if (snapStateful && (!histEntry || tsMs(snap.uploadedAt) >= tsMs(histEntry.uploadedAt))) return snap;
+  return histEntry;
 }
 // ── Name-collision-safe blocked identity (S1 hotfix) ─────────────────────────
 // Identity is the Bolt driver_uuid (else phone), NEVER the display name: two REAL
