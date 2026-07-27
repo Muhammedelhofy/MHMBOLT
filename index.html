@@ -11896,9 +11896,15 @@ function setReportTab(which) {
     renderCustomExport();
     // Nationality + ambassador live in the onboarding-sheet mirror. Warm the cache in the
     // background so those columns fill in; re-render when it lands (never blocks the UI).
-    if (typeof fetchSheetAmbassadorSync === 'function' && typeof sheetAmbassadorSyncCache !== 'undefined' && !sheetAmbassadorSyncCache) {
-      fetchSheetAmbassadorSync().then(() => { if (rxTab === 'custom') renderCustomExport(); }).catch(() => {});
-    }
+    const warm = [];
+    if (typeof fetchSheetAmbassadorSync === 'function' && typeof sheetAmbassadorSyncCache !== 'undefined' && !sheetAmbassadorSyncCache)
+      warm.push(fetchSheetAmbassadorSync());
+    // Onboarding stage + iqama come from the pipeline mirror, which the Onboarding tab may
+    // never have loaded in this session.
+    if (typeof fetchStageSnapshot === 'function' && typeof stageSnapshotCache !== 'undefined' && !stageSnapshotCache)
+      warm.push(fetchStageSnapshot());
+    if (warm.length) Promise.all(warm.map(p => p.catch(() => null)))
+      .then(() => { if (rxTab === 'custom') renderCustomExport(); });
   }
 }
 
@@ -11972,27 +11978,47 @@ function rxEntriesInRange(fromMs, toMs) {
   return [...byPeriod.values()].sort((a, b) => periodSortKey(a.period) - periodSortKey(b.period));
 }
 
-// One pass over ALL history (not just the range) for tenure: the first day each identity
-// had a real trip. Doing this per-driver would re-walk history 200×.
-let _rxFirstTripCache = null;
-function rxFirstTripIndex() {
-  if (_rxFirstTripCache) return _rxFirstTripCache;
+// ONE pass over ALL history (not just the range) building everything that must be resolved
+// against the driver's whole record rather than the days you happen to be exporting:
+//
+//   • trip / any  — first day with a real trip (tenure), and first day seen at all
+//   • phone / email / tier / name — the newest NON-EMPTY value for each field, resolved
+//     INDEPENDENTLY of one another.
+//
+// That last part is the fix for "only 68 of 213 phones, 3 emails, 3 tiers". Days synced from
+// the Bolt API carry a phone only for drivers who took an order that day, and carry NO email
+// and NO tier at all (the API's order feed has neither) — while days uploaded from a Bolt CSV
+// carry all three. Reading contact off the newest row in the range therefore blanked almost
+// everyone the moment the recent days came from the cron. Walking newest→oldest and keeping
+// the first non-empty value per field recovers each field from whichever day last had it,
+// which is exactly what the End-of-Month report already does via getDriverContactInfo().
+let _rxIdentityIdxCache = null;
+function rxIdentityIndex() {
+  if (_rxIdentityIdxCache) return _rxIdentityIdxCache;
   const idx = new Map();
-  getHistory().forEach(h => {
+  // Newest first, so the FIRST non-empty value we meet for a field is the freshest one.
+  const hist = [...getHistory()].sort((a, b) => periodSortKey(b.period) - periodSortKey(a.period));
+  hist.forEach(h => {
     const sk = periodSortKey(h.period);
     (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => {
       if (!d.name) return;
       const k = courierIdentityKey(d);
       let e = idx.get(k);
-      if (!e) { e = { trip: 0, any: 0 }; idx.set(k, e); }
+      if (!e) { e = { trip: 0, any: 0, phone: '', email: '', tier: null, name: '' }; idx.set(k, e); }
       if (!e.any || sk < e.any) e.any = sk;
       if ((sN(d.orders) > 0 || sN(d.grossEarnings) > 0) && (!e.trip || sk < e.trip)) e.trip = sk;
+      if (!e.phone && d.phone && String(d.phone).trim()) e.phone = String(d.phone).trim();
+      if (!e.email && d.email && String(d.email).trim()) e.email = String(d.email).trim();
+      if (!e.name  && d.name  && String(d.name).trim())  e.name  = String(d.name).trim();
+      // A tier only counts once Bolt has actually graded the driver — level -1 / UNKNOWN is
+      // the "no CSV column present" placeholder parseTier() returns, not a real tier.
+      if (!e.tier && d.tier && d.tier.level >= 0) e.tier = d.tier;
     });
   });
-  _rxFirstTripCache = idx;
+  _rxIdentityIdxCache = idx;
   return idx;
 }
-function rxInvalidateExportCaches() { _rxFirstTripCache = null; }
+function rxInvalidateExportCaches() { _rxIdentityIdxCache = null; }
 
 // Group every driver row inside the range by identity, then aggregate with the SAME
 // engine the driver panel uses (aggregateDriverRows) so a range total can never disagree
@@ -12009,7 +12035,22 @@ function rxAggregateRange(fromMs, toMs) {
     g.rows.push({ period: h.period, d });
     if (sk >= g.lastSk) { g.lastSk = sk; g.last = d; g.name = (d.name || '').trim(); }   // newest row wins for contact/status
   }));
-  groups.forEach(g => { g.agg = aggregateDriverRows(g.rows); });
+  groups.forEach(g => {
+    g.agg = aggregateDriverRows(g.rows);
+    // aggregateDriverRows counts ROWS, and one person can hold more than one Bolt account
+    // (Model B is literally two accounts), so both accounts land on the same identity and a
+    // 26-day range reported "52 days in data" / 115% consistency. Money still sums across the
+    // accounts — it IS one person's earnings — but a DAY must be counted once.
+    const seenDays = new Set(), activeDays = new Set(), accounts = new Set();
+    g.rows.forEach(({ period, d }) => {
+      seenDays.add(period);
+      if (d.isActive) activeDays.add(period);
+      if (d.driverId) accounts.add(String(d.driverId).trim());
+    });
+    g.agg.days       = seenDays.size;
+    g.agg.activeDays = activeDays.size;
+    g.accounts       = accounts.size || 1;
+  });
   const daysCovered = entries.reduce((s, h) => { const pi = rxPeriodInfo(h); return s + (pi ? (pi.daysInPeriod || 1) : 1); }, 0);
   // A multi-day Bolt export that straddles your From/To edge is included IN FULL — it cannot
   // be split, the per-day numbers don't exist inside it. Count those so the UI can say so
@@ -12019,6 +12060,21 @@ function rxAggregateRange(fromMs, toMs) {
     return pi && (rxDayMs(pi.start) < fromMs || rxDayMs(pi.end) > toMs);
   }).length;
   return { groups, entries, periodCount: entries.length, daysCovered, straddling };
+}
+
+// Bolt's suspension_reason is a driver-facing HTML blob, not a string — it arrives as
+// `<p style="color: #ffffff; text-align: center;">Imposter Another Driver</p>` and was
+// landing in the spreadsheet verbatim, tags and all. Strip to readable text: unwrap tags,
+// turn <br> into a separator, decode the handful of entities Bolt actually emits, and
+// collapse the block log's multi-line reasons onto one cell-friendly line.
+function rxCleanReason(raw) {
+  let s = String(raw == null ? '' : raw);
+  if (!s.trim()) return '';
+  s = s.replace(/<br\s*\/?>/gi, ' · ').replace(/<\/p>\s*<p[^>]*>/gi, ' · ').replace(/<[^>]+>/g, '');
+  s = s.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<')
+       .replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/gi, "'");
+  s = s.split('\n').map(x => x.trim()).filter(Boolean).join(' · ');
+  return s.replace(/\s+/g, ' ').replace(/(\s·)+\s*$/, '').trim();
 }
 
 // Calendar months the range touches, as 'YYYY-MM' keys — the window the monthly P&L
@@ -12040,7 +12096,7 @@ function rxBuildRows(fromMs, toMs, opts) {
   const cur   = rxAggregateRange(fromMs, toMs);
   const span  = toMs - fromMs + RX_DAY_MS;
   const prev  = rxAggregateRange(fromMs - span, fromMs - RX_DAY_MS);   // same length, immediately before
-  const trips = rxFirstTripIndex();
+  const idIdx = rxIdentityIndex();
   const wantPnL = !!(o.groups && o.groups.pnl);
   const months  = wantPnL ? rxMonthsInRange(cur.entries) : [];
 
@@ -12058,6 +12114,15 @@ function rxBuildRows(fromMs, toMs, opts) {
   const sheetByPhone = new Map();
   if (typeof sheetAmbassadorSyncCache !== 'undefined' && Array.isArray(sheetAmbassadorSyncCache))
     sheetAmbassadorSyncCache.forEach(s => { const p = normPhoneForMatch(s.phone); if (p) sheetByPhone.set(p, s); });
+  // Onboarding pipeline mirror → real stage + iqama. The courier profile's own `funnel`
+  // field is set by hand and is empty for nearly everyone, which is why "Onboarding Stage"
+  // came back 0/213; the sheet mirror is the populated source.
+  const stageById = new Map(), stageByName = new Map();
+  if (typeof stageSnapshotCache !== 'undefined' && Array.isArray(stageSnapshotCache))
+    stageSnapshotCache.forEach(s => {
+      if (s.driver_id) stageById.set(String(s.driver_id).trim(), s);
+      if (s.name)      stageByName.set(driverKey(s.name), s);
+    });
 
   const rows = [];
   cur.groups.forEach(g => {
@@ -12066,13 +12131,23 @@ function rxBuildRows(fromMs, toMs, opts) {
     const pv = prev.groups.get(g.key);
     const prevNet = pv ? pv.agg.net : 0;
 
-    const ident   = { name: g.name, driverId: d.driverId || '', phone: d.phone || '' };
+    // Contact/tier resolved across the driver's WHOLE record, not just the newest row in the
+    // range — the row in range is often an API-synced day that carries neither.
+    const idr     = idIdx.get(g.key) || { trip: 0, any: 0, phone: '', email: '', tier: null, name: '' };
+    const phone   = (d.phone && String(d.phone).trim()) || idr.phone || '';
+    const email   = (d.email && String(d.email).trim()) || idr.email || '';
+    const tier    = (d.tier && d.tier.level >= 0) ? d.tier : idr.tier;
+
+    const ident   = { name: g.name, driverId: d.driverId || '', phone };
     const prof    = getCourierProfile(d);
     const amb     = (typeof courierAmbassadorFor === 'function' ? courierAmbassadorFor(d) : '') || '';
-    const sheetRow = sheetByPhone.get(normPhoneForMatch(d.phone)) || null;
+    // Match the onboarding sheet on the RESOLVED phone, so a driver whose in-range rows had
+    // no phone still picks up his nationality/ambassador.
+    const sheetRow = sheetByPhone.get(normPhoneForMatch(phone)) || null;
     const nat     = prof.nationality || (sheetRow && sheetRow.nationality) || '';
     const blk     = blocks.get(String(d.driverId || '').trim()) || blocks.get(driverKey(g.name)) || null;
-    const tIdx    = trips.get(g.key) || { trip: 0, any: 0 };
+    const stg     = stageById.get(String(d.driverId || '').trim()) || stageByName.get(driverKey(g.name)) || null;
+    const tIdx    = idr;
     // Two different questions. "1st trip" is a TRIP — a driver who has never driven must
     // show blank, not the day he first appeared in a roster (that would read as a trip he
     // never made). Tenure is "how long has he been with us", so it falls back to first
@@ -12093,20 +12168,23 @@ function rxBuildRows(fromMs, toMs, opts) {
 
     rows.push({
       key: g.key, name: g.name, ident,
-      phone: d.phone || '', email: d.email || '', driverId: d.driverId || '',
+      phone, email, driverId: d.driverId || '',
+      accounts: g.accounts || 1,
       ambassador: amb,
       ambTeam: amb && typeof teamForReferrer === 'function' ? (teamForReferrer(amb) || '') : '',
       nationality: nat,
       model: prof.model === 'Custom' ? (prof.modelCustom || 'Custom') : (prof.model || ''),
-      tier: (d.tier && d.tier.englishName) || '',
-      tierLevel: (d.tier && d.tier.level >= 0) ? d.tier.level : '',
+      tier: (tier && tier.englishName) || '',
+      tierLevel: (tier && tier.level >= 0) ? tier.level : '',
       boltStatus: isDeparted ? 'Left Fleet' : (state ? state.charAt(0).toUpperCase() + state.slice(1) : 'Active'),
       departed: isDeparted,
       blocked: blk ? 'YES' : '',
       blockedSince: blk ? (blk.dateBlocked || '') : '',
-      blockReason: blk ? String(blk.reason || '').split('\n')[0] : '',
+      blockReason: rxCleanReason(blk ? blk.reason : ''),
       startDate: prof.startDate || '',
-      stage: prof.funnel || '',
+      stage: (stg && stg.current_stage) || prof.funnel || '',
+      iqama: (stg && stg.iqama) || '',
+      stageSince: (stg && stg.entered_at) ? String(stg.entered_at).slice(0, 10) : '',
       firstTripEver: firstTripMs ? rxMsToLabel(firstTripMs) : '',
       firstTripInRange: rangeFirst ? rxMsToLabel(rangeFirst) : '',
       // ── activity ──
@@ -12196,7 +12274,9 @@ const RX_COLUMNS = [
   { g:'id', k:'Driver Name',            v:r=>r.name },
   { g:'id', k:'Mobile Number',          v:r=>r.phone },
   { g:'id', k:'Email',                  v:r=>r.email },
+  { g:'id', k:'Iqama',                  v:r=>r.iqama },
   { g:'id', k:'Bolt Driver ID',         v:r=>r.driverId },
+  { g:'id', k:'Bolt Accounts',          v:r=>r.accounts },
   { g:'id', k:'Ambassador',             v:r=>r.ambassador },
   { g:'id', k:'Ambassador Team',        v:r=>r.ambTeam },
   { g:'id', k:'Nationality',            v:r=>r.nationality },
@@ -12208,6 +12288,7 @@ const RX_COLUMNS = [
   { g:'status', k:'Blocked Since',      v:r=>r.blockedSince },
   { g:'status', k:'Block Reason',       v:r=>r.blockReason },
   { g:'status', k:'Onboarding Stage',   v:r=>r.stage },
+  { g:'status', k:'Stage Since',        v:r=>r.stageSince },
   { g:'status', k:'Start Date',         v:r=>r.startDate },
   { g:'status', k:'1st Trip (ever)',    v:r=>r.firstTripEver },
   { g:'status', k:'1st Trip (in range)',v:r=>r.firstTripInRange },

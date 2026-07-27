@@ -152,7 +152,7 @@ async function fetchAndAggregateFleet(date) {
 
   // 5. Aggregate orders per driver
   const blankDriver = uuid => ({
-    name: "", driverId: uuid, phone: "",
+    name: "", driverId: uuid, phone: "", email: "",
     orders: 0, hoursOnline: 0, rating: 0, score: 0,
     netEarnings: 0, grossEarnings: 0, tips: 0,
     commission: 0, bookingFees: 0, tollFees: 0,
@@ -209,6 +209,13 @@ async function fetchAndAggregateFleet(date) {
       dr.rating = prof.driver_rating || 0;
       dr.score  = prof.driver_score  || 0;
       if (!dr.name && prof.first_name) dr.name = `${prof.first_name} ${prof.last_name || ""}`.trim();
+      // Contact details live on the PROFILE, not the order feed. The order loop above only sets
+      // a phone for drivers who actually took a ride that day, and never sets an email at all —
+      // so a synced day carried roughly a third of the phones and zero emails, blanking those
+      // columns for any consumer reading the latest day. getDrivers carries both (same source
+      // the Barbary roster mirror reads). Fill only what's missing so an order-derived value wins.
+      if (!dr.phone && prof.phone) dr.phone = String(prof.phone);
+      if (!dr.email && prof.email) dr.email = String(prof.email);
       dr.boltState            = prof.state || "";
       dr.boltSuspensionReason = prof.suspension_reason || "";
       // Additive (Build-166): capture Bolt's OWN suspension category + exact start date IF the
