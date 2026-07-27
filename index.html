@@ -3736,6 +3736,20 @@ function renderCaptains() {
     ? pool.filter(h => summarySelectedDays.has(h.period))
     : pool;
 
+  // What this tab is showing RIGHT NOW, captured for the ⬇ export shortcut. Recording it
+  // here (rather than re-deriving the pool inside the export) means the shortcut can never
+  // drift from the table the user is actually looking at.
+  captainsExportCtx = {
+    periods: (captainView === 'compare' ? comparePool : selected).map(h => h.period),
+    view:    captainView === 'captain' ? 'By Captain' : captainView === 'day' ? 'By Day' : 'Compare Days',
+    month:   sumMonthFilter === 'all' ? 'All months' : monthLabel(sumMonthFilter),
+    period:  captainView === 'compare'
+               ? ({ '7':'Last 7', '14':'Last 14', 'all':'All days', 'month':'By month' }[comparePeriodMode] || '')
+               : ({ '7':'Last 7', '14':'Last 14', 'all':'All days', 'month':'This month' }[sumPeriodMode] || ''),
+    status:  captainView === 'captain' ? sumStatusFilter : 'all',
+    search:  captainView === 'captain' ? captainSearch : ''
+  };
+
   // ── Period bar (captain / day views) ──
   const allOn     = summarySelectedDays && summarySelectedDays.size >= n && sumPeriodMode === 'all';
   const is7       = sumPeriodMode === '7';
@@ -3851,6 +3865,15 @@ function renderCaptains() {
     </div>
   ` : '';
 
+  // ── Export shortcut ──────────────────────────────────────────────────────────
+  // A second door into the SAME Reports & Export modal, opened on the Custom Export tab
+  // with the date range prefilled from whatever days this tab is showing. Deliberately a
+  // bare ⬇ in the toolbar's existing button vocabulary (.sort-btn) — the export belongs to
+  // Finance, this is just a shortcut from where you happen to be standing.
+  const exportShortcut = `
+    <button class="sort-btn" onclick="openCaptainsExport()" style="${searchBar ? 'margin-left:8px' : 'margin-left:auto'};padding:4px 10px"
+            title="Export these captains to Excel / CSV — opens Reports &amp; Export with this view's dates filled in">⬇</button>`;
+
   // ── KPI cards ──
   const kpis = captainView !== 'compare' ? sumKPIs(selected) : null;
   const kpiCardsHtml = kpis ? [
@@ -3884,6 +3907,7 @@ function renderCaptains() {
       ${compareBar}
       ${filterSortBar}
       ${searchBar}
+      ${exportShortcut}
     </div>
     <div id="captainsInner">${innerHtml}</div>`;
 
@@ -4650,6 +4674,7 @@ function getHistory() {
 // (which would silently lose the whole upload). Returns the day count kept.
 function saveHistory(arr) {
   invalidateNetCache();
+  if (typeof rxInvalidateExportCaches === 'function') rxInvalidateExportCaches();   // custom-export first-trip index
   let days = Math.min(arr.length, LOCAL_MAX_DAYS);
   while (days > 0) {
     try {
@@ -8041,7 +8066,7 @@ function renderFinanceTab() {
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="finance-btn finance-btn-secondary" onclick="exportFinanceCSV()">⬇ Export CSV</button>
         <button class="finance-btn finance-btn-primary" onclick="exportFinanceReport()">🖨 Print Report</button>
-        <button class="finance-btn finance-btn-primary" style="background:rgba(0,255,179,.14);border-color:rgba(0,255,179,.55);color:var(--bolt-green);font-weight:700" onclick="openEomReportModal()">📊 End of Month Report</button>
+        <button class="finance-btn finance-btn-primary" style="background:rgba(0,255,179,.14);border-color:rgba(0,255,179,.55);color:var(--bolt-green);font-weight:700" onclick="openEomReportModal()" title="End of Month report + custom driver data export">📊 Reports &amp; Export</button>
         <button class="finance-btn finance-btn-secondary" onclick="openReconcileModal()" title="Upload Bolt's monthly report to lock finalised numbers for bonuses">📋 Reconcile w/ Bolt${isMonthReconciled(financeMonth) ? ' <span style=\'color:var(--green)\'>✓</span>' : ''}</button>
       </div>
     </div>
@@ -9637,33 +9662,48 @@ function buildFinanceModals() {
     </div>
   </div>
 
-  <!-- End of Month Report Modal -->
+  <!-- Reports & Export Modal — two tabs: the fixed End-of-Month report (unchanged)
+       and the custom date-range driver export. The custom pane is rendered from JS
+       (renderCustomExport) so nothing dynamic has to live in this template string. -->
   <div class="fin-modal-overlay" id="eomReportModal" onclick="if(event.target===this)closeEomReportModal()">
-    <div class="fin-modal" style="width:860px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column">
-      <h3 style="margin-bottom:14px">📊 End of Month Report</h3>
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
-        <label style="font-size:12px;color:var(--text-muted);white-space:nowrap">Select Month</label>
-        <select id="eomMonthSelect" onchange="renderEomReportTable()" style="padding:5px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:13px;min-width:150px"></select>
-        <div style="margin-left:auto;display:flex;gap:8px">
-          <button class="finance-btn finance-btn-secondary" onclick="exportEomReportCSV()">⬇ Export CSV</button>
-          <button class="finance-btn finance-btn-secondary" onclick="closeEomReportModal()">Close</button>
+    <div class="fin-modal" style="width:1000px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+        <h3 style="margin:0">📊 Reports &amp; Export</h3>
+        <div class="view-toggle" style="margin-bottom:0">
+          <button class="view-toggle-btn active" id="rxTabBtnEom"    onclick="setReportTab('eom')">📄 End of Month</button>
+          <button class="view-toggle-btn"        id="rxTabBtnCustom" onclick="setReportTab('custom')">🧾 Custom Export</button>
         </div>
+        <button class="finance-btn finance-btn-secondary" style="margin-left:auto" onclick="closeEomReportModal()">Close</button>
       </div>
-      <div id="eomReportNote" style="font-size:11px;color:var(--text-muted);margin-bottom:10px;padding:6px 10px;background:rgba(0,212,255,.05);border-radius:4px;border-left:2px solid rgba(0,212,255,.3)"></div>
-      <div style="overflow:auto;flex:1">
-        <table class="finance-table" id="eomReportTable" style="min-width:700px">
-          <thead><tr>
-            <th style="width:36px">#</th>
-            <th>Account Holder Name</th>
-            <th>Email</th>
-            <th>Mobile Number</th>
-            <th style="text-align:right">Month Net Earning (SAR)</th>
-            <th>Date of 1st Trip</th>
-          </tr></thead>
-          <tbody id="eomReportBody"></tbody>
-        </table>
+
+      <!-- ── Tab 1 · End of Month (unchanged output) ── -->
+      <div id="rxPaneEom" style="display:flex;flex-direction:column;flex:1;min-height:0">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+          <label style="font-size:12px;color:var(--text-muted);white-space:nowrap">Select Month</label>
+          <select id="eomMonthSelect" onchange="renderEomReportTable()" style="padding:5px 10px;border-radius:5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:13px;min-width:150px"></select>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <button class="finance-btn finance-btn-secondary" onclick="exportEomReportCSV()">⬇ Export CSV</button>
+          </div>
+        </div>
+        <div id="eomReportNote" style="font-size:11px;color:var(--text-muted);margin-bottom:10px;padding:6px 10px;background:rgba(0,212,255,.05);border-radius:4px;border-left:2px solid rgba(0,212,255,.3)"></div>
+        <div style="overflow:auto;flex:1">
+          <table class="finance-table" id="eomReportTable" style="min-width:700px">
+            <thead><tr>
+              <th style="width:36px">#</th>
+              <th>Account Holder Name</th>
+              <th>Email</th>
+              <th>Mobile Number</th>
+              <th style="text-align:right">Month Net Earning (SAR)</th>
+              <th>Date of 1st Trip</th>
+            </tr></thead>
+            <tbody id="eomReportBody"></tbody>
+          </table>
+        </div>
+        <div id="eomReportTotals" style="padding:12px 0 0;border-top:1px solid rgba(0,212,255,.1);margin-top:8px;font-family:var(--mono);font-size:13px;color:var(--bolt-green);text-align:right"></div>
       </div>
-      <div id="eomReportTotals" style="padding:12px 0 0;border-top:1px solid rgba(0,212,255,.1);margin-top:8px;font-family:var(--mono);font-size:13px;color:var(--bolt-green);text-align:right"></div>
+
+      <!-- ── Tab 2 · Custom Export (rendered by renderCustomExport) ── -->
+      <div id="rxPaneCustom" style="display:none;flex-direction:column;flex:1;min-height:0"></div>
     </div>
   </div>
 
@@ -11666,7 +11706,11 @@ function buildEomReportData(monthKey) {
   .sort((a, b) => b.net - a.net);  // highest earner first
 }
 
-function openEomReportModal() {
+// tab defaults to 'eom' so every existing caller (the Finance button) behaves exactly as
+// before; the Captains ⬇ shortcut passes 'custom'.
+function openEomReportModal(tab) {
+  ensureFinanceModals();          // the shortcut can fire from the Captains tab, where the
+                                  // Finance panel (and its modals) may never have rendered
   const modal = document.getElementById('eomReportModal');
   if (!modal) return;
   const months = getAvailableMonths();
@@ -11676,7 +11720,13 @@ function openEomReportModal() {
     : `<option value="${financeMonth}">${monthLabel(financeMonth)} (no data)</option>`;
   if (!sel.value && months.length) sel.value = months[0];
   modal.classList.add('open');
+  // Always land on the End-of-Month tab — same one click, same table as before the
+  // Custom Export tab existed. Drop the export caches so a modal opened after an
+  // upload never aggregates a stale history.
+  if (typeof rxInvalidateExportCaches === 'function') rxInvalidateExportCaches();
+  if (tab !== 'custom') rxPrefill = null;   // opened from Finance — no Captains context to report
   renderEomReportTable();
+  if (typeof setReportTab === 'function') setReportTab(tab === 'custom' ? 'custom' : 'eom');
 }
 
 function closeEomReportModal() {
@@ -11767,6 +11817,723 @@ function exportEomReportCSV() {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
   toast('End of Month report exported ✓');
+}
+
+// ═══════════════════════════════════════════
+// CUSTOM DATA EXPORT  (Reports & Export → tab 2)
+// ═══════════════════════════════════════════
+// A date-RANGE driver export, as opposed to the fixed month-shaped EOM report above.
+// Three things make it different from every other export in this file:
+//   1. RANGE, not month. History is stored per uploaded CSV period, and a period can be a
+//      single day OR a range ("22 May 2026 → 28 May 2026"). A 7-day file CANNOT be sliced
+//      into 3 days — the data does not exist at that granularity. So the range picker
+//      SNAPS to whole uploaded periods (any period overlapping the range is included in
+//      full) and the UI states the real coverage instead of implying day-precision.
+//   2. Identity-keyed. Rows group by courierIdentityKey (uuid/phone ladder), not by name,
+//      so a collision name never blends two drivers into one export row.
+//   3. Everyone by default — including zero-earners and left-fleet drivers. The EOM report
+//      filters to net > 0 because Bolt wants earners; for insight, the captain who earned
+//      nothing for three weeks is exactly the row you need to see.
+// Company P&L columns are the one place this stays MONTH-shaped: rents/salaries/cuts are
+// monthly figures, so they are summed over the whole calendar months the range touches and
+// labelled as such — never pro-rated into a fake daily number.
+
+let rxTab = 'eom';
+const RX_PREFS_KEY = 'boltExportPrefs';
+const RX_DAY_MS    = 86400000;
+// Set by renderCaptains on every render; read by the ⬇ shortcut.
+let captainsExportCtx = null;
+// Describes a prefill that came from the Captains tab, so the export can say where its
+// dates came from — and admit what it did NOT carry across. Cleared the moment the user
+// touches the range themselves, because it would no longer be describing what they see.
+let rxPrefill = null;
+
+// ⬇ from the Captains toolbar → the same modal, Custom Export tab, dates prefilled from
+// the days that tab is showing. Only the DATE RANGE (and the left-fleet toggle) carries
+// across: search and "Left Fleet only" are per-driver filters this export doesn't have, so
+// they are reported as not applied rather than silently ignored.
+function openCaptainsExport() {
+  const ctx = captainsExportCtx;
+  if (!ctx || !ctx.periods.length) { toast('No days in the current Captains view'); return; }
+
+  let from = 0, to = 0;
+  ctx.periods.forEach(pd => {
+    const pi = parsePeriodInfo(pd);
+    if (!pi) return;
+    const s = rxDayMs(pi.start), e = rxDayMs(pi.end);
+    if (!from || s < from) from = s;
+    if (e > to) to = e;
+  });
+  if (!from) { toast('Could not read the dates in this view'); return; }
+
+  const p = loadExportPrefs();
+  p.preset = 'custom';
+  p.from   = rxMsToHtml(from);
+  p.to     = rxMsToHtml(to);
+  if (ctx.status === 'current') p.left = false;      // "Current" = the fleet minus leavers
+  if (ctx.status === 'left')    p.left = true;       // can't express "only leavers" — noted below
+  saveExportPrefs(p);
+
+  rxPrefill = {
+    label: [ctx.view, ctx.month, ctx.period].filter(Boolean).join(' · '),
+    selectedDays: ctx.periods.length,
+    statusOnlyLeft: ctx.status === 'left',
+    search: ctx.search || ''
+  };
+  openEomReportModal('custom');
+}
+
+function setReportTab(which) {
+  rxTab = which;
+  const pe = document.getElementById('rxPaneEom'), pc = document.getElementById('rxPaneCustom');
+  const be = document.getElementById('rxTabBtnEom'), bc = document.getElementById('rxTabBtnCustom');
+  if (!pe || !pc) return;
+  pe.style.display = which === 'eom'    ? 'flex' : 'none';
+  pc.style.display = which === 'custom' ? 'flex' : 'none';
+  if (be) be.classList.toggle('active', which === 'eom');
+  if (bc) bc.classList.toggle('active', which === 'custom');
+  if (which === 'custom') {
+    renderCustomExport();
+    // Nationality + ambassador live in the onboarding-sheet mirror. Warm the cache in the
+    // background so those columns fill in; re-render when it lands (never blocks the UI).
+    if (typeof fetchSheetAmbassadorSync === 'function' && typeof sheetAmbassadorSyncCache !== 'undefined' && !sheetAmbassadorSyncCache) {
+      fetchSheetAmbassadorSync().then(() => { if (rxTab === 'custom') renderCustomExport(); }).catch(() => {});
+    }
+  }
+}
+
+function loadExportPrefs() {
+  const dflt = { groups: { id:true, status:true, earn:true, act:true, fees:false, qual:false, pnl:false, ins:true },
+                 zero: true, left: true, preset: 'thisMonth', from: '', to: '' };
+  try {
+    const s = JSON.parse(localStorage.getItem(RX_PREFS_KEY) || 'null');
+    if (!s) return dflt;
+    return { ...dflt, ...s, groups: { ...dflt.groups, ...(s.groups || {}) } };
+  } catch (e) { return dflt; }
+}
+function saveExportPrefs(p) { try { localStorage.setItem(RX_PREFS_KEY, JSON.stringify(p)); } catch (e) {} }
+
+// ── Date plumbing ──────────────────────────────────────────────────────────────
+function rxDayMs(o)   { return o ? new Date(o.year, o.month, o.day).getTime() : 0; }
+function rxHtmlMs(s)  { const p = String(s || '').split('-').map(Number); return (p.length === 3 && p[0]) ? new Date(p[0], p[1]-1, p[2]).getTime() : 0; }
+function rxMsToHtml(ms) { const d = new Date(ms); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function rxMsToLabel(ms) { const d = new Date(ms); return d.getDate() + ' ' + MONTH_NAMES[d.getMonth()] + ' ' + d.getFullYear(); }
+function rxPeriodInfo(h) { return h.periodInfo || parsePeriodInfo(h.period || ''); }
+
+// Earliest / latest day that ANY uploaded period covers — the bounds of what can be exported.
+function rxHistoryBounds() {
+  let min = 0, max = 0;
+  getHistory().forEach(h => {
+    const pi = rxPeriodInfo(h);
+    if (!pi) return;
+    const s = rxDayMs(pi.start), e = rxDayMs(pi.end);
+    if (!min || s < min) min = s;
+    if (e > max) max = e;
+  });
+  return { min, max };
+}
+
+function rxPresetRange(preset) {
+  const b   = rxHistoryBounds();
+  const end = b.max || Date.now();
+  const now = new Date(end);
+  switch (preset) {
+    case 'thisMonth':  return { from: new Date(now.getFullYear(), now.getMonth(), 1).getTime(), to: end };
+    case 'lastMonth': {
+      const s = new Date(now.getFullYear(), now.getMonth()-1, 1);
+      return { from: s.getTime(), to: new Date(now.getFullYear(), now.getMonth(), 0).getTime() };
+    }
+    case 'last7':      return { from: end - 6  * RX_DAY_MS, to: end };
+    case 'last30':     return { from: end - 29 * RX_DAY_MS, to: end };
+    case 'all':        return { from: b.min || end, to: end };
+    default:           return { from: b.min || end, to: end };
+  }
+}
+
+// Every uploaded period that OVERLAPS [fromMs, toMs], de-duplicated by period string.
+// History can hold two entries for the same day (a cron pull and a manual upload) — keep the
+// richer one, matching how sumDriverNetForMonth de-dupes, so nothing is double-counted.
+function rxEntriesInRange(fromMs, toMs) {
+  const byPeriod = new Map();
+  getHistory().forEach(h => {
+    const pi = rxPeriodInfo(h);
+    if (!pi) return;
+    const s = rxDayMs(pi.start), e = rxDayMs(pi.end);
+    if (e < fromMs || s > toMs) return;                       // no overlap
+    const prev = byPeriod.get(h.period);
+    if (!prev) { byPeriod.set(h.period, h); return; }
+    const better = (a, b) => {
+      const na = (a.drivers || []).length, nb = (b.drivers || []).length;
+      if (na !== nb) return na > nb ? a : b;
+      return tsMs(a.uploadedAt) >= tsMs(b.uploadedAt) ? a : b;
+    };
+    byPeriod.set(h.period, better(prev, h));
+  });
+  return [...byPeriod.values()].sort((a, b) => periodSortKey(a.period) - periodSortKey(b.period));
+}
+
+// One pass over ALL history (not just the range) for tenure: the first day each identity
+// had a real trip. Doing this per-driver would re-walk history 200×.
+let _rxFirstTripCache = null;
+function rxFirstTripIndex() {
+  if (_rxFirstTripCache) return _rxFirstTripCache;
+  const idx = new Map();
+  getHistory().forEach(h => {
+    const sk = periodSortKey(h.period);
+    (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => {
+      if (!d.name) return;
+      const k = courierIdentityKey(d);
+      let e = idx.get(k);
+      if (!e) { e = { trip: 0, any: 0 }; idx.set(k, e); }
+      if (!e.any || sk < e.any) e.any = sk;
+      if ((sN(d.orders) > 0 || sN(d.grossEarnings) > 0) && (!e.trip || sk < e.trip)) e.trip = sk;
+    });
+  });
+  _rxFirstTripCache = idx;
+  return idx;
+}
+function rxInvalidateExportCaches() { _rxFirstTripCache = null; }
+
+// Group every driver row inside the range by identity, then aggregate with the SAME
+// engine the driver panel uses (aggregateDriverRows) so a range total can never disagree
+// with what the panel shows for those days.
+function rxAggregateRange(fromMs, toMs) {
+  const entries = rxEntriesInRange(fromMs, toMs);
+  const groups  = new Map();
+  entries.forEach(h => (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => {
+    if (!d.name) return;
+    const k  = courierIdentityKey(d);
+    const sk = periodSortKey(h.period);
+    let g = groups.get(k);
+    if (!g) { g = { key: k, name: (d.name || '').trim(), last: d, lastSk: -1, rows: [] }; groups.set(k, g); }
+    g.rows.push({ period: h.period, d });
+    if (sk >= g.lastSk) { g.lastSk = sk; g.last = d; g.name = (d.name || '').trim(); }   // newest row wins for contact/status
+  }));
+  groups.forEach(g => { g.agg = aggregateDriverRows(g.rows); });
+  const daysCovered = entries.reduce((s, h) => { const pi = rxPeriodInfo(h); return s + (pi ? (pi.daysInPeriod || 1) : 1); }, 0);
+  // A multi-day Bolt export that straddles your From/To edge is included IN FULL — it cannot
+  // be split, the per-day numbers don't exist inside it. Count those so the UI can say so
+  // instead of quietly reporting a total that covers more days than the range asked for.
+  const straddling = entries.filter(h => {
+    const pi = rxPeriodInfo(h);
+    return pi && (rxDayMs(pi.start) < fromMs || rxDayMs(pi.end) > toMs);
+  }).length;
+  return { groups, entries, periodCount: entries.length, daysCovered, straddling };
+}
+
+// Calendar months the range touches, as 'YYYY-MM' keys — the window the monthly P&L
+// figures are summed over.
+function rxMonthsInRange(entries) {
+  const set = new Set();
+  entries.forEach(h => {
+    const pi = rxPeriodInfo(h);
+    if (!pi) return;
+    set.add(pi.end.year + '-' + String(pi.end.month + 1).padStart(2, '0'));
+    set.add(pi.start.year + '-' + String(pi.start.month + 1).padStart(2, '0'));
+  });
+  return [...set].sort();
+}
+
+// ── The row builder ────────────────────────────────────────────────────────────
+function rxBuildRows(fromMs, toMs, opts) {
+  const o     = opts || {};
+  const cur   = rxAggregateRange(fromMs, toMs);
+  const span  = toMs - fromMs + RX_DAY_MS;
+  const prev  = rxAggregateRange(fromMs - span, fromMs - RX_DAY_MS);   // same length, immediately before
+  const trips = rxFirstTripIndex();
+  const wantPnL = !!(o.groups && o.groups.pnl);
+  const months  = wantPnL ? rxMonthsInRange(cur.entries) : [];
+
+  // Side tables, each built once instead of per-driver.
+  const rosterState = new Map();
+  (getRosterEntry()?.drivers || []).forEach(d => { if (d.name) rosterState.set(courierIdentityKey(d), (d.boltState || '').toLowerCase()); });
+  const departed = getDepartedKeys();
+  const canonOf  = getIdentityResolver().canonOf;
+  const blocks   = new Map();
+  getBlockLog().forEach(e => {
+    if (e.dateUnblocked) return;                                  // only OPEN blocks matter here
+    const k = String(e.driverId || '').trim() || driverKey(e.driverName);
+    if (k) blocks.set(k, e);
+  });
+  const sheetByPhone = new Map();
+  if (typeof sheetAmbassadorSyncCache !== 'undefined' && Array.isArray(sheetAmbassadorSyncCache))
+    sheetAmbassadorSyncCache.forEach(s => { const p = normPhoneForMatch(s.phone); if (p) sheetByPhone.set(p, s); });
+
+  const rows = [];
+  cur.groups.forEach(g => {
+    const a  = g.agg;
+    const d  = g.last;
+    const pv = prev.groups.get(g.key);
+    const prevNet = pv ? pv.agg.net : 0;
+
+    const ident   = { name: g.name, driverId: d.driverId || '', phone: d.phone || '' };
+    const prof    = getCourierProfile(d);
+    const amb     = (typeof courierAmbassadorFor === 'function' ? courierAmbassadorFor(d) : '') || '';
+    const sheetRow = sheetByPhone.get(normPhoneForMatch(d.phone)) || null;
+    const nat     = prof.nationality || (sheetRow && sheetRow.nationality) || '';
+    const blk     = blocks.get(String(d.driverId || '').trim()) || blocks.get(driverKey(g.name)) || null;
+    const tIdx    = trips.get(g.key) || { trip: 0, any: 0 };
+    // Two different questions. "1st trip" is a TRIP — a driver who has never driven must
+    // show blank, not the day he first appeared in a roster (that would read as a trip he
+    // never made). Tenure is "how long has he been with us", so it falls back to first
+    // appearance for exactly that driver.
+    const firstTripMs = tIdx.trip || 0;
+    const firstMs     = tIdx.trip || tIdx.any || 0;
+
+    // Range-local first trip: earliest day INSIDE the window where they actually drove.
+    let rangeFirst = 0;
+    g.rows.forEach(({ period, d: rd }) => {
+      const sk = periodSortKey(period);
+      if ((sN(rd.orders) > 0 || sN(rd.grossEarnings) > 0) && (!rangeFirst || sk < rangeFirst)) rangeFirst = sk;
+    });
+
+    const isDeparted = departed.has(canonOf(d));
+    const state = rosterState.get(g.key) || (d.boltState || '');
+    const nextTier = a.net >= 6000 ? 0 : a.net >= 5000 ? 6000 - a.net : a.net >= 4000 ? 5000 - a.net : 4000 - a.net;
+
+    rows.push({
+      key: g.key, name: g.name, ident,
+      phone: d.phone || '', email: d.email || '', driverId: d.driverId || '',
+      ambassador: amb,
+      ambTeam: amb && typeof teamForReferrer === 'function' ? (teamForReferrer(amb) || '') : '',
+      nationality: nat,
+      model: prof.model === 'Custom' ? (prof.modelCustom || 'Custom') : (prof.model || ''),
+      tier: (d.tier && d.tier.englishName) || '',
+      tierLevel: (d.tier && d.tier.level >= 0) ? d.tier.level : '',
+      boltStatus: isDeparted ? 'Left Fleet' : (state ? state.charAt(0).toUpperCase() + state.slice(1) : 'Active'),
+      departed: isDeparted,
+      blocked: blk ? 'YES' : '',
+      blockedSince: blk ? (blk.dateBlocked || '') : '',
+      blockReason: blk ? String(blk.reason || '').split('\n')[0] : '',
+      startDate: prof.startDate || '',
+      stage: prof.funnel || '',
+      firstTripEver: firstTripMs ? rxMsToLabel(firstTripMs) : '',
+      firstTripInRange: rangeFirst ? rxMsToLabel(rangeFirst) : '',
+      // ── activity ──
+      daysInData: a.days, activeDays: a.activeDays, orders: a.orders, hours: a.hours,
+      distance: a.distance, distanceAvg: a.distanceAvg,
+      // ── earnings ──
+      net: a.net, gross: a.gross, grossInApp: a.grossInApp, cashEarnings: a.cashEarnings,
+      tips: a.tips, campaign: a.campaign, commission: a.commission, cashGap: a.cashGap,
+      netPerHour: a.netPerHour,
+      grossPerHour: a.hours ? a.gross / a.hours : 0,
+      // ── fee breakdown ──
+      cancellationFees: a.cancellationFees, tollFees: a.tollFees, bookingFees: a.bookingFees,
+      expenseReimbursements: a.expenseReimbursements, refundsToRiders: a.refundsToRiders,
+      commissionDiscountInApp: a.commissionDiscountInApp, commissionDiscountCash: a.commissionDiscountCash,
+      // ── quality ──
+      rating: a.rating, score: a.score, acceptance: a.acceptance, acceptanceTotal: a.acceptanceTotal,
+      finishRate: a.finishRate, utilization: a.utilization,
+      // ── insights ──
+      sarPerActiveDay: a.activeDays ? a.net / a.activeDays : 0,
+      ordersPerHour:   a.hours ? a.orders / a.hours : 0,
+      consistency:     cur.periodCount ? (a.activeDays / cur.periodCount) * 100 : 0,
+      prevNet, deltaPct: prevNet > 0 ? ((a.net - prevNet) / prevNet) * 100 : '',
+      tenureDays: firstMs ? Math.round((toMs - firstMs) / RX_DAY_MS) : '',
+      toNextTier: nextTier,
+      // filled in after sorting
+      share: 0, rank: 0,
+      // ── company P&L (monthly, summed over whole months) ──
+      pnlAcctRent: 0, pnlCarRent: 0, pnlSalary: 0, pnlFleetCut: 0, pnlOther: 0, pnlBonus: 0, pnlNet: 0, hasProfile: false
+    });
+  });
+
+  if (wantPnL) {
+    rows.forEach(r => {
+      months.forEach(mk => {
+        const p = computeDriverPnL(r.name, mk);
+        r.pnlAcctRent += p.acctRent; r.pnlCarRent += p.carRent; r.pnlSalary += p.salary;
+        r.pnlFleetCut += p.fleetCut; r.pnlOther += p.other;   r.pnlBonus  += p.bonusCost;
+        r.pnlNet      += p.netPnL;
+        if (p.hasProfile) r.hasProfile = true;
+      });
+    });
+  }
+
+  let out = rows;
+  if (!o.zero) out = out.filter(r => r.net > 0);
+  if (!o.left) out = out.filter(r => !r.departed);
+  out.sort((x, y) => y.net - x.net);
+
+  const totalNet = out.reduce((s, r) => s + r.net, 0);
+  out.forEach((r, i) => { r.rank = i + 1; r.share = totalNet ? (r.net / totalNet) * 100 : 0; });
+
+  // The real calendar span the data covers. Built from the period DATES, not the period
+  // strings — a multi-day period is itself written "15 Jul 2026 → 21 Jul 2026", so joining
+  // two of those with another arrow produced an unreadable triple-arrow line.
+  let spanFrom = 0, spanTo = 0;
+  cur.entries.forEach(h => {
+    const pi = rxPeriodInfo(h);
+    if (!pi) return;
+    const s = rxDayMs(pi.start), e = rxDayMs(pi.end);
+    if (!spanFrom || s < spanFrom) spanFrom = s;
+    if (e > spanTo) spanTo = e;
+  });
+
+  return {
+    rows: out, totalNet, months,
+    periodCount: cur.periodCount, daysCovered: cur.daysCovered, straddling: cur.straddling,
+    spanFrom, spanTo,
+    spanLabel: spanFrom ? rxMsToLabel(spanFrom) + ' → ' + rxMsToLabel(spanTo) : '',
+    hasPrev: prev.entries.length > 0
+  };
+}
+
+// ── Column catalogue ───────────────────────────────────────────────────────────
+// g = group id · k = header · v = value getter · n = decimals (numbers stay NUMBERS so
+// Excel can sum them; only the CSV writer formats them).
+const RX_GROUPS = [
+  { id:'id',     label:'👤 Identity',      hint:'Name, phone, email, ambassador, model, tier' },
+  { id:'status', label:'🚦 Status',         hint:'Bolt status, blocked, left-fleet, first trip, tenure' },
+  { id:'earn',   label:'💰 Earnings',       hint:'Net, gross, tips, campaign, commission, cash gap' },
+  { id:'act',    label:'📊 Activity',       hint:'Days, rides, hours, distance' },
+  { id:'fees',   label:'🧾 Fee breakdown',  hint:'Cancellation, toll, booking, refunds, discounts' },
+  { id:'qual',   label:'⭐ Quality',        hint:'Rating, score, acceptance, finish rate, utilisation' },
+  { id:'pnl',    label:'🏦 Company P&L',    hint:'Rent, salary, fleet cut, bonuses — summed over whole months' },
+  { id:'ins',    label:'🔍 Insights',       hint:'SAR/active day, consistency, share, rank, trend vs previous' }
+];
+const RX_COLUMNS = [
+  { g:'id', k:'Driver Name',            v:r=>r.name },
+  { g:'id', k:'Mobile Number',          v:r=>r.phone },
+  { g:'id', k:'Email',                  v:r=>r.email },
+  { g:'id', k:'Bolt Driver ID',         v:r=>r.driverId },
+  { g:'id', k:'Ambassador',             v:r=>r.ambassador },
+  { g:'id', k:'Ambassador Team',        v:r=>r.ambTeam },
+  { g:'id', k:'Nationality',            v:r=>r.nationality },
+  { g:'id', k:'Model',                  v:r=>r.model },
+  { g:'id', k:'Tier',                   v:r=>r.tier },
+
+  { g:'status', k:'Bolt Status',        v:r=>r.boltStatus },
+  { g:'status', k:'Blocked',            v:r=>r.blocked },
+  { g:'status', k:'Blocked Since',      v:r=>r.blockedSince },
+  { g:'status', k:'Block Reason',       v:r=>r.blockReason },
+  { g:'status', k:'Onboarding Stage',   v:r=>r.stage },
+  { g:'status', k:'Start Date',         v:r=>r.startDate },
+  { g:'status', k:'1st Trip (ever)',    v:r=>r.firstTripEver },
+  { g:'status', k:'1st Trip (in range)',v:r=>r.firstTripInRange },
+
+  { g:'earn', k:'Net Earnings (SAR)',   v:r=>r.net,          n:2 },
+  { g:'earn', k:'Gross Total (SAR)',    v:r=>r.gross,        n:2 },
+  { g:'earn', k:'Gross In-App (SAR)',   v:r=>r.grossInApp,   n:2 },
+  { g:'earn', k:'Gross Cash (SAR)',     v:r=>r.cashEarnings, n:2 },
+  { g:'earn', k:'Cash Gap (SAR)',       v:r=>r.cashGap,      n:2 },
+  { g:'earn', k:'Tips (SAR)',           v:r=>r.tips,         n:2 },
+  { g:'earn', k:'Campaign (SAR)',       v:r=>r.campaign,     n:2 },
+  { g:'earn', k:'Commission Fees (SAR)',v:r=>r.commission,   n:2 },
+  { g:'earn', k:'Net / Hour (SAR)',     v:r=>r.netPerHour,   n:2 },
+  { g:'earn', k:'Gross / Hour (SAR)',   v:r=>r.grossPerHour, n:2 },
+
+  { g:'act', k:'Days in Data',          v:r=>r.daysInData },
+  { g:'act', k:'Active Days',           v:r=>r.activeDays },
+  { g:'act', k:'Finished Rides',        v:r=>r.orders },
+  { g:'act', k:'Online Hours',          v:r=>r.hours,       n:1 },
+  { g:'act', k:'Total Distance (km)',   v:r=>r.distance,    n:1 },
+  { g:'act', k:'Avg Ride Distance (km)',v:r=>r.distanceAvg, n:2 },
+
+  { g:'fees', k:'Cancellation Fees',    v:r=>r.cancellationFees,        n:2 },
+  { g:'fees', k:'Toll Fees',            v:r=>r.tollFees,                n:2 },
+  { g:'fees', k:'Booking Fees',         v:r=>r.bookingFees,             n:2 },
+  { g:'fees', k:'Expense Reimbursements',v:r=>r.expenseReimbursements,  n:2 },
+  { g:'fees', k:'Refunds to Riders',    v:r=>r.refundsToRiders,         n:2 },
+  { g:'fees', k:'Commission Disc. In-App',v:r=>r.commissionDiscountInApp, n:2 },
+  { g:'fees', k:'Commission Disc. Cash',v:r=>r.commissionDiscountCash,  n:2 },
+
+  { g:'qual', k:'Avg Rating',           v:r=>r.rating,          n:2 },
+  { g:'qual', k:'Driver Score',         v:r=>r.score },
+  { g:'qual', k:'Acceptance % (eff.)',  v:r=>r.acceptance,      n:1 },
+  { g:'qual', k:'Acceptance % (total)', v:r=>r.acceptanceTotal, n:1 },
+  { g:'qual', k:'Finish Rate %',        v:r=>r.finishRate },
+  { g:'qual', k:'Utilisation %',        v:r=>r.utilization },
+
+  { g:'pnl', k:'Account Rent (SAR)',    v:r=>r.pnlAcctRent, n:2 },
+  { g:'pnl', k:'Car Rent (SAR)',        v:r=>r.pnlCarRent,  n:2 },
+  { g:'pnl', k:'Salary (SAR)',          v:r=>r.pnlSalary,   n:2 },
+  { g:'pnl', k:'Fleet Cut (SAR)',       v:r=>r.pnlFleetCut, n:2 },
+  { g:'pnl', k:'Other (SAR)',           v:r=>r.pnlOther,    n:2 },
+  { g:'pnl', k:'Bonus Cost (SAR)',      v:r=>r.pnlBonus,    n:2 },
+  { g:'pnl', k:'Net P&L (SAR)',         v:r=>r.pnlNet,      n:2 },
+  { g:'pnl', k:'Has Cost Profile',      v:r=>r.hasProfile ? 'YES' : '' },
+
+  { g:'ins', k:'SAR per Active Day',    v:r=>r.sarPerActiveDay, n:2 },
+  { g:'ins', k:'Rides per Hour',        v:r=>r.ordersPerHour,   n:2 },
+  { g:'ins', k:'Consistency %',         v:r=>r.consistency,     n:1 },
+  { g:'ins', k:'Share of Fleet Net %',  v:r=>r.share,           n:2 },
+  { g:'ins', k:'Rank',                  v:r=>r.rank },
+  { g:'ins', k:'Prev Period Net (SAR)', v:r=>r.prevNet,         n:2 },
+  { g:'ins', k:'Δ vs Prev %',           v:r=>r.deltaPct,        n:1 },
+  { g:'ins', k:'Tenure (days)',         v:r=>r.tenureDays },
+  { g:'ins', k:'To Next Bonus Tier (SAR)', v:r=>r.toNextTier,   n:2 }
+];
+function rxActiveColumns(groups) { return RX_COLUMNS.filter(c => groups[c.g]); }
+
+// ── UI ─────────────────────────────────────────────────────────────────────────
+function rxCurrentRange() {
+  const p = loadExportPrefs();
+  if (p.preset !== 'custom') return rxPresetRange(p.preset);
+  const b = rxHistoryBounds();
+  return { from: rxHtmlMs(p.from) || b.min || Date.now(), to: rxHtmlMs(p.to) || b.max || Date.now() };
+}
+
+function renderCustomExport() {
+  const el = document.getElementById('rxPaneCustom');
+  if (!el) return;
+  const p = loadExportPrefs();
+  const b = rxHistoryBounds();
+
+  if (!b.max) {
+    el.innerHTML = `<div class="empty-state" style="padding:40px 20px">
+      <div class="empty-icon">📭</div><div class="empty-title">No uploaded data yet</div>
+      <div class="empty-sub">Upload at least one Bolt daily CSV, then come back to export a date range.</div></div>`;
+    return;
+  }
+
+  const r    = rxCurrentRange();
+  const data = rxBuildRows(r.from, r.to, { groups: p.groups, zero: p.zero, left: p.left });
+  const cols = rxActiveColumns(p.groups);
+
+  // Where these dates came from, when the Captains ⬇ put them there — including the parts
+  // of that view the export could NOT carry across.
+  const gapDays = rxPrefill ? data.periodCount - rxPrefill.selectedDays : 0;
+  const prefillHtml = rxPrefill ? `
+    <div style="font-size:11px;margin-bottom:10px;padding:7px 10px;background:rgba(0,255,179,.06);border-radius:4px;border-left:2px solid rgba(0,255,179,.45);line-height:1.6;color:var(--text-muted)">
+      ⬇ Dates prefilled from the <b style="color:var(--bolt-green)">Captains</b> tab — ${rxPrefill.label}
+      ${gapDays > 0 ? `<br><span style="color:var(--amber)">⚠ That view had ${rxPrefill.selectedDays} day${rxPrefill.selectedDays===1?'':'s'} selected, but they don't sit back-to-back — this range spans ${data.periodCount} uploaded days and the export covers all of them.</span>` : ''}
+      ${rxPrefill.statusOnlyLeft ? `<br><span style="color:var(--amber)">⚠ Captains was filtered to <b>Left Fleet only</b>. This export has no such filter — it covers the whole fleet in the range.</span>` : ''}
+      ${rxPrefill.search ? `<br><span style="color:var(--amber)">⚠ Your Captains search “${rxPrefill.search.replace(/"/g,'&quot;')}” is <b>not</b> applied — every driver in the range is included.</span>` : ''}
+    </div>` : '';
+
+  const presets = [['thisMonth','This month'],['lastMonth','Last month'],['last7','Last 7 days'],['last30','Last 30 days'],['all','All time'],['custom','Custom']];
+  const presetHtml = presets.map(([id, lbl]) =>
+    `<button class="date-pill ${p.preset===id?'active':''}" onclick="rxSetPreset('${id}')">${lbl}</button>`).join('');
+
+  const groupHtml = RX_GROUPS.map(g => {
+    const on = !!p.groups[g.id];
+    const cnt = RX_COLUMNS.filter(c => c.g === g.id).length;
+    return `<label title="${g.hint}" style="display:flex;align-items:center;gap:7px;padding:6px 9px;border-radius:4px;cursor:pointer;font-size:12px;
+              background:${on?'rgba(0,255,179,.07)':'rgba(0,212,255,.03)'};border:1px solid ${on?'rgba(0,255,179,.3)':'rgba(0,212,255,.12)'}">
+        <input type="checkbox" class="checkbox-toggle" ${on?'checked':''} onchange="rxToggleGroup('${g.id}',this.checked)">
+        <span style="color:${on?'var(--bolt-green)':'var(--text-muted)'}">${g.label}</span>
+        <span style="margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--text-muted)">${cnt}</span>
+      </label>`;
+  }).join('');
+
+  // Honest coverage line — what the range ACTUALLY resolved to, not what was typed.
+  const coverage = data.periodCount
+    ? `Covering <b style="color:var(--bolt-green)">${data.periodCount}</b> uploaded period${data.periodCount===1?'':'s'}
+       (<b>${data.daysCovered}</b> day${data.daysCovered===1?'':'s'} of data) · ${data.spanLabel}
+       · <b style="color:var(--bolt-green)">${data.rows.length}</b> driver${data.rows.length===1?'':'s'}
+       · total net <b style="color:var(--bolt-green)">${fmt(data.totalNet)} SAR</b>
+       ${data.straddling ? `<br><span style="color:var(--amber)">⚠ ${data.straddling} multi-day export${data.straddling===1?'':'s'} cross${data.straddling===1?'es':''} the edge of your range and ${data.straddling===1?'was':'were'} included IN FULL — a multi-day Bolt file can't be split into single days, so the totals cover the wider span shown above.</span>` : ''}
+       ${p.groups.pnl && data.months.length ? `<br><span style="color:var(--amber)">⚠ Company P&L is monthly — those columns are summed over ${data.months.length} whole calendar month${data.months.length===1?'':'s'} (${data.months.map(monthLabel).join(', ')}), not pro-rated to your range.</span>` : ''}
+       ${!data.hasPrev && p.groups.ins ? `<br><span style="color:var(--text-muted)">No data before this range — the “Δ vs Prev %” column will be empty.</span>` : ''}`
+    : `<span style="color:var(--amber)">No uploaded data falls inside this range.</span>`;
+
+  const prevCols = [
+    ['#',           r2 => r2.rank],
+    ['Driver',      r2 => r2.name],
+    ['Phone',       r2 => r2.phone || '—'],
+    ['Ambassador',  r2 => r2.ambassador || '—'],
+    ['Status',      r2 => r2.boltStatus],
+    ['Active d',    r2 => r2.activeDays],
+    ['Net SAR',     r2 => fmt(r2.net)],
+    ['Δ %',         r2 => r2.deltaPct === '' ? '—' : (r2.deltaPct >= 0 ? '+' : '') + r2.deltaPct.toFixed(0) + '%']
+  ];
+  const preview = data.rows.slice(0, 10);
+  const previewHtml = preview.length ? `
+    <table class="finance-table" style="min-width:640px">
+      <thead><tr>${prevCols.map(c => `<th>${c[0]}</th>`).join('')}</tr></thead>
+      <tbody>${preview.map(row => `<tr>${prevCols.map((c, i) => {
+        const v = c[1](row);
+        const style = i === 6 ? 'text-align:right;font-family:var(--mono);font-weight:700;color:var(--bolt-green)'
+                    : i === 7 ? `text-align:right;font-family:var(--mono);color:${row.deltaPct === '' ? 'var(--text-muted)' : (row.deltaPct >= 0 ? 'var(--bolt-green)' : 'var(--red)')}`
+                    : 'font-size:12px';
+        return `<td style="${style}">${v}</td>`;
+      }).join('')}</tr>`).join('')}</tbody>
+    </table>
+    ${data.rows.length > 10 ? `<div style="font-size:11px;color:var(--text-muted);padding:8px 2px">…and ${data.rows.length - 10} more rows in the file.</div>` : ''}`
+    : `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:12px">Nothing to export with these filters.</div>`;
+
+  el.innerHTML = `
+    <div style="overflow:auto;flex:1;padding-right:2px">
+      ${prefillHtml}
+      <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px">1 · Date range</div>
+      <div class="daily-date-bar" style="margin-bottom:10px">${presetHtml}</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <label style="font-size:12px;color:var(--text-muted)">From</label>
+        <input type="date" id="rxFrom" value="${rxMsToHtml(r.from)}" min="${rxMsToHtml(b.min)}" max="${rxMsToHtml(b.max)}" onchange="rxOnDateChange()"
+               style="background:var(--bg-card);border:1px solid rgba(0,212,255,.2);border-radius:4px;color:var(--text);padding:5px 8px;font-size:12px">
+        <label style="font-size:12px;color:var(--text-muted)">To</label>
+        <input type="date" id="rxTo" value="${rxMsToHtml(r.to)}" min="${rxMsToHtml(b.min)}" max="${rxMsToHtml(b.max)}" onchange="rxOnDateChange()"
+               style="background:var(--bg-card);border:1px solid rgba(0,212,255,.2);border-radius:4px;color:var(--text);padding:5px 8px;font-size:12px">
+        <span style="font-size:11px;color:var(--text-muted)">Data available ${rxMsToLabel(b.min)} → ${rxMsToLabel(b.max)}</span>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;padding:7px 10px;background:rgba(0,212,255,.05);border-radius:4px;border-left:2px solid rgba(0,212,255,.3);line-height:1.6">${coverage}</div>
+
+      <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px">2 · Columns <span style="text-transform:none;letter-spacing:0">— ${cols.length} selected</span></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:6px;margin-bottom:10px">${groupHtml}</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;font-size:12px;color:var(--text-muted)">
+        <label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" class="checkbox-toggle" ${p.zero?'checked':''} onchange="rxToggleOpt('zero',this.checked)"> Include drivers who earned 0</label>
+        <label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" class="checkbox-toggle" ${p.left?'checked':''} onchange="rxToggleOpt('left',this.checked)"> Include left-fleet drivers</label>
+      </div>
+
+      <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px">3 · Preview <span style="text-transform:none;letter-spacing:0">— first 10 of ${data.rows.length} rows × ${cols.length} columns</span></div>
+      <div style="overflow:auto">${previewHtml}</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding-top:12px;margin-top:8px;border-top:1px solid rgba(0,212,255,.1);flex-wrap:wrap">
+      <span style="font-size:11px;color:var(--text-muted)">⚠ Contains names, phones &amp; earnings — handle like payroll.</span>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button class="finance-btn finance-btn-secondary" onclick="rxExportCSV()" ${data.rows.length?'':'disabled'}>⬇ CSV</button>
+        <button class="finance-btn finance-btn-primary" style="background:rgba(0,255,179,.14);border-color:rgba(0,255,179,.55);color:var(--bolt-green);font-weight:700" onclick="rxExportXLSX()" ${data.rows.length?'':'disabled'}>⬇ Excel (.xlsx)</button>
+      </div>
+    </div>`;
+}
+
+function rxSetPreset(id) {
+  const p = loadExportPrefs();
+  rxPrefill = null;                 // they picked their own range — the Captains note is now a lie
+  p.preset = id;
+  if (id !== 'custom') { const r = rxPresetRange(id); p.from = rxMsToHtml(r.from); p.to = rxMsToHtml(r.to); }
+  saveExportPrefs(p);
+  renderCustomExport();
+}
+function rxOnDateChange() {
+  const p  = loadExportPrefs();
+  rxPrefill = null;                 // ditto — the dates are theirs now, not the Captains view's
+  const f  = document.getElementById('rxFrom'), t = document.getElementById('rxTo');
+  p.preset = 'custom';
+  p.from   = f ? f.value : p.from;
+  p.to     = t ? t.value : p.to;
+  if (rxHtmlMs(p.from) > rxHtmlMs(p.to)) { const s = p.from; p.from = p.to; p.to = s; }   // swap, don't scold
+  saveExportPrefs(p);
+  renderCustomExport();
+}
+function rxToggleGroup(id, on) {
+  const p = loadExportPrefs();
+  p.groups[id] = !!on;
+  if (!RX_GROUPS.some(g => p.groups[g.id])) p.groups.id = true;   // never let every column vanish
+  saveExportPrefs(p);
+  renderCustomExport();
+}
+function rxToggleOpt(k, on) { const p = loadExportPrefs(); p[k] = !!on; saveExportPrefs(p); renderCustomExport(); }
+
+// ── Writers ────────────────────────────────────────────────────────────────────
+function rxFileStem(r) { return 'MOHM_Fleet_Export_' + rxMsToHtml(r.from) + '_to_' + rxMsToHtml(r.to); }
+function rxRound(v, n) { return (typeof v === 'number' && !isNaN(v)) ? +v.toFixed(n == null ? 2 : n) : v; }
+
+// Rows as an array-of-arrays: header + one array per driver. Numbers stay numbers.
+function rxSheetAoA(data, cols) {
+  const aoa = [cols.map(c => c.k)];
+  data.rows.forEach(r => aoa.push(cols.map(c => {
+    const v = c.v(r);
+    if (typeof v === 'number') return rxRound(v, c.n == null ? 0 : c.n);
+    return v == null ? '' : v;
+  })));
+  return aoa;
+}
+
+function rxExportCSV() {
+  const p    = loadExportPrefs();
+  const r    = rxCurrentRange();
+  const data = rxBuildRows(r.from, r.to, { groups: p.groups, zero: p.zero, left: p.left });
+  const cols = rxActiveColumns(p.groups);
+  if (!data.rows.length) { toast('Nothing to export'); return; }
+  const lines = [
+    'MOHM Fleet — Driver Data Export',
+    'Range: ' + rxMsToLabel(r.from) + ' → ' + rxMsToLabel(r.to),
+    'Coverage: ' + data.periodCount + ' uploaded periods (' + data.daysCovered + ' days) · ' + data.spanLabel
+      + (data.straddling ? ' — includes ' + data.straddling + ' multi-day export(s) that cross the range edge, counted in full' : ''),
+    'Drivers: ' + data.rows.length + ' · Total net: ' + data.totalNet.toFixed(2) + ' SAR',
+    'Generated: ' + new Date().toLocaleString('en-GB'),
+    ''
+  ];
+  const aoa = rxSheetAoA(data, cols);
+  aoa.forEach(row => lines.push(row.map(escCsv).join(',')));
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });   // BOM → Excel reads UTF-8
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = rxFileStem(r) + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('Exported ' + data.rows.length + ' drivers → CSV ✓');
+}
+
+function rxExportXLSX() {
+  if (typeof XLSX === 'undefined') { toast('Excel library not loaded — use CSV'); return; }
+  const p    = loadExportPrefs();
+  const r    = rxCurrentRange();
+  const data = rxBuildRows(r.from, r.to, { groups: p.groups, zero: p.zero, left: p.left });
+  const cols = rxActiveColumns(p.groups);
+  if (!data.rows.length) { toast('Nothing to export'); return; }
+
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1 · Drivers — the wide table, with auto-filter on the header row.
+  const aoa = rxSheetAoA(data, cols);
+  const ws  = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = cols.map(c => ({ wch: Math.min(30, Math.max(11, c.k.length + 3)) }));
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{ r:0, c:0 }, e:{ r:data.rows.length, c:cols.length - 1 } }) };
+  XLSX.utils.book_append_sheet(wb, ws, 'Drivers');
+
+  // Sheet 2 · Summary — the numbers you'd otherwise recompute by hand.
+  const active   = data.rows.filter(x => x.net > 0);
+  const idle     = data.rows.filter(x => x.net <= 0 && !x.departed);
+  const left     = data.rows.filter(x => x.departed);
+  const blocked  = data.rows.filter(x => x.blocked);
+  const totOrders= data.rows.reduce((s, x) => s + x.orders, 0);
+  const totHours = data.rows.reduce((s, x) => s + x.hours, 0);
+  const sum = [
+    ['MOHM Fleet — Driver Data Export'],
+    ['Range',                 rxMsToLabel(r.from) + ' → ' + rxMsToLabel(r.to)],
+    ['Uploaded periods',      data.periodCount],
+    ['Days of data',          data.daysCovered],
+    ['Actual data span',      data.spanLabel],
+    ['Multi-day exports crossing the range edge', data.straddling],
+    ['Generated',             new Date().toLocaleString('en-GB')],
+    [],
+    ['Drivers in export',     data.rows.length],
+    ['Earned > 0',            active.length],
+    ['Zero earnings',         idle.length],
+    ['Left fleet',            left.length],
+    ['Currently blocked',     blocked.length],
+    [],
+    ['Total net (SAR)',       rxRound(data.totalNet)],
+    ['Average net (SAR)',     rxRound(active.length ? data.totalNet / active.length : 0)],
+    ['Median net (SAR)',      rxRound(active.length ? active[Math.floor(active.length / 2)].net : 0)],
+    ['Total finished rides',  totOrders],
+    ['Total online hours',    rxRound(totHours, 1)],
+    ['Fleet SAR / hour',      rxRound(totHours ? data.totalNet / totHours : 0)],
+    [],
+    ['TOP 10 EARNERS'], ['Rank', 'Driver', 'Phone', 'Net (SAR)', 'Active days', 'Ambassador']
+  ];
+  data.rows.slice(0, 10).forEach(x => sum.push([x.rank, x.name, x.phone, rxRound(x.net), x.activeDays, x.ambassador]));
+  sum.push([]);
+  sum.push(['BOTTOM 10 (of those who earned)']);
+  sum.push(['Rank', 'Driver', 'Phone', 'Net (SAR)', 'Active days', 'Ambassador']);
+  active.slice(-10).reverse().forEach(x => sum.push([x.rank, x.name, x.phone, rxRound(x.net), x.activeDays, x.ambassador]));
+  const wsSum = XLSX.utils.aoa_to_sheet(sum);
+  wsSum['!cols'] = [{ wch: 24 }, { wch: 26 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 20 }];
+  XLSX.utils.book_append_sheet(wb, wsSum, 'Summary');
+
+  // Sheet 3 · By Ambassador — who actually brought earning drivers.
+  const byAmb = new Map();
+  data.rows.forEach(x => {
+    const key = x.ambassador || '(no ambassador)';
+    let e = byAmb.get(key);
+    if (!e) { e = { amb: key, team: x.ambTeam || '', drivers: 0, earning: 0, net: 0, orders: 0, left: 0 }; byAmb.set(key, e); }
+    e.drivers++; e.net += x.net; e.orders += x.orders;
+    if (x.net > 0) e.earning++;
+    if (x.departed) e.left++;
+  });
+  const ambAoA = [['Ambassador', 'Team', 'Drivers Referred', 'Earning Drivers', 'Left Fleet', 'Total Net (SAR)', 'Avg Net / Driver (SAR)', 'Finished Rides']];
+  [...byAmb.values()].sort((a, b) => b.net - a.net).forEach(e =>
+    ambAoA.push([e.amb, e.team, e.drivers, e.earning, e.left, rxRound(e.net), rxRound(e.earning ? e.net / e.earning : 0), e.orders]));
+  const wsAmb = XLSX.utils.aoa_to_sheet(ambAoA);
+  wsAmb['!cols'] = [{ wch: 24 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 11 }, { wch: 16 }, { wch: 20 }, { wch: 14 }];
+  wsAmb['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{ r:0, c:0 }, e:{ r:ambAoA.length - 1, c:7 } }) };
+  XLSX.utils.book_append_sheet(wb, wsAmb, 'By Ambassador');
+
+  XLSX.writeFile(wb, rxFileStem(r) + '.xlsx');
+  toast('Exported ' + data.rows.length + ' drivers → Excel ✓');
 }
 
 // ═══════════════════════════════════════════
