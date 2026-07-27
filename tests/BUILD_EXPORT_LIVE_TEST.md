@@ -62,6 +62,20 @@ Go to the **Captains** tab. A single small **⬇** sits at the right-hand end of
 - [ ] Change the range yourself (a preset chip, or the date pickers) → the green "prefilled from Captains" line **disappears**, because it no longer describes what you're looking at.
 - [ ] Open the modal from the **Finance** button instead → no Captains line, and it lands on **End of Month** as always.
 
+## 8 · Ambassador filter (Captains tab)
+In **Captains → By Captain**, the Filter group now ends with **Ambassador · 🎖 Any ▾**.
+
+- [ ] With nothing picked the toolbar looks exactly as it did before — one extra pill, no tag row, no second line.
+- [ ] Open it: every ambassador who has captains in the selected days, each with a **count** on the right.
+- [ ] Tick one → the table narrows to his captains, the pill reads **🎖 1 selected**, and a removable tag appears.
+- [ ] **Tick a second and a third without reopening the menu** — it must stay open the whole time. This is the point of the control.
+- [ ] Type in the menu's search box, then tick a result → your search text is still there afterwards.
+- [ ] Untick from the menu, or click a tag's ✕, or the **✕** button next to the pill → all three narrow/clear correctly.
+- [ ] Click anywhere outside → the menu closes and your selection is kept.
+- [ ] Pick an ambassador, then narrow **Period** until none of his captains worked → a clear "No captains for …" panel with a working *clear the ambassador filter* link (not a blank table).
+- [ ] Switch to **By Day** / **Compare Days** → the dropdown is gone (there is no captain list to filter there).
+- [ ] With ambassadors picked, click **⬇** → the export admits the ambassador filter is not applied and points you at the Ambassador column.
+
 ## Known and intentional
 - **Ambassador Team** and **Nationality** are only as complete as the onboarding sheet. Blanks here are a to-do list, not a bug.
 - **Company P&L** is summed over whole calendar months, never pro-rated into the range — rents and salaries are monthly figures.
