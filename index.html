@@ -5755,7 +5755,14 @@ function buildIdentityResolver(rows) {
   for (const [nk, comps] of compsByName) if (comps.size === 1) nameToLabel.set(nk, labelByRoot.get(find([...comps][0])));
   const canonOf = d => {
     const s = identSigsOf(d);
-    if (s.length) return labelByRoot.get(find(s[0]));
+    if (s.length) {
+      // Same guard as profileKeyOf: a sig this resolver never indexed (a roster-snapshot row
+      // for a driver with no history entry, say) has no root, so find() → undefined and the
+      // lookup would return undefined instead of a stable key. Fall back to the row's own sig.
+      const root  = find(s[0]);
+      const label = root === undefined ? undefined : labelByRoot.get(root);
+      return label !== undefined ? label : (s.find(x => x.startsWith('ph:')) || s[0]);
+    }
     const nk = driverKey(d.name);
     if (nk && nameToLabel.has(nk)) return nameToLabel.get(nk); // name-only row → its person
     return nk ? 'nm:' + nk : 'nm:';                            // ambiguous/sig-less → cannot be split further
@@ -7261,7 +7268,19 @@ function buildProfileResolver(rows) {
   // or an ambiguous bare name that cannot be resolved without an identity hint.
   const profileKeyOf = d => {
     const s = identSigsOf(d || {});
-    if (s.length) return labelOfRoot(find(s[0]));
+    if (s.length) {
+      // A signature the resolver never indexed — a driver absent from the LOADED history
+      // window: an invoice-only row, a brand-new captain, any caller holding just a phone —
+      // has no union-find root, and find() returns undefined. Falling straight through to
+      // labelOfRoot(undefined) produced the LITERAL key `undefined`, with two live effects:
+      // getCourierProfile MISSED a profile sitting under 'ph:<9>', and upsertCourierProfile
+      // WROTE to store['undefined'], where the next such driver silently overwrote the first.
+      // Fall back to the driver's own canonical sig — phone-preferred, mirroring labelOfRoot.
+      const root  = find(s[0]);
+      const label = root === undefined ? undefined : labelOfRoot(root);
+      if (label !== undefined) return label;
+      return s.find(x => x.startsWith('ph:')) || s[0];
+    }
     const nk = driverKey(d && d.name);
     if (nk && nameToLabel.has(nk)) return nameToLabel.get(nk);
     return nk ? 'nm:' + nk : 'nm:';
