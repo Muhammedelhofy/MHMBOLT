@@ -4457,9 +4457,18 @@ function showOwesPopup(e, driverName) {
 // that projection into a tier band. Below the 4,000 tier reads red; each tier up gets its own
 // colour so the manager can see at a glance where a driver will land if they hold the pace.
 const TIER_DAYS = 26;
+// The bonus-tier LADDER shown across the app (bands, colours, paceTier, computeRosterForMonth's
+// TIERS). These are BOLT's own bonus floors, so they must be the very numbers the money uses —
+// BOLT_BONUS_TIERS — and not a function of the editable "Monthly net target".
+//
+// This used to return [target-2000, target-1000, target]. With the target at its default 6,000
+// that happened to equal Bolt's 4k/5k/6k, so everything agreed; but raising the target to 7,000
+// would silently shift every displayed band to 5k/6k/7k while payouts stayed on 4k/5k/6k, and
+// would make Today's tier-slip warning — which compares netTierBand's fixed money floors against
+// the displayed band — fire for the entire fleet. monthlyTarget stays what its label says: the
+// per-driver net target behind the Monthly Target column.
 function bonusTiers() {
-  const top = loadSettings().monthlyTarget || 6000;
-  return [Math.max(0, top - 2000), Math.max(0, top - 1000), top]; // e.g. [4000, 5000, 6000]
+  return BOLT_BONUS_TIERS.map(t => t.floor).sort((a, b) => a - b);   // [4000, 5000, 6000]
 }
 // Bolt bonus step function — mirrors M8/lib/finance.js bonusFor()
 const BOLT_BONUS_TIERS = [
@@ -8675,9 +8684,15 @@ function computeExecMonth(monthKey) {
     }
   });
   if (imported) {                                       // exact — Bolt's invoice is the truth
-    Object.values(imported).forEach(d => {
+    // The invoice is keyed by PHONE, and months imported before the name column was captured
+    // carry no name at all — so passing d.name alone made companySplitPct fall through to the
+    // global %, silently ignoring any per-driver bonusSplitPct on every CLOSED month while the
+    // in-progress month (bonusForDriver(p.name, …)) honoured it. Resolve from the phone key so
+    // a driver's split % cannot change the moment their month closes.
+    Object.entries(imported).forEach(([phone, d]) => {
       const gross = +d.gross || 0; if (gross <= 0) return;
-      const s = splitAfterOpCost(gross, monthKey, d.name);   // per-driver split % when set
+      const who = (d && d.name) ? { name: d.name, phone } : { phone };
+      const s = splitAfterOpCost(gross, monthKey, who);       // per-driver split % when set
       S.tierGross += gross; S.tierCompany += s.company; S.tierPartnerB += s.partnerB;
       const net = +d.net || 0;
       S.tierCounts[net >= 6000 ? 2 : net >= 5000 ? 1 : 0]++;
