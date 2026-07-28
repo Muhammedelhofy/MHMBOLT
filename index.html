@@ -3886,23 +3886,39 @@ function setSumStatusFilter(v) { sumStatusFilter = v; currentPage = 1; renderCap
 // there is one interaction to learn and no new CSS. One representative row per IDENTITY
 // is collected first, then courierAmbassadorFor is called once per driver rather than
 // once per driver-day — 213 lookups instead of ~5,500 across a 26-day selection.
+// The number printed next to each ambassador in the Captains filter menu. It is a promise:
+// "pick me and you get this many rows". So it MUST be counted over the same population
+// buildCourierSummaryTable builds its rows from — otherwise the count and the list it
+// filters disagree in front of the team (the reported "Met3eb says 8, lists 10").
+//
+// Two rules have to match the table exactly:
+//   1. the table keys its map by the RAW `d.name` string (see the map[d.name] build), and
+//   2. it ALSO surfaces captains who have a courier profile but no row in the selected
+//      days at all — an ambassador's captain who simply did not work this month.
+// This used to dedupe by courierIdentityKey and skip rule 2, so every profile-only captain
+// was listed but never counted. Counting over the table's own population keeps the two in
+// step by construction, instead of by two definitions that have to be kept in sync by hand.
 function captainsAmbOptions(entries) {
-  const byIdent = new Map();
+  const byName = new Map();
   (entries || []).forEach(h => (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => {
     if (!d.name) return;
-    const k = courierIdentityKey(d);
-    if (!byIdent.has(k)) byIdent.set(k, d);
+    if (!byName.has(d.name)) byName.set(d.name, d);
   }));
+  // Rule 2 — profile-only captains, compared on driverKey exactly as the table does.
+  const seenKeys = new Set([...byName.keys()].map(n => driverKey(n)));
+  courierProfileNames().forEach(nm => {
+    if (!seenKeys.has(driverKey(nm))) { byName.set(nm, { name: nm }); seenKeys.add(driverKey(nm)); }
+  });
   const counts = new Map();   // lowercased name -> { name, count }
   let untagged = 0;
-  byIdent.forEach(d => {
+  byName.forEach(d => {
     const a = (typeof courierAmbassadorFor === 'function' ? courierAmbassadorFor(d) : '') || '';
     if (!a.trim()) { untagged++; return; }
     const lc = a.trim().toLowerCase();
     const e = counts.get(lc);
     if (e) e.count++; else counts.set(lc, { name: a.trim(), lc, count: 1 });
   });
-  return { list: [...counts.values()].sort((x, y) => x.name.localeCompare(y.name)), untagged, total: byIdent.size };
+  return { list: [...counts.values()].sort((x, y) => x.name.localeCompare(y.name)), untagged, total: byName.size };
 }
 function toggleCapAmbDd() {
   capAmbDdOpen = !capAmbDdOpen;
