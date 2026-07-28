@@ -630,6 +630,26 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 .fin-period-controls  { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .fin-period-controls label { font-size:9px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.08em; font-weight:600; }
 
+/* ── Company-data lock (Build-186) ──
+   .tab-lock renders only while body.fleet-locked, so unlocking silently clears every 🔒
+   without re-rendering the tab bar. #lockBtn turns green once the grant is live. */
+.tab-lock { display:none; }
+body.fleet-locked .tab-lock { display:inline; margin-inline-start:5px; font-size:10px; opacity:.75; }
+body:not(.fleet-locked) #lockBtn { border-color:var(--bolt-green); color:var(--bolt-green); }
+.lock-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.8); z-index:3000; align-items:center; justify-content:center; }
+.lock-overlay.show { display:flex; }
+.lock-panel { display:none; position:fixed; z-index:3001; inset-block-start:50%; inset-inline-start:50%; transform:translate(-50%,-50%);
+  width:400px; max-width:92vw; background:var(--bg-card); border:1px solid rgba(0,212,255,.25); border-radius:8px;
+  padding:26px 24px 20px; box-shadow:0 20px 60px rgba(0,0,0,.75); }
+.lock-panel.show { display:block; }
+.lock-panel h3 { margin:0 0 6px; font-family:var(--mono); font-size:14px; color:var(--cyan); letter-spacing:.04em; }
+.lock-why { font-size:12px; color:var(--text-muted); line-height:1.5; margin-bottom:16px; }
+.lock-panel input { width:100%; padding:10px 12px; border:1px solid rgba(0,212,255,.2); border-radius:4px; font-size:15px;
+  font-family:var(--mono); letter-spacing:.25em; color:var(--text); background:var(--bg-card2); box-sizing:border-box; }
+.lock-err { min-height:16px; font-size:11px; color:var(--red); margin-block-start:7px; }
+.lock-acts { display:flex; justify-content:flex-end; gap:8px; margin-block-start:10px; }
+.lock-note { font-size:10px; color:var(--text-muted); margin-block-start:14px; padding-block-start:12px; border-block-start:1px solid var(--border); line-height:1.5; }
+
 /* ── Analytics tab ── */
 .analytics-grid-2 { display:grid; grid-template-columns:1fr 1fr;     gap:16px; margin-bottom:16px; }
 .analytics-grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:16px; }
@@ -1148,6 +1168,22 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
   <div class="modal-body"  id="modalBody"></div>
 </div>
 
+<!-- ── Company-data lock prompt (Build-186) ──
+     The overlay has NO onclick-to-close: a stray click must not dismiss a gate. Esc or
+     Cancel closes it, Enter submits. -->
+<div class="lock-overlay" id="lockOverlay"></div>
+<div class="lock-panel" id="lockPanel">
+  <h3>🔒 COMPANY DATA</h3>
+  <div class="lock-why" id="lockWhy"></div>
+  <input type="password" id="lockPw" autocomplete="off" placeholder="passphrase" onkeydown="lockPwKey(event)">
+  <div class="lock-err" id="lockErr"></div>
+  <div class="lock-acts">
+    <button class="finance-btn finance-btn-secondary" onclick="closeLockPrompt()">Cancel</button>
+    <button class="save-btn" onclick="submitLockPw()">Unlock</button>
+  </div>
+  <div class="lock-note">Stays unlocked on this PC for 7 days, then asks again. Driver performance — Today, Captains, Blocks, Onboarding — never needs it.</div>
+</div>
+
 <!-- ── Finance Captain Detail Panel ── -->
 <div class="modal-overlay" id="finCaptainOverlay" onclick="closeFinanceCaptainPanel()"></div>
 <div class="modal-panel" id="finCaptainPanel">
@@ -1170,6 +1206,7 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
     <div class="sync-dot offline" id="syncDot" title="Cloud sync status"></div>
     <div class="sync-label" id="syncLabel">not synced</div>
     <button id="pullBtn" class="upload-btn-header" onclick="manualPull()" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25)">↓ Pull</button>
+    <button class="upload-btn-header" id="lockBtn" onclick="lockBtnClick()">🔒 Company data locked</button>
     <button class="upload-btn-header" id="themeToggleBtn" onclick="toggleTheme()" title="Switch between dark and light theme">🌙 Dark</button>
     <div class="header-period" id="headerPeriod">No data</div>
     <button class="upload-btn-header" id="boltSyncBtn" onclick="openBoltSync()" style="display:none" title="Sync from Bolt API">Bolt Sync</button>
@@ -1181,14 +1218,14 @@ th[onclick]:hover { color:var(--cyan)!important; background:rgba(0,212,255,.06)!
 <div class="tabs">
   <div class="tab active" data-tab="today"     onclick="showTab('today',this)">Today</div>
   <div class="tab"        data-tab="captains"  onclick="showTab('captains',this)">Captains</div>
-  <div class="tab"        data-tab="finance"   onclick="showTab('finance',this)">Finance</div>
-  <div class="tab"        data-tab="ambassadors" onclick="showTab('ambassadors',this)">Ambassadors</div>
-  <div class="tab"        data-tab="incentives" onclick="showTab('incentives',this)">Incentives</div>
-  <div class="tab"        data-tab="blocks"     onclick="showTab('blocks',this);renderBlocks()">Blocks</div>
-  <div class="tab"        data-tab="analytics" onclick="showTab('analytics',this);renderAnalytics()">Analytics</div>
-  <div class="tab"        data-tab="pipeline"  onclick="showTab('pipeline',this);renderPipeline()">Onboarding</div>
-  <div class="tab"        data-tab="starmap"   onclick="showTab('starmap',this)">Command Center</div>
-  <div class="tab"        data-tab="settings"  onclick="showTab('settings',this)">Settings</div>
+  <div class="tab"        data-tab="finance"   onclick="showTab('finance',this)">Finance<span class="tab-lock">🔒</span></div>
+  <div class="tab"        data-tab="ambassadors" onclick="showTab('ambassadors',this)">Ambassadors<span class="tab-lock">🔒</span></div>
+  <div class="tab"        data-tab="incentives" onclick="showTab('incentives',this)">Incentives<span class="tab-lock">🔒</span></div>
+  <div class="tab"        data-tab="blocks"     onclick="showTab('blocks',this)">Blocks</div>
+  <div class="tab"        data-tab="analytics" onclick="showTab('analytics',this)">Analytics<span class="tab-lock">🔒</span></div>
+  <div class="tab"        data-tab="pipeline"  onclick="showTab('pipeline',this)">Onboarding</div>
+  <div class="tab"        data-tab="starmap"   onclick="showTab('starmap',this)">Command Center<span class="tab-lock">🔒</span></div>
+  <div class="tab"        data-tab="settings"  onclick="showTab('settings',this)">Settings<span class="tab-lock">🔒</span></div>
 </div>
 
 <!-- Today Panel (Build-156) — the manager's front door: five tiles, each answering a
@@ -1868,12 +1905,187 @@ function dataHealthOpenDriver(name) {
 }
 
 // ═══════════════════════════════════════════
+// COMPANY-DATA LOCK (Build-186)
+// ═══════════════════════════════════════════
+// The dashboard is handed to ops agents so they can track DRIVER performance. Company
+// money — P&L, profit projections, the Bolt-bonus split, referral payouts, cost deals —
+// is not theirs to read. One switch (fleetUnlocked()) drives two mechanisms:
+//
+//   1. LOCKED_TABS never open while locked. The tab click opens the passphrase prompt
+//      and the panel's render function is NEVER called, so the sensitive HTML never
+//      reaches the DOM at all. (A CSS blur was rejected: it leaves the real numbers
+//      sitting in the page source for anyone who opens devtools or View Source.)
+//   2. moneyHidden() strips the company-bonus figures that live on the tabs which STAY
+//      open — Today, Captains, Blocks and the chase list. A driver's own net is not
+//      touched: per the income model that is THE DRIVER'S money and the whole point of
+//      the performance view. What gets hidden is the company's cut of it.
+//
+// Unlocking is per-PC (localStorage) and lasts LOCK_DAYS, then the passphrase is asked
+// again — so a machine handed to an agent re-locks itself without Muhammad remembering.
+//
+// ⚠ HONEST SCOPE: this is a VIEWING gate, not a security boundary. The underlying data
+// lives in this browser's localStorage; anyone with devtools, the CSV exports, or this
+// file can still reach it. It stops an agent USING the dashboard, not one attacking it.
+// (This restores — and widens — the "7ofy" Cerebro gate that SM-1 removed 2026-07-07,
+// for the opposite reason: the PC is no longer only Muhammad's.)
+const LOCK_KEY   = 'boltFleetLock';
+const LOCK_DAYS  = 7;
+const LOCKED_TABS = new Set(['finance', 'ambassadors', 'incentives', 'analytics', 'starmap', 'settings']);
+// Salted digest of the passphrase — the literal is deliberately NOT in this file, so
+// reading the source doesn't hand it over. Obfuscation, not crypto (see scope note).
+const LOCK_DIGEST = 'a7bdceaf';
+function _lockHash(s) {
+  let h = 5381;
+  const str = 'mhm-fleet-lock-v1:' + String(s == null ? '' : s);
+  for (let i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0;
+  return h.toString(16).padStart(8, '0');
+}
+// Unlocked === a stored grant that hasn't expired. A corrupt/missing entry reads LOCKED,
+// which is the safe direction to fail.
+function fleetUnlocked() {
+  try {
+    const g = JSON.parse(localStorage.getItem(LOCK_KEY) || 'null');
+    return !!(g && typeof g.until === 'number' && g.until > Date.now());
+  } catch (_) { return false; }
+}
+// True when company-money figures must be stripped from the tabs that stay open.
+function moneyHidden() { return !fleetUnlocked(); }
+// Days left on the current grant (0 when locked) — shown on the header chip.
+function lockDaysLeft() {
+  try {
+    const g = JSON.parse(localStorage.getItem(LOCK_KEY) || 'null');
+    if (!g || !g.until) return 0;
+    return Math.max(0, Math.ceil((g.until - Date.now()) / 86400000));
+  } catch (_) { return 0; }
+}
+// Settings is the one locked tab whose markup is HAND-WRITTEN into the page rather than
+// rendered by JS, so refusing to open the tab is not enough on its own: initSettingsUI()
+// and renderSbStatus() would fill its inputs with the real config — bonus split %, fleet
+// cuts, and (worst) the Supabase project URL, anon key and dash sync key — leaving them
+// in the DOM of a display:none panel for anyone reading the page. So while locked we lift
+// the panel's children into an off-document fragment. Every function that touches those
+// fields is null-guarded and getElementById cannot see detached nodes, so nothing throws
+// and nothing populates; unlocking re-attaches and initialises them for real.
+// (saveSettings() reads them unguarded, but its only callers are Save buttons INSIDE the
+// panel — detached, they cannot be clicked.)
+let _settingsStash = null;
+function applySettingsLockState() {
+  const p = document.getElementById('settings');
+  if (!p) return;
+  if (!fleetUnlocked()) {
+    if (!_settingsStash) {
+      _settingsStash = document.createDocumentFragment();
+      while (p.firstChild) _settingsStash.appendChild(p.firstChild);
+    }
+  } else if (_settingsStash) {
+    p.appendChild(_settingsStash);
+    _settingsStash = null;
+    // Re-run the boot wiring now that the fields are back in the document.
+    if (typeof initSettingsUI === 'function')   initSettingsUI();
+    if (typeof renderMappingList === 'function') renderMappingList();
+    if (typeof updateDiagnostics === 'function') updateDiagnostics();
+    if (typeof updateShareUI === 'function' && typeof getBinId === 'function') updateShareUI(getBinId());
+  }
+}
+// Paints the header chip + the 🔒 marks on the locked tabs, and attaches/detaches the
+// Settings markup. Body class drives the CSS so every locked-state style stays in one place.
+function refreshLockUi() {
+  const locked = !fleetUnlocked();
+  document.body.classList.toggle('fleet-locked', locked);
+  applySettingsLockState();
+  const btn = document.getElementById('lockBtn');
+  if (btn) {
+    const d = lockDaysLeft();
+    btn.textContent = locked ? '🔒 Company data locked' : `🔓 Unlocked · ${d}d`;
+    btn.title = locked
+      ? 'Finance, Analytics, Ambassadors, Incentives, Command Center and Settings are locked, and company-bonus figures are hidden. Click to unlock with the passphrase.'
+      : `Company data is visible on this PC for ${d} more day${d === 1 ? '' : 's'}. Click to lock it again now.`;
+  }
+}
+function lockBtnClick() {
+  if (fleetUnlocked()) lockNow(); else openLockPrompt(null);
+}
+// Re-lock immediately — what Muhammad clicks before handing the PC over.
+function lockNow() {
+  localStorage.removeItem(LOCK_KEY);
+  refreshLockUi();
+  // If a locked tab is open, retreat to Today rather than leaving its numbers on screen.
+  const open = document.querySelector('.panel.active');
+  if (open && LOCKED_TABS.has(open.id)) {
+    const tab = document.querySelector('.tab[data-tab="today"]');
+    if (tab) _doShowTab('today', tab);
+  } else {
+    rerenderOpenTab();
+  }
+  toast('Company data locked — passphrase needed again');
+}
+// Re-render whichever open tab is showing, so hidden money figures appear/disappear
+// the moment the lock state flips (no manual refresh).
+function rerenderOpenTab() {
+  const open = document.querySelector('.panel.active');
+  if (!open) return;
+  const id = open.id;
+  if (id === 'today')    renderToday();
+  if (id === 'captains') renderCaptains();
+  if (id === 'blocks')   renderBlocks();
+}
+let _lockPendingTab = null;
+function openLockPrompt(pendingTab) {
+  _lockPendingTab = pendingTab || null;
+  const ov = document.getElementById('lockOverlay'), pn = document.getElementById('lockPanel');
+  if (!ov || !pn) return;
+  const why = document.getElementById('lockWhy');
+  if (why) why.textContent = pendingTab
+    ? `${LOCK_TAB_LABEL[pendingTab] || pendingTab} holds company money — enter the passphrase to open it.`
+    : 'Unlock the company-money tabs and figures on this PC.';
+  document.getElementById('lockErr').textContent = '';
+  const inp = document.getElementById('lockPw');
+  inp.value = '';
+  ov.classList.add('show'); pn.classList.add('show');
+  setTimeout(() => inp.focus(), 40);
+}
+const LOCK_TAB_LABEL = { finance:'Finance', ambassadors:'Ambassadors', incentives:'Incentives',
+  analytics:'Analytics', starmap:'Command Center', settings:'Settings' };
+function closeLockPrompt() {
+  _lockPendingTab = null;
+  const ov = document.getElementById('lockOverlay'), pn = document.getElementById('lockPanel');
+  if (ov) ov.classList.remove('show');
+  if (pn) pn.classList.remove('show');
+}
+function submitLockPw() {
+  const inp = document.getElementById('lockPw'), err = document.getElementById('lockErr');
+  if (_lockHash(inp.value) !== LOCK_DIGEST) {
+    err.textContent = 'Wrong passphrase.';
+    inp.value = ''; inp.focus();
+    return;
+  }
+  localStorage.setItem(LOCK_KEY, JSON.stringify({ until: Date.now() + LOCK_DAYS * 86400000, at: Date.now() }));
+  const go = _lockPendingTab;
+  closeLockPrompt();
+  refreshLockUi();
+  if (go) {
+    const tab = document.querySelector(`.tab[data-tab="${go}"]`);
+    if (tab) _doShowTab(go, tab);
+  } else {
+    rerenderOpenTab();
+  }
+  toast(`Unlocked on this PC for ${LOCK_DAYS} days`);
+}
+function lockPwKey(ev) {
+  if (ev.key === 'Enter') { ev.preventDefault(); submitLockPw(); }
+  if (ev.key === 'Escape') closeLockPrompt();
+}
+
+// ═══════════════════════════════════════════
 // TAB NAV
 // ═══════════════════════════════════════════
-// Command Center opens instantly like any tab (the old "7ofy" Cerebro passcode
-// gate — SM-1 — was removed 2026-07-07: it's Muhammad's main strategy view, not a
-// vault). The gate function + overlay + passcode are deleted, not merely bypassed.
+// showTab is the single chokepoint for the lock: every deep link in the app navigates by
+// clicking a .tab (todayGo/todayDrill/todayGoExec all do), so gating here gates them all.
+// The per-tab render calls that used to hang off the tab onclicks moved INTO _doShowTab —
+// otherwise `showTab('analytics',this);renderAnalytics()` would still have written the
+// locked tab's HTML into the DOM after showTab refused to open it.
 function showTab(id, el) {
+  if (LOCKED_TABS.has(id) && !fleetUnlocked()) { openLockPrompt(id); return; }
   _doShowTab(id, el);
 }
 function _doShowTab(id, el) {
@@ -1887,6 +2099,8 @@ function _doShowTab(id, el) {
   if (id === 'ambassadors') renderAmbassadors();
   if (id === 'incentives') renderIncentivesTab();
   if (id === 'blocks')    renderBlocks();
+  if (id === 'analytics') renderAnalytics();
+  if (id === 'pipeline')  renderPipeline();
   if (id === 'starmap')  renderStarMapDeck();
   if (id === 'settings') { loadSysStatus(); renderDataHealth(); }
 }
@@ -3749,7 +3963,7 @@ function dkCaptainsDeck() {
     <div class="dk-stat"><div class="l">Fleet roster</div><div class="v">${roster}</div>${rec ? `<div class="d">= ${rec.portal} portal + ${rec.deactivated} deact.</div>` : ''}</div>
     <div class="dk-stat"><div class="l">${t('withActivity')} ${periodLabel}</div><div class="v">${active}</div></div>
     <div class="dk-stat"><div class="l">Net · ${periodLabel}</div><div class="v">${fmt(Math.round(net))}<small> SAR</small></div></div>
-    <div class="dk-stat brand"><div class="l">${t('projBonus')}</div><div class="v">${projBonus != null ? '+' + fmt(projBonus) : '—'}<small>${projBonus != null ? ' SAR' : ''}</small></div></div>
+    ${moneyHidden() ? '' : `<div class="dk-stat brand"><div class="l">${t('projBonus')}</div><div class="v">${projBonus != null ? '+' + fmt(projBonus) : '—'}<small>${projBonus != null ? ' SAR' : ''}</small></div></div>`}
     <div class="dk-stat" style="grid-column:span 2;min-width:230px" title="Live per-driver pace projection — drives this tab's roster/funnel filters. For Finance's achieved/on-pace tier count, see Executive or Command Center."><div class="l">${t('tierLadderLive')}</div>${ladder}</div>
     <div class="dk-stat${blocked ? ' danger' : ''}"><div class="l">${t('blocked')}</div><div class="v">${blocked}</div></div>
   </div>`;
@@ -6088,6 +6302,9 @@ function renderBlocks() {
       return b.stake.sar - a.stake.sar;
     });
   const totalAtStake = worklist.filter(w => w.events.some(e => !e.dateUnblocked)).reduce((s, w) => s + w.stake.sar, 0);
+  // Build-186: stake.sar is company bonus. It keeps ORDERING the worklist (urgency is the
+  // point of this queue) but the amounts are withheld while the dashboard is locked.
+  const _hideMoney = moneyHidden();
   const unblocked7d = (() => { const now = Date.now(), keys = new Set();
     all.forEach(e => { if (!e.dateUnblocked) return; const tt = periodSortKey(e.dateUnblocked);
       if (!isNaN(tt) && (now - tt) <= 7 * 86400000) keys.add(driverKey(e.driverName)); }); return keys.size; })();
@@ -6104,7 +6321,11 @@ function renderBlocks() {
     const esc = name.replace(/'/g,"\\'");
     const escId = _did.replace(/'/g,"\\'");
     const fullReason = he(stripHtml(latestBlock.reason)) || 'No reason provided';
-    const tierPill = stake.sar > 0 ? dkTierPill(stake.band, { hollow: true, title: `~${fmt(stake.sar)} SAR company bonus at stake (pre-block pace)` }) : '';
+    // Build-186: the tier band a blocked driver was pacing at is performance context and
+    // stays visible; the SAR of company bonus it represents drops out of the tooltip.
+    const tierPill = stake.sar > 0 ? dkTierPill(stake.band, { hollow: true, title: _hideMoney
+      ? `was pacing at the ${stake.band >= 3 ? '6k' : stake.band === 2 ? '5k' : '4k'} tier before the block`
+      : `~${fmt(stake.sar)} SAR company bonus at stake (pre-block pace)` }) : '';
     const sd = _snap.drivers.find(x => driverKey(x.name) === driverKey(name));
     const vehChip = (sd && sd.vehicleState && sd.vehicleState !== 'active')
       ? `<span class="dk-statechip idle" title="Vehicle ${sd.vehicleState}${sd.vehiclePlate ? ' · ' + sd.vehiclePlate : ''}">🚗 VEHICLE</span>` : '';
@@ -6135,7 +6356,9 @@ function renderBlocks() {
         ${isCurrentlyBlocked ? `<span class="dk-statechip blocked">BLOCKED</span>` : `<span class="dk-statechip left">resolved</span>`}
         ${blockCatChip(driverCat, true)}${vehChip}${tierPill}
       </div>
-      <div class="stake">${stake.sar > 0 ? '−' + fmt(stake.sar) + ' SAR' : '—'}<div style="font-size:9px;color:var(--dk-dim);font-weight:400;text-align:end;font-family:var(--dk-sans)">bonus at stake</div></div>
+      <div class="stake">${_hideMoney
+        ? (isCurrentlyBlocked ? sinceDays + 'd' : '—') + `<div style="font-size:9px;color:var(--dk-dim);font-weight:400;text-align:end;font-family:var(--dk-sans)">days blocked</div>`
+        : (stake.sar > 0 ? '−' + fmt(stake.sar) + ' SAR' : '—') + `<div style="font-size:9px;color:var(--dk-dim);font-weight:400;text-align:end;font-family:var(--dk-sans)">bonus at stake</div>`}</div>
       <div class="meta">
         ${isCurrentlyBlocked
           ? `<span style="color:var(--dk-danger)">since ${he(latestBlock.dateBlocked)} · ${sinceDays}d blocked</span>`
@@ -6169,7 +6392,7 @@ function renderBlocks() {
     <div class="dk-stat${blockedDriverNames.length ? ' danger' : ''}"><div class="l">Blocked now</div><div class="v">${blockedDriverNames.length}</div></div>
     <div class="dk-stat${vc.vehN ? ' warn' : ''}"><div class="l">Vehicle-blocked</div><div class="v">${vc.vehN || 0}</div></div>
     <div class="dk-stat"><div class="l">Unblocked · 7d</div><div class="v">${unblocked7d}</div></div>
-    <div class="dk-stat${totalAtStake ? ' warn' : ''}"><div class="l">Bonus at stake</div><div class="v">${fmt(totalAtStake)}<small> SAR</small></div></div>
+    ${_hideMoney ? '' : `<div class="dk-stat${totalAtStake ? ' warn' : ''}"><div class="l">Bonus at stake</div><div class="v">${fmt(totalAtStake)}<small> SAR</small></div></div>`}
   </div>`;
   el.innerHTML = `<div class="dk">
     <div class="dk-shell" style="padding-block:2px 10px">${_header}${_rail}${_strip}</div>
@@ -13366,8 +13589,12 @@ async function openChaseList() {
     });
   }
   if (push.length) {
+    // Build-186: the chase list is a WhatsApp message the team forwards — the driver-facing
+    // half (pace, the daily lift needed, the tier) stays; the company's bonus per push is
+    // stripped while locked, along with the "within reach" total at the foot.
+    const _hm = moneyHidden();
     L.push('', `⚡ *EASY WINS — small push, real bonus (${push.length})*`);
-    push.forEach((d,i) => L.push(`${i+1}. ${name(d)} — on ${fmt(d.proj)} pace, needs *+${fmt(d.pushExtra)}/work-day* → ${d.nextFloor/1000}k tier (bonus +${fmt(d.unlocks)})${tel(d)}${chasedNote(d)}`));
+    push.forEach((d,i) => L.push(`${i+1}. ${name(d)} — on ${fmt(d.proj)} pace, needs *+${fmt(d.pushExtra)}/work-day* → ${d.nextFloor/1000}k tier${_hm ? '' : ` (bonus +${fmt(d.unlocks)})`}${tel(d)}${chasedNote(d)}`));
   }
   if (slow.length) {
     L.push('', `🔻 *BELOW 4K — working, no bonus yet (${slow.length})*`);
@@ -13389,7 +13616,7 @@ async function openChaseList() {
       L.push(`_Never earned yet (${idleNever.length}):_ ${idleNever.map(d => name(d)).join(', ')}`);
   }
   L.push('', '—');
-  if (onTable) L.push(`💰 Company bonus within reach this month: *+${fmt(onTable)} SAR* (the ⚡ list)`);
+  if (onTable && !moneyHidden()) L.push(`💰 Company bonus within reach this month: *+${fmt(onTable)} SAR* (the ⚡ list)`);
   if (chasedN) L.push(`☎ Follow-through: of ${chasedN} chased 2–14 days ago, *${movedN} moved* (had a trip after the chase)${chasedN-movedN ? ` — ${chasedN-movedN} still silent` : ''}.`);
   if (blockedIdle) L.push(`⛔ ${blockedIdle} blocked driver${blockedIdle!==1?'s':''} excluded — unblocking is a different worklist (Blocks tab).`);
 
@@ -13569,7 +13796,12 @@ function dkTodaySlipping(R, W) {
       const bankBand = netTierBand(d.net);
       if (bankBand > d.band) {
         const lost = Math.max(0, bonusFor(TIERS[bankBand-1], monthSel).company - (d.companyBonus || 0));
-        flags.push({ t:'tier', txt:`${t('tierSlip')} ${tierName(bankBand)}→${tierName(d.band)} · −${fmt(Math.round(lost))} SAR ${t('bonusAtRisk')}` });
+        // Build-186: the slip itself (banked 5k, now pacing 4k) is a driver-performance
+        // fact and stays. The SAR of company bonus it costs is withheld while locked; the
+        // number still drives severity ranking, it just isn't printed.
+        flags.push({ t:'tier', txt: moneyHidden()
+          ? `${t('tierSlip')} ${tierName(bankBand)}→${tierName(d.band)}`
+          : `${t('tierSlip')} ${tierName(bankBand)}→${tierName(d.band)} · −${fmt(Math.round(lost))} SAR ${t('bonusAtRisk')}` });
         sev += 100000 + lost;
       }
     }
@@ -13840,6 +14072,9 @@ function todayStatDrill(kind, ev) {
       .map(d => ({ name: d.name, ...idOf(d), pill: pill(d), right: sar(d.net) }));
     title = 'Active this month';
   } else if (kind === 'bonus') {                       // Proj Bonus card → drivers generating company bonus
+    // Build-186: belt-and-braces. The stat that opens this drill isn't rendered while
+    // locked, but guard the entry point too so no stale handler can reach the list.
+    if (moneyHidden()) { openLockPrompt(null); return; }
     list = cur.filter(d => !d.idle && d.companyBonus > 0).slice().sort((a, b) => b.companyBonus - a.companyBonus)
       .map(d => ({ name: d.name, ...idOf(d), pill: pill(d), right: `+${fmt(Math.round(d.companyBonus))} <small style="color:var(--dk-dim)">bonus</small>` }));
     title = 'Projected company bonus — contributors';
@@ -14052,6 +14287,10 @@ function renderToday() {
   const { current, periodLabel, projectable, isCurrentMonth, remTotal, monthSel, blockedCount } = R;
   const esc = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const nmt = d => lookupForeignName(d.name) || d.name;
+  // Build-186: company money off this tab while locked. Driver net, tier bands, idle/pace
+  // signals all stay — those are performance. What goes is the company's cut: the bonus
+  // projection and every "+X SAR unlocked" price tag hanging off a tier push.
+  const hideMoney = moneyHidden();
 
   // ── Money (calcs unchanged) ──
   const monthNet  = current.reduce((s,d)=>s+d.net,0);
@@ -14162,10 +14401,10 @@ function renderToday() {
         <div class="v">${fmt(Math.round(monthNet))}<small> SAR</small></div>
         ${deltaPct != null ? `<div class="d ${deltaPct >= 0 ? 'up' : 'down'}">${deltaPct >= 0 ? '▲' : '▼'} ${Math.abs(deltaPct)}% ${t('vs')} ${prevMonthName}</div>` : ''}
       </div>
-      <div class="dk-stat brand${clk(projectable && projBonus > 0, 'bonus')}">
+      ${hideMoney ? '' : `<div class="dk-stat brand${clk(projectable && projBonus > 0, 'bonus')}">
         <div class="l">${t('projBonus')}${projectable && projBonus > 0 ? drill : ''}</div>
         <div class="v">${projectable ? '+' + fmt(projBonus) : '—'}<small>${projectable ? ' SAR' : ''}</small></div>
-      </div>
+      </div>`}
       <div class="dk-stat" style="grid-column:span 2;min-width:230px">
         <div class="l">${t('tierLadder')}${projectable ? ` <span class="drill">▸ ${t('tapBand') || 'tap a band'}</span>` : ''}</div>
         ${tierPills}
@@ -14187,10 +14426,12 @@ function renderToday() {
 
   // ── DO-NEXT queue — every candidate priced in SAR, top 3 win ──
   const cands = [];
+  // d.unlocks (the company bonus this push earns) still RANKS the queue — the ordering is
+  // the useful part and reveals no number. Only the price tag on the card is withheld.
   [...easy].sort((a,b) => (b.unlocks - a.unlocks) || (a.pushExtra - b.pushExtra)).slice(0, 2).forEach(d => cands.push({
     worth: d.unlocks, risk: false, name: d.name, who: nmt(d),
     why: `${t('pushTo')} ${d.nextFloor/1000}k — +${fmt(d.pushExtra)} SAR${t('perDay')}`,
-    label: `+${fmt(d.unlocks)} SAR`,
+    label: hideMoney ? `→ ${d.nextFloor/1000}k tier` : `+${fmt(d.unlocks)} SAR`,
   }));
   if (idleTop) cands.push({
     worth: idleTop.v * 0.5, risk: true, name: idleTop.d.name, who: nmt(idleTop.d),
@@ -14215,7 +14456,7 @@ function renderToday() {
       </div>
     </div>`).join('');
   const queue = `
-    <div class="dk-bulk"><span class="t">${t('doNext')}</span>${easy.length ? `<span class="c">${easy.length} × ${t('easyWins')} = +${fmt(easySar)} SAR</span>` : ''}</div>
+    <div class="dk-bulk"><span class="t">${t('doNext')}</span>${easy.length ? `<span class="c">${easy.length} × ${t('easyWins')}${hideMoney ? '' : ` = +${fmt(easySar)} SAR`}</span>` : ''}</div>
     ${cands.length ? `<div class="dk-queue">${queueCards}</div>`
                    : `<div class="dk-card" style="color:var(--dk-mut);font-size:12px">${t('allCalm')}</div>`}`;
 
@@ -14229,13 +14470,15 @@ function renderToday() {
       ${footer ? `<div class="dk-foot">${footer}</div>` : ''}
     </div>`;
 
+  // Fleet net + the vs-last-month delta are DRIVER earnings — they stay. Only the company
+  // bonus row drops out (and with it the card's link into Finance, which is locked anyway).
   const moneyBody = `<div class="dk-big">${fmt(Math.round(monthNet))}<small> SAR · ${periodLabel}</small></div>
-    ${kRow(t('projBonus'), projectable ? `<span class="dk-ok-n">+${fmt(projBonus)}</span>` : '—', 'todayGoExec(event)')}
+    ${hideMoney ? '' : kRow(t('projBonus'), projectable ? `<span class="dk-ok-n">+${fmt(projBonus)}</span>` : '—', 'todayGoExec(event)')}
     ${kRow(`${t('vs')} ${prevMonthName}`, prevNet ? `${fmt(Math.round(prevNet))} <span class="${deltaPct >= 0 ? 'dk-ok-n' : 'dk-danger-n'}">${deltaPct != null ? (deltaPct >= 0 ? '+' : '') + deltaPct + '%' : ''}</span>` : '—')}`;
   const chaseBody = `<div class="dk-big">${idleN + slowN}<small> ${t('driversNeedPush')}</small></div>
     ${kRow(t('idleNoTrips'), attn(idleN), "todayDrill('idle',event)")}
     ${kRow(t('belowPace'), attn(slowN), "todayDrill('slow',event)")}
-    ${kRow(t('easyWins'), easy.length ? `<span class="dk-ok-n">${easy.length} · +${fmt(easySar)}</span>` : `<span style="color:var(--dk-dim)">0</span>`, 'todayOpenChase(event)')}`;
+    ${kRow(t('easyWins'), easy.length ? `<span class="dk-ok-n">${easy.length}${hideMoney ? '' : ` · +${fmt(easySar)}`}</span>` : `<span style="color:var(--dk-dim)">0</span>`, 'todayOpenChase(event)')}`;
   const bonusBody = `<div class="dk-big">${noAmb + natPending}<small> ${t('attributionGaps')}</small></div>
     ${kRow(t('noAmbassador'), attn(noAmb))}
     ${kRow(t('natUnconfirmed'), attn(natPending))}
@@ -14318,6 +14561,7 @@ function initTheme() {
 
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
+  refreshLockUi();               // Build-186: paint the lock chip + 🔒 marks before first render
   // Default cycle calendar to May 10, 2026 (first Sunday) if never set
   if (!getCycleAnchor()) setCycleAnchor('2026-05-10');
   initSettingsUI();
