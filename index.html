@@ -9908,6 +9908,10 @@ function buildFinanceModals() {
       <input type="hidden" id="cpDriverName">
       <div class="fin-form-row"><label>Driver</label>
         <div id="cpDriverDisplay" style="font-weight:600;font-size:14px;padding:8px 10px;background:var(--bg-card2);border-radius:6px"></div>
+        <div id="cpAmbiguousWarn" style="display:none;margin-top:6px;font-size:11px;line-height:1.5;color:var(--amber);border:1px solid rgba(255,176,32,.35);background:rgba(255,176,32,.08);border-radius:6px;padding:7px 9px">
+          ⚠ Two different captains share this name, so this edit is saved against the NAME, not one person —
+          it may not show where you expect. Fix the duplicate phone/UUID in Bolt first.
+        </div>
       </div>
       <div class="fin-form-row"><label>Model</label>
         <select id="cpModel" onchange="onCpModelChange(this.value)">
@@ -11701,8 +11705,42 @@ function renderAmbassadorsView() {
 // ═══════════════════════════════════════════
 // MODAL INTERACTIONS
 // ═══════════════════════════════════════════
+// Resolve a bare driver NAME to the identity the rest of the app keys profiles on.
+//
+// The Finance layer is name-keyed — its P&L rows only carry a name — but profiles are
+// identity-keyed. So a captain-profile save made by name alone could land on a DIFFERENT
+// record than every other tab reads, and the edit silently did nothing: that is how Nawaf
+// AlBahwan ended up with an ambassador written to 'nm:nawaf albahwan' while the dashboard
+// kept reading his real record at 'ph:556479530' (still showing the previous ambassador).
+//
+// Newest row wins, so a captain whose phone changed is written under their CURRENT identity.
+// A genuinely ambiguous name (two different people sharing it) returns null on purpose — we
+// must not guess which of them an edit was meant for; the caller keeps the old name-keyed
+// behaviour and the modal says so out loud.
+function identityForDriverName(name) {
+  const nk = driverKey(name);
+  if (!nk) return null;
+  if (getProfileResolver().ambiguousNames.has(nk)) return null;
+  const hist = getHistory().slice().sort((a, b) => periodSortKey(b.period) - periodSortKey(a.period));
+  for (const h of hist) {
+    for (const d of (Array.isArray(h.drivers) ? h.drivers : [])) {
+      if (driverKey(d.name) === nk && (d.driverId || d.phone))
+        return { name: d.name, driverId: d.driverId || '', phone: d.phone || '' };
+    }
+  }
+  return null;                          // profile-only captain — nothing in history to key on
+}
+// The identity the OPEN modal is editing. Read and write both go through this, so the record
+// shown can never be a different one from the record saved.
+let cpIdentity = null;
 function openCourierProfileModal(name) {
-  const profile = getCourierProfile(name);
+  cpIdentity = identityForDriverName(name);
+  const profile = getCourierProfile(cpIdentity || name);
+  const amb = document.getElementById('cpAmbiguousWarn');
+  if (amb) {
+    const isAmbiguous = !cpIdentity && getProfileResolver().ambiguousNames.has(driverKey(name));
+    amb.style.display = isAmbiguous ? '' : 'none';
+  }
   document.getElementById('cpDriverName').value = name;
   document.getElementById('cpDriverDisplay').textContent = name + (lookupForeignName(name) ? ` (${lookupForeignName(name)})` : '');
   document.getElementById('cpModel').value = resolveModelDisplay(profile.model) || 'F';
@@ -11755,7 +11793,7 @@ function openCourierProfileModal(name) {
   onCpAmbModelChange(profile.ambassadorModel || '');
   document.getElementById('courierProfileModal').classList.add('open');
 }
-function closeCourierProfileModal() { document.getElementById('courierProfileModal').classList.remove('open'); }
+function closeCourierProfileModal() { cpIdentity = null; document.getElementById('courierProfileModal').classList.remove('open'); }
 // Sets the ambassador dropdown's value. If the saved value predates AMBASSADOR_LIST (or is a
 // typo/variant not on the canonical list), it's never silently dropped — a flagged one-off
 // option is added so the real saved value stays visible and selected until someone fixes it.
@@ -11852,7 +11890,10 @@ function saveCourierProfileFromModal() {
     { label:'Car Rent',     dir:profile.carRent.dir,     amount:profile.carRent.amount },
     { label:'Other',        dir:profile.other.dir,       amount:profile.other.amount },
   ])) return;
-  upsertCourierProfile(name, profile);
+  // Write to the SAME record the modal read (see identityForDriverName). Passing the bare name
+  // here was what let an edit land on a name-keyed record the rest of the app never reads.
+  upsertCourierProfile(cpIdentity || name, profile);
+  cpIdentity = null;
   closeCourierProfileModal();
   renderFinanceTab();
   if (document.getElementById('ambassadors')?.classList.contains('active')) renderAmbassadors();
