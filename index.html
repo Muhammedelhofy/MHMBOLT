@@ -7264,13 +7264,31 @@ function buildProfileResolver(rows) {
     while (parent.get(x) !== r) { const n = parent.get(x); parent.set(x, r); x = n; } return r; };
   const add = x => { if (!parent.has(x)) parent.set(x, x); return x; };
   const union = (a, b) => { add(a); add(b); parent.set(find(a), find(b)); };
+  // A phone carried by TWO OR MORE distinct driver_uuids is not an identity — it is a recycled
+  // or mistyped number in the source (Bolt had one phone sitting on three different captains at
+  // different times). Unioning on it merges real people into ONE profile: ambassador tag, cost
+  // deal and block state all collapse, whoever is saved last overwrites the rest, and the
+  // profile's display name flips around. driver_uuid is stable per person, so it wins and the
+  // unreliable phone is dropped as a join key. Self-healing: a phone stops being trusted the
+  // moment the data shows it on a second uuid, and starts being trusted again once it doesn't.
+  const uuidsByPhone = new Map();
+  for (const d of (rows || [])) {
+    const s = identSigsOf(d);
+    const ph = s.find(x => x.startsWith('ph:')), id = s.find(x => x.startsWith('id:'));
+    if (!ph || !id) continue;
+    if (!uuidsByPhone.has(ph)) uuidsByPhone.set(ph, new Set());
+    uuidsByPhone.get(ph).add(id);
+  }
+  const sharedPhones = new Set();
+  for (const [ph, ids] of uuidsByPhone) if (ids.size >= 2) sharedPhones.add(ph);
+  const sigsOf = d => identSigsOf(d || {}).filter(x => !sharedPhones.has(x));
   // hard union: uuid ⟷ phone observed together on one row (same physical driver)
-  for (const d of (rows || [])) { const s = identSigsOf(d); s.forEach(add); for (let i = 1; i < s.length; i++) union(s[0], s[i]); }
+  for (const d of (rows || [])) { const s = sigsOf(d); s.forEach(add); for (let i = 1; i < s.length; i++) union(s[0], s[i]); }
   // ambiguity census: name key → set of distinct hard-component roots carrying it
   const compsByName = new Map();
   for (const d of (rows || [])) {
     const nk = driverKey(d.name); if (!nk) continue;
-    const s = identSigsOf(d);
+    const s = sigsOf(d);                      // shared phones are not identities — see above
     if (!compsByName.has(nk)) compsByName.set(nk, new Set());
     if (s.length) compsByName.get(nk).add(find(s[0]));
   }
@@ -7291,7 +7309,7 @@ function buildProfileResolver(rows) {
   // 'nm:'+nameKey for a profile with NO identity at all (a manual deal never seen in data)
   // or an ambiguous bare name that cannot be resolved without an identity hint.
   const profileKeyOf = d => {
-    const s = identSigsOf(d || {});
+    const s = sigsOf(d);                      // shared phones are not identities — see above
     if (s.length) {
       // A signature the resolver never indexed — a driver absent from the LOADED history
       // window: an invoice-only row, a brand-new captain, any caller holding just a phone —
