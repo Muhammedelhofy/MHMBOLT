@@ -1600,7 +1600,13 @@ function saveSettings() {
   renderCaptains();
   // Referrer-incentive frequency/rate feed the Incentives tab + P&L — repaint if it's open.
   if (typeof renderIncentives === 'function' && document.getElementById('incentives')?.classList.contains('active')) renderIncentives();
-  toast('Settings saved ✓');
+  // Push immediately. fetchFromCloud treats the cloud copy as the source of truth for shared
+  // config and OVERWRITES khair_settings3 wholesale, so a local-only save was silently reverted
+  // by the next pull / hourly refresh / page load — which is exactly how a corrected EGP→SAR
+  // rate went back to its wrong value. Every neighbouring saver (op-cost + bonus-split
+  // schedules) already synced; this one was the odd one out.
+  if (typeof syncToCloud === 'function') syncToCloud();
+  toast('Settings saved ✓ — synced');
 }
 function initSettingsUI() {
   const s = loadSettings();
@@ -3869,13 +3875,21 @@ function setCaptainView(v) {
   captainSearch = '';
   renderCaptains();
 }
+// A full renderCaptains() costs ~490ms at fleet scale (216 captains x 80 days), and this used
+// to run on EVERY keystroke — typing an 8-letter name meant ~4s of blocking work and a visibly
+// laggy box. Debounced: the value is stored immediately (so the input never loses a character)
+// and the expensive re-render fires once the typing pauses. A short delay keeps it feeling live.
+let _captainSearchTimer = null;
 function setCaptainSearch(q) {
   // Keep the raw value so a space (and multi-word names like "ayman suliman") can
   // be typed — trimming on every keystroke used to swallow the space. Matching trims.
   captainSearch = (q || '');
-  renderCaptains();
-  const inp = document.getElementById('captainSearchInput');
-  if (inp) { inp.value = captainSearch; inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  clearTimeout(_captainSearchTimer);
+  _captainSearchTimer = setTimeout(() => {
+    renderCaptains();
+    const inp = document.getElementById('captainSearchInput');
+    if (inp) { inp.value = captainSearch; inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  }, 160);
 }
 function setSumModelFilter(m) { sumModelFilter = m; renderCaptains(); }
 function setSumFunnelFilter(f) { sumFunnelFilter = f; renderCaptains(); }
@@ -4121,9 +4135,10 @@ function renderCaptains() {
   // ── Filter + sort controls + search (captain view only) ──
   const modelFilterBar = '';  // merged into filterSortBar below
   const searchBar = captainView === 'captain' ? `
-    <input class="search-input" type="text" dir="ltr" placeholder="🔍 Search captain…"
+    <input class="search-input" type="text" dir="ltr" placeholder="🔍 Search name or mobile…"
+      title="Search by captain name (English or Arabic) or by mobile number — 0551234567, 551234567 and +966551234567 all match"
       value="${captainSearch.replace(/"/g,'&quot;')}" oninput="setCaptainSearch(this.value)"
-      id="captainSearchInput" style="margin-left:auto;min-width:150px">
+      id="captainSearchInput" style="margin-left:auto;min-width:170px">
   ` : '';
 
   // Filter (who shows) and Sort (the order) split into two clearly labelled groups.
@@ -4743,12 +4758,21 @@ function buildCourierSummaryTable(entries, searchFilter) {
     util:   c.rDays > 0 ? c.utSum / c.rDays : 0,
   }));
 
-  // Apply search filter
+  // Apply search filter — name (English or the mapped Arabic/foreign name) OR mobile number.
+  // A query that is mostly digits is treated as a phone search: both sides are reduced to
+  // digits and compared on the last 9, so 0551234567 / 551234567 / +966 55 123 4567 and any
+  // spacing or country-code form all match the same captain.
   if (searchFilter && searchFilter.trim()) {
-    const q = searchFilter.trim().toLowerCase();
+    const raw = searchFilter.trim();
+    const q = raw.toLowerCase();
+    const qDigits = raw.replace(/\D/g, '');
+    const asPhone = qDigits.length >= 3 && qDigits.length >= raw.replace(/[\s+()-]/g, '').length;
     couriers = couriers.filter(c => {
       const foreign = lookupForeignName(c.name) || '';
-      return c.name.toLowerCase().includes(q) || foreign.toLowerCase().includes(q);
+      if (c.name.toLowerCase().includes(q) || foreign.toLowerCase().includes(q)) return true;
+      if (!asPhone) return false;
+      const ph = String(c.phone || '').replace(/\D/g, '');
+      return !!ph && ph.slice(-9).includes(qDigits.slice(-9));
     });
   }
 
@@ -13047,7 +13071,25 @@ function setAnalyticsDrillSort(col) {
 // The single source of truth behind the Analytics tab, the 🎯 Today tab and the
 // chase-list export. Body moved VERBATIM out of renderAnalytics — same projection,
 // same push feasibility, same flags. Pass '' to resolve to the latest month.
+// computeRosterForMonth is the app's single most expensive call (~115ms at 216 captains x 80
+// days) and every render invokes it 2-3x with the SAME argument — roughly half of a 490ms
+// renderCaptains. Cache the result for the CURRENT TICK ONLY: repeated calls inside one render
+// share the work, and the cache is dropped on the next microtask, before any later user action
+// or data write could observe a stale roster. That is deliberately cruder than keying on the
+// underlying data — with money-adjacent numbers, a cache that cannot outlive one render is
+// safer than a dependency list someone has to remember to update.
+// Sharing the object is safe because no caller mutates R.current/R.drivers in place (they all
+// filter/map/slice first) — verified before this was added; keep it that way.
+const _rosterTickCache = new Map();
 function computeRosterForMonth(monthSel) {
+  const ck = String(monthSel);
+  if (_rosterTickCache.has(ck)) return _rosterTickCache.get(ck);
+  const val = _computeRosterForMonth(monthSel);
+  if (!_rosterTickCache.size) Promise.resolve().then(() => _rosterTickCache.clear());
+  _rosterTickCache.set(ck, val);
+  return val;
+}
+function _computeRosterForMonth(monthSel) {
   const history = getHistory();
   if (!history.length) return null;
 
