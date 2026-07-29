@@ -5189,6 +5189,13 @@ function setHistSort(col) {
 }
 
 function renderHistory() {
+  // #historyContent lives INSIDE the Settings panel, which the company-data lock (Build-186)
+  // detaches from the document while locked. renderHistory is the LAST statement in
+  // fetchFromCloud, so an unguarded write threw on every cloud pull in a locked session —
+  // rejecting the promise and skipping the boot chain that follows it (autoLoadLatest +
+  // renderToday), so the agent-facing Today tab never rendered. Never render into a panel
+  // that is deliberately not in the document.
+  if (!document.getElementById('historyContent')) return;
   const history = getHistory();
   if (!history.length) {
     document.getElementById('historyContent').innerHTML = `<div class="empty-state"><div class="empty-icon">🗂</div><div class="empty-title">No history yet</div><div class="empty-sub">Each upload is automatically saved here</div></div>`;
