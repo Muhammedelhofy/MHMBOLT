@@ -1,0 +1,133 @@
+# Build-195 · IDENTITY UNIFICATION — live test
+
+**Branch:** `feat/identity-unification` (worktree `Bolt-wt-identity`, off `origin/main` @ Build-194)
+**What changed in one line:** the dashboard now identifies every captain by their Bolt
+`driver_uuid` everywhere, so two captains who share a name are two people in Finance too.
+
+Run the two automated suites first — they are fast and they cover the arithmetic:
+
+```bash
+node tests/identity_unification.test.js
+```
+
+```bash
+node tests/identity_live_verify.js
+```
+
+The second one pulls your REAL cloud data (via the public `/api/bolt/config` endpoint, same as
+any browser) and checks the four same-name pairs against it. Both must print `ALL GREEN`.
+
+---
+
+## 1 · The money — the reason this build exists 🔴
+
+Open **Finance → By Captain**, month **July 2026**, and search each name.
+
+| Search for | Before (one row) | After (two rows) | What to check |
+|---|---|---|---|
+| `Turki Aldawsari` | 1,573 | **1,901** + **181** = 2,082 | two rows, chips `·821` and `·152` |
+| `Meshari Alanazi` | 2,679 | **2,463** + **425** = 2,888 | chips `·036` (Menna) and `·495` (Engy) |
+| `Mohammed Alsubaie` | 4,927 | **5,350** + 0 | the second account shows 0 for July |
+| `Khalid Asiri` | 158 | **178** + 0 | same |
+
+> The "before" numbers are what the live Build-194 prod dashboard shows right now, measured
+> today. The "after" numbers were measured against the same cloud data by
+> `tests/identity_live_verify.js`. Turki's split matches the spec's original measurement exactly.
+
+**Then cross-check against Captains.** Go to **Captains**, same month, search the same name.
+The two rows there should show the same two numbers, and they always did — the Captains tab was
+already correct. The point of the build is that Finance now agrees with it.
+
+## 2 · The twin chip 🟢
+
+On a name two captains share you should see a small grey mono chip with the last 3 digits of
+that captain's phone: **Turki Aldawsari `·821`**. Check it appears in:
+
+- Captains → By Captain (beside the name)
+- Finance → By Captain (beside the name)
+- the Finance captain panel header (click the name)
+- the driver multi-select dropdown in Finance
+- the Ambassadors "Assign" picker
+
+Check it does **NOT** appear on any of the ~200 captains with a unique name. If you see chips
+everywhere, something is wrong — say so and stop.
+
+## 3 · Editing one twin must not touch the other 🔴
+
+1. Finance → By Captain → find the two `Turki Aldawsari` rows.
+2. On the **first** row, click **Profile**, set Ambassador to something recognisable, Save.
+3. Look at the **second** row: its ambassador cell must still be empty.
+4. Click **Change ▸** on the first row, set a Salary override for July, Save.
+5. The second row's Change button must still read `Change ▸`, not `✓ Changed`.
+6. Repeat for one more pair (Meshari is a good one — you already know 536 = Menna).
+
+## 4 · The data-conflicts panel 🔴
+
+**Today** tab → the alert rail → click the **data conflicts** row. You should now see:
+
+- **⚠️ Needs your decision** — 5 captains whose ONE saved ambassador could belong to either
+  twin. The migration refused to guess. These are: Khalid Asiri, MESHARI ALANAZI,
+  Turki Aldawsari, ABDULLAH ALOTAIBI, Mohammed Alsubaie.
+  **This is the list you asked for.** To resolve one: Ambassadors tab → the Assign picker now
+  lists each twin separately with its phone chip → pick the right one → set the ambassador.
+- **👥 Same name, different captains** — informational now, not a money warning.
+- **🔀 Two records disagreed** — 1 entry: `nawaf albahwan`, ambassador kept `Khaled Met3eb`,
+  dropped `Boda`. Confirm `Khaled Met3eb` is the right one.
+- **🕒 Edits will not stick** — 34 records, with a **Repair** button.
+
+## 5 · The frozen-record repair (your call, one click) 🔴
+
+Still in that panel, click **🕒 Repair 34 frozen records**. It shows you the list first and
+asks. Nothing happens unless you confirm.
+
+- After it runs: edit one of those captains' profiles, then hit **Pull** from cloud. The edit
+  must still be there. Before this fix it silently reverted.
+- Undo, if it ever looks wrong: open the browser console and run `restoreProfilesPreS3()`.
+
+## 6 · Regression sweep — Builds 186-193 must still hold 🟢
+
+| Check | Where | Expect |
+|---|---|---|
+| Company-data lock | reload with the lock engaged | the 6 locked tabs stay hidden, no console error |
+| Ambassador count == rows | Captains → ambassador filter | the number beside each name equals the rows it shows |
+| Tier ladder | Captains deck | still pinned to Bolt's 4k/5k/6k floors |
+| Closed-month split | Finance → Executive, June | per-driver `bonusSplitPct` still honoured |
+| Mobile search | Captains, narrow window | search + filters still work |
+| Render timing | console | Captains ~219ms, Today ~51ms (see below) |
+| Cloud round-trip | Pull, then Push | profile count stays 196, no key explosion |
+
+Render timing, pasted into the console:
+
+```javascript
+console.time('captains'); renderCaptains(); console.timeEnd('captains'); console.time('today'); renderToday(); console.timeEnd('today');
+```
+
+## 7 · What the migration does to your stored data
+
+Run once, automatically, after the cloud merge. Idempotent — a second run is a no-op.
+
+| | Before | After |
+|---|---|---|
+| Profile records | 352 (188 `ph:` · 95 `nm:` · 69 `id:`) | 196 (190 `id:` · 1 `ph:` · 5 `nm:` parked) |
+| Ambassador tags | 184 | 184 — none lost |
+| Nationalities | 152 | 152 — none lost |
+
+The drop from 352 to 196 is **de-duplication, not loss**: 156 of those records were second
+copies of a captain already in the store under a different key (the `nm:` shadow records the
+name-keyed-edit bug created). Every setting on the losing copy is carried onto the winner unless
+the two genuinely disagree, in which case the newest wins and the dropped value is listed in the
+conflicts panel.
+
+Backups, both written before the first change:
+`khair_courier_profiles_backup_preS3`, `khair_courier_overrides_backup_preS7`.
+Restore with `restoreProfilesPreS3()` / `restoreOverridesPreS7()` in the console.
+
+## 8 · Not verified, and why
+
+- **The rendered twin chip was never seen on screen.** The browser preview pane wedged partway
+  through this session (the known hang on this page) and did not recover. The chip is covered by
+  unit tests at the function level and its CSS is a plain `<span class="twin-chip">`, but
+  section 2 above is a real check, not a formality — do it before this goes to the team.
+- **`no money deal is lost` passed vacuously** on your data: not one of the 352 profiles carries
+  a salary, rent or fleet-cut value, so there was nothing for that check to protect. It will
+  start protecting something the first time a deal is entered.

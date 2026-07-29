@@ -188,6 +188,12 @@ body::after { display:none !important; }
 .avatar.av-left { background:rgba(255,68,102,.08); border-color:rgba(255,68,102,.40); color:var(--red); text-shadow:none; box-shadow:none; border-radius:50%; }
 .left-badge { display:inline-block; margin-left:7px; padding:2px 7px; border-radius:3px; font-size:8.5px; font-weight:800; letter-spacing:.07em; color:#fff; background:#FF4466; border:1px solid #FF4466; vertical-align:middle; text-transform:uppercase; box-shadow:0 0 9px rgba(255,68,102,.55); }
 .left-row .d-name { text-decoration:line-through; text-decoration-color:rgba(255,68,102,.6); }
+/* S7 · twin chip — the last 3 digits of the phone, shown ONLY beside a name that two
+   different captains share. Deliberately quiet (mono, muted, no fill): it is a disambiguator
+   the eye can use when two rows read the same, not an alert. */
+.twin-chip { display:inline-block; margin-left:5px; padding:1px 5px; border-radius:3px; font-family:var(--mono);
+  font-size:9.5px; font-weight:700; letter-spacing:.02em; color:var(--text-muted);
+  border:1px solid var(--border); background:rgba(127,127,127,.07); vertical-align:middle; white-space:nowrap; }
 .d-name  { font-weight:600; font-size:13px; white-space:nowrap; color:var(--text); }
 .d-meta  { font-size:11px; color:var(--text-muted); }
 .tier { font-size:9px; font-weight:700; padding:3px 8px; border-radius:2px; white-space:nowrap; letter-spacing:.08em; text-transform:uppercase; }
@@ -2544,42 +2550,83 @@ function entryInMonth(h, month, year) {
 // inputs change (saveHistory / saveReconcile), so it can never go stale.
 let _netCache = new Map();
 function invalidateNetCache() { _netCache.clear(); }
-function sumDriverNetForMonth(driverName, month, year, driverId) {
+// S7 — `who` is an IDENTITY (identityOf) or, for back-compat, a bare driver name. The cache
+// keys on the identity key, not the name key: two captains sharing a name have two different
+// keys, so their months can no longer land in the same cache slot and collapse into one.
+function sumDriverNetForMonth(who, month, year, driverId) {
   // Month-end reconcile: once a month is LOCKED against Bolt's monthly "Earnings per
   // driver" report, Bolt's finalised net is authoritative for that month/driver — it
   // captures late-posted campaign bonuses + adjustments the daily uploads can't have
   // (they're snapshots taken before Bolt settles). Un-reconciled months / unmatched
   // drivers fall back to the daily-sum. This is the single point every bonus reads.
-  const key = driverKey(driverName) + '|' + month + '|' + year + '|' + (driverId || '');
+  const id = (typeof who === 'object' && who && who.key)
+    ? who
+    : identityOf(typeof who === 'string' ? { name: who, driverId } : who);
+  const key = id.key + '|' + month + '|' + year;
   const hit = _netCache.get(key);
   if (hit !== undefined) return hit;
-  const rec = getReconciledNet(year + '-' + String(month + 1).padStart(2, '0'), driverName);
-  const v = (rec != null) ? rec : rawDailyNetForMonth(driverName, month, year, driverId);
+  const rec = getReconciledNet(year + '-' + String(month + 1).padStart(2, '0'), id);
+  const v = (rec != null) ? rec : rawDailyNetForMonth(id, month, year);
   _netCache.set(key, v);
   return v;
 }
-function rawDailyNetForMonth(driverName, month, year, driverId, phone) {
-  const target = { name: driverName, driverId, phone };   // S3: identity-strict only when a collision name is queried WITH an identity
+// The per-day sum for ONE captain. `who` is an identity (preferred) or a name + optional
+// uuid/phone hint.
+//
+// S7 — this is where the money was being dropped. `drivers.find(...)` returns the FIRST row
+// whose name matches, so on a day both twins worked, the caller asking by bare name got one of
+// them (whichever Bolt listed first) and the other's earnings were never counted at all —
+// Turki Aldawsari read 1,573 against a real 1,901 + 181. With an identity in hand,
+// driverRowMatches compares canonical keys and each row belongs to exactly one captain.
+// We now sum every DISTINCT matching account in the day rather than only the first: one person
+// can legitimately hold two Bolt accounts (Model B is literally two), and both rows are that
+// person's earnings. Distinct-account de-duping is what keeps that from becoming a double
+// count — a merged history entry can carry the same account row twice (the F1/R2 union merge),
+// and `.find` used to hide that by construction.
+function rawDailyNetForMonth(who, month, year, driverId, phone) {
+  const target = (typeof who === 'object' && who && who.key)
+    ? who
+    : identityOf(typeof who === 'string' ? { name: who, driverId, phone } : who);
+  const acctSig = d => String(d.driverId || '').trim()
+    || ('p' + String(d.phone || '').replace(/\D/g, '').slice(-9))
+    || ('n' + driverKey(d.name));
   const seen = new Set(); let total = 0;
   for (const h of getHistory()) {
     if (!entryInMonth(h, month, year) || seen.has(h.period)) continue;
     seen.add(h.period);
     const drivers = Array.isArray(h.drivers) ? h.drivers : [];
-    const d = drivers.find(x => driverRowMatches(x, target));
-    if (d) total += sN(d.netEarnings);
+    const day = new Set();
+    for (const d of drivers) {
+      if (!driverRowMatches(d, target)) continue;
+      const sig = acctSig(d);
+      if (day.has(sig)) continue;
+      day.add(sig);
+      total += sN(d.netEarnings);
+    }
   }
   return total;
 }
 // ── Month-end Bolt reconcile store ─────────────────────────────────────────────
-// { 'YYYY-MM': { byKey: { driverKey: finalisedNet }, at, drivers } }. Synced to cloud.
+// { 'YYYY-MM': { byKey: { identityKey|driverKey: finalisedNet }, at, drivers } }. Synced to cloud.
+//
+// S7 — newly locked months are keyed by IDENTITY (Bolt's "Earnings per driver" report carries
+// the driver uuid, so the key is exact). Months locked before this build are name-keyed, and
+// they stay readable: the lookup tries the identity key first, then the name key — but ONLY for
+// a name that is not a known collision. A twin must never read a legacy name-keyed reconcile
+// row, because that row is one merged figure covering both of them.
 const RECONCILE_KEY = 'khair_reconcile';
 function loadReconcile() { try { return JSON.parse(localStorage.getItem(RECONCILE_KEY) || '{}'); } catch (e) { return {}; } }
 function saveReconcile(o) { invalidateNetCache(); localStorage.setItem(RECONCILE_KEY, JSON.stringify(o)); }
-function getReconciledNet(monthKey, driverName) {
+function getReconciledNet(monthKey, who) {
   const m = loadReconcile()[monthKey];
   if (!m || !m.byKey) return null;
-  const v = m.byKey[driverKey(driverName)];
-  return (typeof v === 'number' && !isNaN(v)) ? v : null;
+  const num = v => (typeof v === 'number' && !isNaN(v)) ? v : null;
+  const id = identityOf(who);
+  const byIdent = num(m.byKey[id.key]);
+  if (byIdent != null) return byIdent;
+  const nk = driverKey(id.name);
+  if (!nk || isTwinName(id.name)) return null;           // legacy row would be the merged pair
+  return num(m.byKey[nk]);
 }
 function isMonthReconciled(monthKey) { const m = loadReconcile()[monthKey]; return !!(m && m.byKey && Object.keys(m.byKey).length); }
 function getMonthlyNet(driverId, driverName, month, year) {
@@ -3906,33 +3953,31 @@ function setSumStatusFilter(v) { sumStatusFilter = v; currentPage = 1; renderCap
 // filters disagree in front of the team (the reported "Met3eb says 8, lists 10").
 //
 // Two rules have to match the table exactly:
-//   1. the table keys its map by the RAW `d.name` string (see the map[d.name] build), and
+//   1. the table keys its map by IDENTITY (S7 — see the map[id.key] build), and
 //   2. it ALSO surfaces captains who have a courier profile but no row in the selected
 //      days at all — an ambassador's captain who simply did not work this month.
 // This used to dedupe by courierIdentityKey and skip rule 2, so every profile-only captain
 // was listed but never counted. Counting over the table's own population keeps the two in
 // step by construction, instead of by two definitions that have to be kept in sync by hand.
 function captainsAmbOptions(entries) {
-  const byName = new Map();
+  const byIdent = new Map();
   (entries || []).forEach(h => (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => {
     if (!d.name) return;
-    if (!byName.has(d.name)) byName.set(d.name, d);
+    const k = identKeyOf(identityOf(d));
+    if (!byIdent.has(k)) byIdent.set(k, d);
   }));
-  // Rule 2 — profile-only captains, compared on driverKey exactly as the table does.
-  const seenKeys = new Set([...byName.keys()].map(n => driverKey(n)));
-  courierProfileNames().forEach(nm => {
-    if (!seenKeys.has(driverKey(nm))) { byName.set(nm, { name: nm }); seenKeys.add(driverKey(nm)); }
-  });
+  // Rule 2 — profile-only captains, keyed by identity exactly as the table does.
+  profileOnlyIdentities([...byIdent.keys()].map(k => ({ key: k }))).forEach(id => byIdent.set(id.key, id));
   const counts = new Map();   // lowercased name -> { name, count }
   let untagged = 0;
-  byName.forEach(d => {
+  byIdent.forEach(d => {
     const a = (typeof courierAmbassadorFor === 'function' ? courierAmbassadorFor(d) : '') || '';
     if (!a.trim()) { untagged++; return; }
     const lc = a.trim().toLowerCase();
     const e = counts.get(lc);
     if (e) e.count++; else counts.set(lc, { name: a.trim(), lc, count: 1 });
   });
-  return { list: [...counts.values()].sort((x, y) => x.name.localeCompare(y.name)), untagged, total: byName.size };
+  return { list: [...counts.values()].sort((x, y) => x.name.localeCompare(y.name)), untagged, total: byIdent.size };
 }
 function toggleCapAmbDd() {
   capAmbDdOpen = !capAmbDdOpen;
@@ -4572,23 +4617,33 @@ function bonusFor(net, monthKey, opts) {
 // the numerator behind boltTier's ÷30 proration. NOTE: for a reconciled month the NET comes
 // from Bolt's monthly report but this day count still comes from the daily uploads, so the
 // proration is exact only when the dailies for that month are complete.
-function daysWorkedForMonth(driverName, month, year, driverId) {
-  const nk = driverKey(driverName); const seen = new Set(); let days = 0;
+// S7 — `who` is an identity (identityOf) or a bare name + optional uuid. The row match runs
+// through driverRowMatches, the same test the net sum uses, so the DAY COUNT and the NET behind
+// a prorated bonus always describe the same person. The old name-or-uuid `.find` counted a
+// twin's days for whichever of the pair was asked about first.
+function daysWorkedForMonth(who, month, year, driverId) {
+  const target = (typeof who === 'object' && who && who.key)
+    ? who
+    : identityOf(typeof who === 'string' ? { name: who, driverId } : who);
+  const seen = new Set(); let days = 0;
   for (const h of getHistory()) {
     if (!entryInMonth(h, month, year) || seen.has(h.period)) continue;
     seen.add(h.period);
-    const d = (Array.isArray(h.drivers) ? h.drivers : []).find(x => (driverId && x.driverId === driverId) || driverKey(x.name) === nk);
-    if (d && sN(d.netEarnings) > 0) days++;
+    const rows = (Array.isArray(h.drivers) ? h.drivers : []).filter(x => driverRowMatches(x, target));
+    if (rows.some(d => sN(d.netEarnings) > 0)) days++;   // a day counts once, however many accounts
   }
   return days;
 }
 // Invoice-matching Bolt bonus for a driver in a month: resolves worked-days + daily pace,
 // then prorates via bonusFor(...opts). Use wherever we report what Bolt ACTUALLY paid the fleet.
-function bonusForDriver(name, income, monthKey, driverId) {
+function bonusForDriver(who, income, monthKey, driverId) {
   const [y, m] = monthKey.split('-').map(Number);
-  const days = daysWorkedForMonth(name, m - 1, y, driverId);
+  const id = (typeof who === 'object' && who && who.key)
+    ? who
+    : identityOf(typeof who === 'string' ? { name: who, driverId } : who);
+  const days = daysWorkedForMonth(id, m - 1, y);
   const perDay = days > 0 ? (income || 0) / days : 0;
-  return bonusFor(income, monthKey, { perDay, days, name });
+  return bonusFor(income, monthKey, { perDay, days, name: id });
 }
 
 // ── Imported Bolt bonus — the monthly invoice's ACTUAL "Max Value" per driver ─────────
@@ -4717,18 +4772,27 @@ function buildCourierSummaryTable(entries, searchFilter) {
   const monthElapsed   = singleMonth ? (_isCurMonth ? Math.min(_today.getDate(), daysInMonth) : daysInMonth) : 0;
   const monthRemaining = singleMonth ? (_isCurMonth ? Math.max(0, daysInMonth - monthElapsed) : 0) : 0;
 
+  // S7 — keyed by IDENTITY, not by the raw `d.name` string. The old key only kept the four
+  // known pairs apart because their SPELLING differed ("Mohammed Alsubaie" vs "MOHAMMED
+  // ALSUBAIE"); two captains whose names matched exactly silently merged into one row, and the
+  // next Bolt export that normalised a name would have merged the rest. The identity is the
+  // Bolt driver_uuid, so the split no longer depends on how anyone typed the name.
   const map = {};
-  const blank = name => ({ name, driverId:'', phone:'', days:0, gross:0, net:0, campaign:0, rides:0, dist:0, hrs:0, frSum:0, acSum:0, utSum:0, rDays:0, cashEarnings:0, cashGap:0, minActualPayout:Infinity });
+  const blank = id => ({ name:id.name, key:id.key, ident:id, twin:'', driverId:id.driverId||'', phone:id.phone||'',
+    days:0, gross:0, net:0, campaign:0, rides:0, dist:0, hrs:0, frSum:0, acSum:0, utSum:0, rDays:0,
+    cashEarnings:0, cashGap:0, minActualPayout:Infinity });
   entries.forEach(h => {
     // Include ALL drivers from CSV (not just isActive) so zero-order days still surface the captain
     h.drivers.forEach(d => {
       if (!d.name) return;
-      if (!map[d.name]) map[d.name] = blank(d.name);
-      const m = map[d.name];
-      // Carry identity so block-state lookups match by driver_uuid/phone, not name alone
-      // (two real drivers can share a name — case-variants group separately here).
+      const id = identityOf(d);
+      if (!map[id.key]) map[id.key] = blank(id);
+      const m = map[id.key];
+      // Carry identity so block-state lookups match by driver_uuid/phone, not name alone.
       if (!m.driverId && d.driverId) m.driverId = String(d.driverId).trim();
       if (!m.phone && d.phone) m.phone = d.phone;
+      // Prefer the spelling on the newest row we see, so the label matches the rest of the app.
+      if (d.name && String(d.name).trim()) m.name = String(d.name).trim();
       // Only accumulate stats for days they actually worked (had orders)
       if (d.isActive) {
         m.days++; m.gross+=sN(d.grossEarnings); m.net+=sN(d.netEarnings); m.campaign+=sN(d.campaign);
@@ -4743,15 +4807,15 @@ function buildCourierSummaryTable(entries, searchFilter) {
     });
   });
   // Also include profile-only drivers (have a profile but no CSV entry in this period).
-  // S3: profiles are identity-keyed now, so surface them by display name.
-  courierProfileNames().forEach(nm => {
-    if (!Object.keys(map).some(n => driverKey(n) === driverKey(nm))) map[nm] = blank(nm);
-  });
+  // S7: compared by identity KEY, so a profile-only captain is never mistaken for the twin
+  // who did work this period.
+  profileOnlyIdentities(Object.values(map)).forEach(id => { map[id.key] = blank(id); });
 
   // Compute derived values. Note: d.netEarnings already includes campaign (Bolt includes it in gross→net).
   // campaign is kept separately only to display as an informational badge.
   let couriers = Object.values(map).map(c => ({
     ...c,
+    twin: twinSuffix(c.ident || c),
     earnHr: c.hrs   > 0 ? c.net / c.hrs   : 0,
     finish: c.rDays > 0 ? c.frSum / c.rDays : 0,
     accept: c.rDays > 0 ? c.acSum / c.rDays : 0,
@@ -4880,9 +4944,11 @@ function buildCourierSummaryTable(entries, searchFilter) {
     const badge = dkAmbTag(c)   // S3: identity → each same-named driver shows his OWN ambassador
       + (isBlocked ? `<span style="display:inline-flex;align-items:center;font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;margin-left:4px;background:rgba(255,68,102,.15);border:1px solid rgba(255,68,102,.4);color:var(--red);letter-spacing:.06em">🚫 BLOCKED</span>` : '')
       + (hasLeft ? `<span class="left-badge">LEFT FLEET</span>` : '');
+    // S7 — a colliding name carries its phone suffix so two identical rows are tellable apart.
+    const twinChip = c.twin ? `<span class="twin-chip" title="Another captain shares this name — this is the one ending ${c.twin.replace(/^·/,'')}">${c.twin}</span>` : '';
     const nameHTML = foreign
-      ? `<div class="d-name">${c.name}${badge}</div><div class="d-foreign">${foreign}</div>`
-      : `<div class="d-name">${c.name}${badge}</div>`;
+      ? `<div class="d-name">${c.name}${twinChip}${badge}</div><div class="d-foreign">${foreign}</div>`
+      : `<div class="d-name">${c.name}${twinChip}${badge}</div>`;
     // S3: thread the row's identity (driverId/phone) so a same-name collision opens THIS driver.
     const _did = esc(String(c.driverId||'')), _ph = esc(String(c.phone||''));
     const clickAttr = singlePeriod
@@ -4901,7 +4967,7 @@ function buildCourierSummaryTable(entries, searchFilter) {
     let tier, projMonth, paceElapsed = 0;
     if (singleMonth) {
       let dElapsed = monthElapsed;            // calendar days elapsed (or since-join for newcomers)
-      if (_isCurMonth) { const fs = driverFirstSeenMs(c.name);
+      if (_isCurMonth) { const fs = driverFirstSeenMs(c.ident || c);
         if (fs) { const d = new Date(fs); if (d.getFullYear()===repInfo.end.year && d.getMonth()===repInfo.end.month && d.getDate()>1)
           dElapsed = Math.max(1, Math.min(monthElapsed, _today.getDate()-d.getDate()+1)); } }
       paceElapsed = dElapsed > 0 ? c.net / dElapsed : 0;
@@ -6538,7 +6604,9 @@ function blockAtStake(name, R, byKey) {
     if (b && b.company > sar) { sar = b.company; refNet = proj; }
   }
   const [yy, mm] = R.monthSel.split('-').map(Number), pm0 = mm === 1 ? 11 : mm - 2, py = mm === 1 ? yy - 1 : yy;
-  const lastNet = getMonthlyNet(null, name, pm0, py);
+  // S7 — prefer the roster row (it carries the uuid/phone) over the bare name, so a blocked
+  // twin's bonus-at-stake is their own last month and not the other captain's.
+  const lastNet = sumDriverNetForMonth(d || name, pm0, py);
   if (lastNet > 0) { const b = bonusFor(lastNet, R.monthSel); if (b && b.company > sar) { sar = b.company; refNet = lastNet; } }
   return { sar, band: R.bandOf ? R.bandOf(refNet) : 0 };
 }
@@ -6796,6 +6864,10 @@ async function fetchFromCloud() {
   }
   if ('khair_courier_overrides' in r) {
     saveOverrides(mergeStampedByKey(r.khair_courier_overrides, loadOverrides()));
+    // S7 — re-key overrides AFTER the merge, for the same reason as the profiles above: the
+    // merge is a per-key union, so a legacy name-keyed override arriving from an unmigrated
+    // device reappears every pull and has to be re-homed each time. Idempotent.
+    migrateOverridesToIdentity();
   }
   if ('khair_incentive_overrides' in r) {
     saveIncentiveOverrides({ ...r.khair_incentive_overrides, ...loadIncentiveOverrides() });   // per-key; local edits win on conflict
@@ -7301,14 +7373,26 @@ function buildProfileResolver(rows) {
   }
   const ambiguousNames = new Set();
   for (const [nk, comps] of compsByName) if (comps.size >= 2) ambiguousNames.add(nk);
-  // per-root label: prefer the smallest 'ph:' sig; fall back to the smallest sig overall.
-  const phoneLabel = new Map(), anyLabel = new Map();
+  // per-root label: prefer the smallest 'id:' sig (the Bolt driver_uuid), then 'ph:', then any.
+  //
+  // S7 — this used to prefer 'ph:'. The phone was chosen because it is what the onboarding
+  // sheet and legacy CSV rows carry, but phones CHANGE routinely in this fleet, and Build-191
+  // drops any phone seen on 2+ uuids — so a captain's profile key could silently drift the
+  // moment an old row aged out of the 80-day cloud window, orphaning their saved deal.
+  // driver_uuid never changes and is Bolt's own answer to "who is this", so it wins. This also
+  // makes profileKeyOf agree with buildIdentityResolver's canonOf (which already labels by the
+  // smallest sig, and 'id:' < 'ph:'), giving the app ONE identity space instead of two.
+  // Existing 'ph:'-keyed profiles are moved by migrateProfilesToIdentity — never orphaned.
+  const uuidLabel = new Map(), phoneLabel = new Map(), anyLabel = new Map();
   for (const sig of parent.keys()) {
     const r = find(sig);
     const a = anyLabel.get(r); if (a === undefined || sig < a) anyLabel.set(r, sig);
+    if (sig.startsWith('id:')) { const u = uuidLabel.get(r); if (u === undefined || sig < u) uuidLabel.set(r, sig); }
     if (sig.startsWith('ph:')) { const p = phoneLabel.get(r); if (p === undefined || sig < p) phoneLabel.set(r, sig); }
   }
-  const labelOfRoot = r => (phoneLabel.get(r) !== undefined ? phoneLabel.get(r) : anyLabel.get(r));
+  const labelOfRoot = r => (uuidLabel.get(r)  !== undefined ? uuidLabel.get(r)
+                          : phoneLabel.get(r) !== undefined ? phoneLabel.get(r)
+                          : anyLabel.get(r));
   // unambiguous name → its single component's label, so a name-only lookup still reaches it
   const nameToLabel = new Map();
   for (const [nk, comps] of compsByName) if (comps.size === 1) nameToLabel.set(nk, labelOfRoot(find([...comps][0])));
@@ -7328,7 +7412,10 @@ function buildProfileResolver(rows) {
       const root  = find(s[0]);
       const label = root === undefined ? undefined : labelOfRoot(root);
       if (label !== undefined) return label;
-      return s.find(x => x.startsWith('ph:')) || s[0];
+      // S7 — mirror labelOfRoot's uuid-first order here too, or an un-indexed row (an
+      // invoice-only driver, a brand-new captain) would key on 'ph:' while the same person's
+      // indexed row keys on 'id:' — two keys, one captain, and a profile that reads blank.
+      return s.find(x => x.startsWith('id:')) || s.find(x => x.startsWith('ph:')) || s[0];
     }
     const nk = driverKey(d && d.name);
     if (nk && nameToLabel.has(nk)) return nameToLabel.get(nk);
@@ -7368,6 +7455,57 @@ function courierIdentityKey(arg) {
   const d = (typeof arg === 'string') ? { name: arg } : (arg || {});
   return getProfileResolver().profileKeyOf(d);
 }
+// ── S7 · THE IDENTITY OBJECT — one handle on one real captain ─────────────────────
+// Every money layer (net sum, P&L, overrides, roster, exports) now passes one of these
+// instead of a bare name. `key` is the canonical profile key (id:<uuid> preferred), and it
+// is computed ONCE here rather than per lookup: courierIdentityKey → getProfileResolver
+// re-reads the whole history string to check its memo, and the net sum is called thousands
+// of times per Finance render. Carrying the key on the object is what keeps that cheap.
+//
+// Accepts a driver row, an existing identity, or a bare name; always returns an object, so
+// callers never have to branch. A bare AMBIGUOUS name yields key 'nm:<name>', which resolves
+// to NEITHER colliding captain — deliberately, so a name-only caller can never be handed the
+// wrong person's money. Pass driverId/phone to address a specific twin.
+function identityOf(arg) {
+  if (arg && typeof arg === 'object' && typeof arg.key === 'string' && arg.key) return arg;
+  const d = (typeof arg === 'string') ? { name: arg } : (arg || {});
+  const name = String(d.name == null ? '' : d.name).trim();
+  const driverId = String(d.driverId || '').trim();
+  const phone = String(d.phone || '');
+  return { key: courierIdentityKey({ name, driverId, phone }), name, driverId, phone };
+}
+// The identity KEY for anything — reuses a carried key, so the hot paths stay O(1).
+function identKeyOf(arg) {
+  if (arg && typeof arg === 'object' && typeof arg.key === 'string' && arg.key) return arg.key;
+  return courierIdentityKey(arg);
+}
+// The display NAME for anything identity-like (identity, driver row, or bare name).
+function identNameOf(arg) {
+  if (typeof arg === 'string') return arg;
+  if (!arg) return '';
+  if (arg.name) return String(arg.name);
+  return courierKeyToName(arg.key || '', null);
+}
+// True when this display name is carried by two or more DIFFERENT captains in the data.
+// Drives the twin chip in the tables — the ops team share this dashboard now, and two
+// identical rows with no way to tell them apart is how the wrong captain gets edited.
+function isTwinName(name) {
+  const nk = driverKey(name);
+  return !!nk && getProfileResolver().ambiguousNames.has(nk);
+}
+// "·821" — the last 3 digits of the captain's phone, shown ONLY on a colliding name so the
+// ~200 captains with unique names gain no noise. Falls back to a uuid stub when no phone is
+// known (an invoice-only row), and to nothing at all when neither exists.
+function twinSuffix(arg) {
+  const id = identityOf(arg);
+  if (!isTwinName(id.name)) return '';
+  const ph = String(id.phone || '').replace(/\D/g, '');
+  if (ph.length >= 3) return '·' + ph.slice(-3);
+  if (id.key.startsWith('ph:')) return '·' + id.key.slice(-3);
+  if (id.driverId) return '#' + id.driverId.slice(0, 4);
+  if (id.key.startsWith('id:')) return '#' + id.key.slice(3, 7);
+  return '';
+}
 // Does a history/CSV `row` belong to `target` ({name, driverId, phone})? Used by the driver
 // panel's history aggregation so a collision name can't blend two drivers. Behaviour:
 //   • target carries an identity (driverId/phone) AND the name is a known collision →
@@ -7382,7 +7520,15 @@ function driverRowMatches(row, target) {
   const hasIdent = !!(did || tph);
   if (nk && hasIdent && getProfileResolver().ambiguousNames.has(nk))
     return courierIdentityKey(row) === courierIdentityKey(target);
-  if (did && String(row.driverId || '').trim() === did) return true;
+  const rid = String(row.driverId || '').trim();
+  if (did && rid === did) return true;
+  // S7 — when BOTH sides carry a Bolt uuid and the resolver puts them in different identity
+  // components, they are different people: stop, never fall through to the phone. Bolt has had
+  // one phone number sitting on three different captains, and the phone branch below would
+  // then hand one captain's whole month to another (their names differ, so the ambiguous-name
+  // guard above does not fire). Comparing the canonical key rather than the raw uuids keeps a
+  // single person's genuinely unioned accounts matching.
+  if (did && rid && courierIdentityKey(row) !== courierIdentityKey(target)) return false;
   if (tph && normPhoneForMatch(row.phone) === tph) return true;
   return !!nk && driverKey(row.name) === nk;
 }
@@ -7409,7 +7555,7 @@ function courierProfileNames() {
 // name key). Ambiguous bare names without an identity hint do NOT match a legacy name bucket.
 function hasCourierProfile(arg) {
   const store = loadCourierProfiles();
-  const idk = courierIdentityKey(arg);
+  const idk = identKeyOf(arg);          // S7: honours a carried identity key (identityOf)
   if (Object.prototype.hasOwnProperty.call(store, idk)) return true;
   const nm = (typeof arg === 'string') ? arg : (arg && arg.name);
   const nk = driverKey(nm);
@@ -7506,7 +7652,7 @@ function loadCourierProfiles() { try{return JSON.parse(localStorage.getItem(COUR
 function saveCourierProfiles(o) { localStorage.setItem(COURIER_PROFILES_KEY, JSON.stringify(o)); }
 function getCourierProfile(arg) {
   const store = loadCourierProfiles();
-  const idk = courierIdentityKey(arg);
+  const idk = identKeyOf(arg);          // S7: honours a carried identity key (identityOf)
   if (store[idk]) return store[idk];
   const nm = (typeof arg === 'string') ? arg : (arg && arg.name);
   const nk = driverKey(nm);
@@ -7515,7 +7661,7 @@ function getCourierProfile(arg) {
 }
 function upsertCourierProfile(arg, profile) {
   const store = loadCourierProfiles();
-  const idk = courierIdentityKey(arg);
+  const idk = identKeyOf(arg);          // S7: honours a carried identity key (identityOf)
   const nm = (typeof arg === 'string') ? arg : (arg && arg.name);
   const nk = driverKey(nm);
   // Migrate-on-write: if a legacy name-keyed entry for an UNAMBIGUOUS name is being replaced
@@ -7538,20 +7684,76 @@ function upsertCourierProfile(arg, profile) {
 // profile is attached to the identity whose sheet-ambassador matches profile.ambassador; the
 // other identity gets no profile (defaultProfile at runtime). If the ambassador can't decide
 // (blank, or matches none/both), the name stays name-keyed + flagged.
-function rekeyProfileStore(store, R, sheetAmbByPhone) {
+// S7 — this now ALSO carries a 'ph:<9>' key forward to 'id:<uuid>', because the canonical label
+// flipped to uuid-first (see buildProfileResolver). Without that step every one of the ~352
+// stored 'ph:'-keyed profiles would be orphaned the moment this build loads: the runtime would
+// look under 'id:…', find nothing, and quietly show a default deal — the ambassador, the rent
+// and the nationality all gone. The re-key is the whole reason the label flip is safe.
+// Is this field still at its factory default? A field at its default carries NO information, so
+// it must never overwrite a real value from another record for the same captain.
+function _profFieldIsBlank(field, value) {
+  if (value === undefined || value === null || value === '') return true;
+  const d = defaultProfile();
+  return (field in d) && JSON.stringify(value) === JSON.stringify(d[field]);
+}
+// Merge two records that describe the SAME captain. `newer` wins any real disagreement (that is
+// the existing newest-_t rule), but a field the newer record left at its DEFAULT is filled from
+// the older one.
+//
+// This is not a nicety — it is the fix for a live data-loss path found on his real 352-profile
+// store. 24 captains had an OLDER 'ph:'-keyed record holding their real ambassador plus a NEWER
+// 'nm:'-keyed shadow record written by the name-keyed-edit bug (see identityForDriverName) whose
+// ambassador was null. Plain key-level newest-wins kept the shadow and destroyed 24 ambassador
+// tags — each one an incentive that would silently stop being paid.
+function mergeProfileRecords(newer, older, conflicts, key) {
+  const out = { ...newer };
+  const keys = new Set([...Object.keys(older || {}), ...Object.keys(newer || {})]);
+  for (const f of keys) {
+    if (f === '_t' || f === '_name' || f === '_collision' || f === '_collisionIdents') continue;
+    const nv = newer[f], ov = older[f];
+    const nBlank = _profFieldIsBlank(f, nv), oBlank = _profFieldIsBlank(f, ov);
+    if (nBlank && !oBlank) { out[f] = ov; continue; }          // fill a default from the older copy
+    if (!nBlank && !oBlank && JSON.stringify(nv) !== JSON.stringify(ov) && conflicts)
+      conflicts.push({ key, field: f, kept: nv, discarded: ov, name: newer._name || older._name || key });
+  }
+  if (!out._name && older && older._name) out._name = older._name;
+  return out;
+}
+function rekeyProfileStore(store, R, sheetAmbByLabel) {
   const out = {};
   const flagged = [];       // collision names kept name-keyed (couldn't split by phone)
-  let split = 0, rekeyed = 0, kept = 0;
-  const put = (key, prof) => {                          // newest-_t wins on key collision
+  const moved = [];         // ph: → id: carries, for the report
+  const conflicts = [];     // two real, DIFFERENT values for one field — newest kept, both reported
+  let split = 0, rekeyed = 0, kept = 0, uuidMoved = 0, merged = 0;
+  const put = (key, prof) => {
     const cur = out[key];
     if (!cur) { out[key] = prof; return; }
-    out[key] = ((prof && prof._t) || 0) >= ((cur && cur._t) || 0) ? prof : cur;
+    // Same captain, two stored records: newest wins a real disagreement, but never lets a
+    // default overwrite a real value (see mergeProfileRecords).
+    const newer = ((prof && prof._t) || 0) >= ((cur && cur._t) || 0) ? prof : cur;
+    const older = newer === prof ? cur : prof;
+    out[key] = mergeProfileRecords(newer, older, conflicts, key);
+    merged++;
   };
-  const phoneOfLabel = lbl => (typeof lbl === 'string' && lbl.startsWith('ph:')) ? lbl.slice(3) : '';
   for (const oldKey of Object.keys(store)) {
     const prof = store[oldKey] || {};
-    // Already migrated (identity or explicit name-only key) → carry through untouched.
-    if (/^(ph:|id:)/.test(oldKey)) { put(oldKey, prof); continue; }
+    // Already uuid-keyed → nothing better to move to.
+    if (oldKey.startsWith('id:')) { put(oldKey, prof); continue; }
+    // Phone-keyed → move to the uuid that phone belongs to, when the data knows one. A phone
+    // the resolver cannot tie to a uuid (sheet-only row, or a number Build-191 distrusts
+    // because it sits on 2+ uuids) STAYS phone-keyed: that is still a reachable key, and
+    // guessing a uuid here would attach one captain's deal to another.
+    if (oldKey.startsWith('ph:')) {
+      const target = R.profileKeyOf({ phone: oldKey.slice(3) });
+      if (target && target.startsWith('id:')) {
+        put(target, { ...prof, _name: prof._name || courierKeyToName(oldKey, prof) });
+        moved.push({ from: oldKey, to: target, name: prof._name || '' });
+        uuidMoved++;
+      } else {
+        put(oldKey, prof);
+      }
+      continue;
+    }
     const name = courierKeyToName(oldKey, prof);
     const nk = driverKey(name);
     if (!nk) { put(oldKey, prof); continue; }
@@ -7562,35 +7764,53 @@ function rekeyProfileStore(store, R, sheetAmbByPhone) {
     } else if (idents.length === 1) {                    // unambiguous → its identity
       put(idents[0], { ...prof, _name: prof._name || name });
       rekeyed++;
-    } else {                                             // collision → try to split by sheet phone
+    } else {                                             // collision → try to split by sheet evidence
+      // S7 — `sheetAmbByLabel` is keyed by the IDENTITY LABEL, not by phone: the labels are
+      // uuid-first now, so a phone lookup would never match one. The caller resolves each sheet
+      // phone through the SAME profileKeyOf the runtime uses, so the two agree by construction.
+      // This is evidence, not a guess: the onboarding sheet says this phone was referred by
+      // ambassador A, and the stored profile says ambassador A. Anything less certain is parked.
       const ambWant = (prof.ambassador || '').trim().toLowerCase();
       let target = null, matches = 0;
-      if (ambWant) {
+      if (ambWant && sheetAmbByLabel) {
         for (const lbl of idents) {
-          const ph = phoneOfLabel(lbl);
-          const amb = ph && sheetAmbByPhone ? (sheetAmbByPhone.get(ph) || '') : '';
-          if (amb && amb.trim().toLowerCase() === ambWant) { target = lbl; matches++; }
+          const ambs = sheetAmbByLabel.get(lbl);
+          if (ambs && ambs.size === 1 && ambs.has(ambWant)) { target = lbl; matches++; }
         }
       }
       if (target && matches === 1) {                     // confident single match → attach there
         put(target, { ...prof, _name: prof._name || name });
         split++;
-      } else {                                           // cannot decide → keep name-keyed + flag
-        put('nm:' + nk, { ...prof, _name: prof._name || name, _collision: true });
+      } else {
+        // Cannot decide → PARK it. Neither captain inherits the tag (both read defaultProfile),
+        // the record is kept under 'nm:' so nothing is lost, and it is surfaced in the
+        // data-conflicts list for a human to assign. Handing it to one of the pair would pay a
+        // real incentive to an ambassador who may not have referred that captain.
+        put('nm:' + nk, { ...prof, _name: prof._name || name, _collision: true,
+                          _collisionIdents: idents.slice() });
         flagged.push(name);
         kept++;
       }
     }
   }
-  return { migrated: out, report: { split, rekeyed, kept, flagged } };
+  return { migrated: out, report: { split, rekeyed, kept, uuidMoved, merged, moved, flagged, conflicts } };
 }
+// S7 — the schema marker MOVED from 's3-identity' to PROFILE_SCHEMA_S7. A device that already
+// finished the S3 (name → phone) migration must still run this pass, or its ~352 'ph:'-keyed
+// profiles are orphaned by the uuid-first label flip. Gating on the marker VALUE rather than on
+// "have I ever migrated" is what makes that automatic and still idempotent.
+const PROFILE_SCHEMA_S7 = 's7-uuid-identity';
+const PROFILE_CONFLICT_LOG_KEY = 'khair_profile_merge_conflicts';   // last migration's newest-wins decisions
 async function migrateProfilesToIdentity(opts) {
   const store = loadCourierProfiles();
   const keys = Object.keys(store);
-  if (!keys.length) { localStorage.setItem(COURIER_PROFILES_SCHEMA_KEY, 's3-identity'); return null; }
-  const legacy = keys.filter(k => !/^(ph:|id:|nm:)/.test(k));
-  const already = localStorage.getItem(COURIER_PROFILES_SCHEMA_KEY) === 's3-identity';
-  if (!legacy.length && already && !(opts && opts.force)) return null;   // nothing to do
+  if (!keys.length) { localStorage.setItem(COURIER_PROFILES_SCHEMA_KEY, PROFILE_SCHEMA_S7); return null; }
+  const legacy  = keys.filter(k => !/^(ph:|id:|nm:)/.test(k));
+  const phoneKeyed = keys.filter(k => k.startsWith('ph:'));
+  const atS7 = localStorage.getItem(COURIER_PROFILES_SCHEMA_KEY) === PROFILE_SCHEMA_S7;
+  // Nothing to do only when there are no legacy names, no phone keys left to try, AND this
+  // device is already stamped at the S7 schema.
+  if (!legacy.length && !phoneKeyed.length && atS7 && !(opts && opts.force)) return null;
   // one-time reversible backup (before the first re-key on this device)
   if (!localStorage.getItem(COURIER_PROFILES_BACKUP_KEY)) {
     try { localStorage.setItem(COURIER_PROFILES_BACKUP_KEY, JSON.stringify(store)); } catch (e) {}
@@ -7598,21 +7818,146 @@ async function migrateProfilesToIdentity(opts) {
   const R = getProfileResolver();
   // Fetch the sheet only if a legacy collision name actually needs splitting.
   const needSheet = legacy.some(k => R.identitiesForName(driverKey(courierKeyToName(k, store[k]))).length >= 2);
-  const sheetAmbByPhone = new Map();
+  // label → Set(ambassador lowercased). Resolved through the SAME profileKeyOf the runtime uses,
+  // so a sheet row and a live captain agree on the key. A label carrying two different
+  // ambassadors is not evidence and is left out of the decision entirely.
+  const sheetAmbByLabel = new Map();
   if (needSheet) {
     let rows = [];
     try { rows = await fetchSheetAmbassadorSync(); } catch (e) { rows = []; }
     (Array.isArray(rows) ? rows : []).forEach(r => {
-      const p9 = normPhoneForMatch(r.phone);
-      if (p9 && r.ambassador && String(r.ambassador).trim()) sheetAmbByPhone.set(p9, String(r.ambassador).trim());
+      const amb = String(r.ambassador || '').trim();
+      if (!amb) return;
+      const lbl = R.profileKeyOf({ name: r.name, driverId: r.id, phone: r.phone });
+      if (!lbl || lbl.startsWith('nm:')) return;
+      if (!sheetAmbByLabel.has(lbl)) sheetAmbByLabel.set(lbl, new Set());
+      sheetAmbByLabel.get(lbl).add(amb.toLowerCase());
     });
   }
-  const { migrated, report } = rekeyProfileStore(store, R, sheetAmbByPhone);
+  const { migrated, report } = rekeyProfileStore(store, R, sheetAmbByLabel);
   saveCourierProfiles(migrated);
-  localStorage.setItem(COURIER_PROFILES_SCHEMA_KEY, 's3-identity');
-  if (report.flagged.length) console.warn('[S3] profile collisions kept name-keyed (could not split by phone):', report.flagged);
-  console.info('[S3] profile migration:', report);
+  localStorage.setItem(COURIER_PROFILES_SCHEMA_KEY, PROFILE_SCHEMA_S7);
+  if (report.uuidMoved) console.info('[S7] profiles re-keyed phone → uuid:', report.uuidMoved);
+  if (report.flagged.length) console.warn('[S7] same-name profiles PARKED for a human to assign:', report.flagged);
+  if (report.conflicts && report.conflicts.length) {
+    // Two stored records for one captain disagreed on a real value. The newest was kept (that is
+    // the rule everywhere else), but the discarded value is recorded so it is a decision he can
+    // see rather than a number that quietly changed.
+    console.warn('[S7] field conflicts resolved newest-wins:', report.conflicts);
+    try { localStorage.setItem(PROFILE_CONFLICT_LOG_KEY, JSON.stringify({ at: new Date().toISOString(), items: report.conflicts })); } catch (e) {}
+  }
+  console.info('[S7] profile migration:', report);
   return report;
+}
+// Last migration's newest-wins field conflicts, for the data-conflicts panel.
+function profileMergeConflicts() {
+  try { const j = JSON.parse(localStorage.getItem(PROFILE_CONFLICT_LOG_KEY) || 'null'); return (j && j.items) || []; }
+  catch (e) { return []; }
+}
+// ── S7 · monthly-override re-key ────────────────────────────────────────────────
+// `khair_courier_overrides` keys are '<prefix>::YYYY-MM'. Moves a name or phone prefix onto the
+// captain's uuid, with the SAME rules as the profile store: never merge a same-name pair (their
+// prefix stays the name key and is reported), newest `_t` wins a key collision, idempotent.
+const OVERRIDES_SCHEMA_KEY = 'khair_courier_overrides_schema';
+const OVERRIDES_BACKUP_KEY = 'khair_courier_overrides_backup_preS7';
+function rekeyOverrideStore(all, R) {
+  const out = {};
+  let moved = 0, kept = 0;
+  const flagged = new Set();
+  // An override object only carries the fields the user actually CHANGED, so a field absent from
+  // the newer copy is silence, not "reset to nothing". Union the two and let the newer win only
+  // where both actually name the field — same reasoning as mergeProfileRecords.
+  const put = (k, v) => {
+    const cur = out[k];
+    if (!cur) { out[k] = v; return; }
+    const newer = ((v && v._t) || 0) >= ((cur && cur._t) || 0) ? v : cur;
+    const older = newer === v ? cur : v;
+    out[k] = { ...older, ...newer };
+  };
+  for (const key of Object.keys(all)) {
+    const i = key.lastIndexOf('::');
+    if (i < 0) { put(key, all[key]); continue; }
+    const pre = key.slice(0, i), mk = key.slice(i + 2);
+    if (pre.startsWith('id:')) { put(key, all[key]); continue; }
+    if (pre.startsWith('ph:')) {
+      const t = R.profileKeyOf({ phone: pre.slice(3) });
+      if (t && t.startsWith('id:')) { put(t + '::' + mk, all[key]); moved++; } else { put(key, all[key]); kept++; }
+      continue;
+    }
+    if (pre.startsWith('nm:')) { put(key, all[key]); kept++; continue; }
+    const idents = R.identitiesForName(pre);            // legacy: the prefix IS the name key
+    if (idents.length === 1) { put(idents[0] + '::' + mk, all[key]); moved++; }
+    else {
+      // 0 identities → a manual deal never seen in data. ≥2 → a same-name pair; the override was
+      // entered when the app could not tell them apart, so it belongs to neither. Keep it under
+      // 'nm:' (still readable, still exportable) and report it rather than pick a captain.
+      put('nm:' + pre + '::' + mk, all[key]);
+      kept++;
+      if (idents.length >= 2) flagged.add(pre);
+    }
+  }
+  return { migrated: out, report: { moved, kept, flagged: [...flagged] } };
+}
+function migrateOverridesToIdentity(opts) {
+  const all = loadOverrides();
+  const keys = Object.keys(all);
+  if (!keys.length) { localStorage.setItem(OVERRIDES_SCHEMA_KEY, PROFILE_SCHEMA_S7); return null; }
+  const atS7 = localStorage.getItem(OVERRIDES_SCHEMA_KEY) === PROFILE_SCHEMA_S7;
+  const needs = keys.some(k => { const i = k.lastIndexOf('::'); return i < 0 ? false : !k.slice(0, i).startsWith('id:'); });
+  if (!needs && atS7 && !(opts && opts.force)) return null;
+  if (!localStorage.getItem(OVERRIDES_BACKUP_KEY)) {
+    try { localStorage.setItem(OVERRIDES_BACKUP_KEY, JSON.stringify(all)); } catch (e) {}
+  }
+  const { migrated, report } = rekeyOverrideStore(all, getProfileResolver());
+  saveOverrides(migrated);
+  localStorage.setItem(OVERRIDES_SCHEMA_KEY, PROFILE_SCHEMA_S7);
+  if (report.flagged.length) console.warn('[S7] monthly overrides on a shared name PARKED:', report.flagged);
+  console.info('[S7] override migration:', report);
+  return report;
+}
+// ── S7 · frozen-record repair (OPT-IN — never runs on its own) ───────────────────
+// Some profiles carry a `_t` in the FUTURE, written by a device with a wrong clock (seen up to
+// 2038). mergeStampedByKey keeps whichever copy is newer, so a present-day edit to one of those
+// captains can never win and is silently reverted on the next pull. Clamping `_t` to now fixes
+// it — but it REWRITES records, so it is deliberately behind a button: nothing here fires at
+// boot. The pre-migration profile backup is the undo path (restoreProfilesPreS3).
+function frozenProfileRecords() {
+  const store = loadCourierProfiles();
+  const now = Date.now();
+  const out = [];
+  for (const [k, p] of Object.entries(store)) {
+    if (p && typeof p._t === 'number' && p._t > now)
+      out.push({ key: k, name: (p && p._name) || courierKeyToName(k, p), until: new Date(p._t).toISOString().slice(0, 10) });
+  }
+  return out.sort((a, b) => b.until.localeCompare(a.until));
+}
+function repairFrozenProfiles() {
+  const frozen = frozenProfileRecords();
+  if (!frozen.length) { toast('No frozen records — every profile can accept an edit.'); return; }
+  const preview = frozen.slice(0, 12).map(f => `• ${f.name} (stamped ${f.until})`).join('\n');
+  const more = frozen.length > 12 ? `\n…and ${frozen.length - 12} more` : '';
+  if (!confirm(`${frozen.length} profile${frozen.length === 1 ? '' : 's'} ${frozen.length === 1 ? 'is' : 'are'} stamped in the FUTURE, so edits to ${frozen.length === 1 ? 'it' : 'them'} silently revert on the next sync:\n\n${preview}${more}\n\nClamp ${frozen.length === 1 ? 'its' : 'their'} timestamp to now so edits stick from here on?\n\n(Only the timestamp changes — no deal, ambassador or nationality is touched. Undo: restoreProfilesPreS3() in the console.)`)) return;
+  // Snapshot first if the S3 backup was never taken on this device, so there is always an undo.
+  if (!localStorage.getItem(COURIER_PROFILES_BACKUP_KEY)) {
+    try { localStorage.setItem(COURIER_PROFILES_BACKUP_KEY, JSON.stringify(loadCourierProfiles())); } catch (e) {}
+  }
+  const store = loadCourierProfiles();
+  const now = Date.now();
+  let n = 0;
+  frozen.forEach(f => { if (store[f.key]) { store[f.key] = { ...store[f.key], _t: now }; n++; } });
+  saveCourierProfiles(store);
+  _dcCache = null;                                  // the conflict detector must re-read
+  syncToCloud();                                    // push, or the cloud copy stays frozen
+  toast(`✓ ${n} record${n === 1 ? '' : 's'} unfrozen — edits will stick now`);
+  if (document.getElementById('today')?.classList.contains('active')) renderToday();
+  if (document.getElementById('finance')?.classList.contains('active')) renderFinanceTab();
+}
+function restoreOverridesPreS7() {
+  const b = localStorage.getItem(OVERRIDES_BACKUP_KEY);
+  if (!b) { console.warn('[S7] no pre-migration override backup found'); return false; }
+  localStorage.setItem(COURIER_OVERRIDES_KEY, b);
+  localStorage.removeItem(OVERRIDES_SCHEMA_KEY);
+  console.info('[S7] overrides restored from pre-migration backup'); return true;
 }
 // Restore the pre-migration snapshot (console escape hatch if a re-key ever looks wrong).
 function restoreProfilesPreS3() {
@@ -7638,12 +7983,32 @@ function mergeStampedByKey(cloud, local) {
   }
   return out;
 }
+// ── Monthly overrides — S7: keyed by IDENTITY, not name ────────────────────────────
+// `khair_courier_overrides` was keyed driverKey(name)+'::'+monthKey, the same collapse as the
+// profile store: a change entered for one twin applied to both, and both read it back forever
+// after. Keys are now identityKey+'::'+monthKey, migrated by migrateOverridesToIdentity.
+// A legacy name-keyed override is still READ for an unambiguous name so nothing goes blank on a
+// device that has not migrated yet; a twin never reads one, because it belongs to the pair.
 function loadOverrides() { try{return JSON.parse(localStorage.getItem(COURIER_OVERRIDES_KEY)||'{}');}catch(e){return{};} }
 function saveOverrides(o) { localStorage.setItem(COURIER_OVERRIDES_KEY, JSON.stringify(o)); }
-function getOverride(name, monthKey) { return loadOverrides()[driverKey(name)+'::'+monthKey] || null; }
-function upsertOverride(name, monthKey, override) {
+function overrideKey(who, monthKey) { return identKeyOf(who) + '::' + monthKey; }
+function getOverride(who, monthKey) {
   const all = loadOverrides();
-  const k = driverKey(name) + '::' + monthKey;
+  const id  = identityOf(who);
+  const hit = all[id.key + '::' + monthKey];
+  if (hit) return hit;
+  const nk = driverKey(id.name);
+  if (!nk || isTwinName(id.name)) return null;
+  return all[nk + '::' + monthKey] || null;             // legacy / unmigrated device
+}
+function upsertOverride(who, monthKey, override) {
+  const all = loadOverrides();
+  const id  = identityOf(who);
+  const k   = id.key + '::' + monthKey;
+  const nk  = driverKey(id.name);
+  // Migrate-on-write: drop the stale legacy copy for an unambiguous name so the two can't drift.
+  if (nk && k !== nk + '::' + monthKey && all[nk + '::' + monthKey] && !isTwinName(id.name))
+    delete all[nk + '::' + monthKey];
   if (override && Object.keys(override).length) all[k] = { ...override, _t: Date.now() }; else delete all[k];
   saveOverrides(all);
 }
@@ -7656,17 +8021,25 @@ function upsertOverride(name, monthKey, override) {
 // carrying over from the last update — "only change what changed."
 const OVERRIDABLE_FIELDS = ['model','modelCustom','accountRent','carRent','salary','fleetCut',
   'other','notes','autoSalary','salaryBase','salaryThreshold','salaryPerK'];
-function getEffectiveProfile(name, monthKey) {
-  const base = getCourierProfile(name);
+function getEffectiveProfile(who, monthKey) {
+  const id   = identityOf(who);
+  const base = getCourierProfile(id);
   if (!monthKey) return base;
-  // Base is identity-resolved (S3); monthly OVERRIDES stay name-keyed (out of S3 scope — no
-  // per-identity override UI). Consistent for the unambiguous names that carry overrides.
-  const nm  = (typeof name === 'string') ? name : (name && name.name);
-  const nk  = driverKey(nm);
+  // S7 — base AND overrides are both identity-keyed now, so an effective-dated change applies
+  // to the captain it was entered for and to nobody else. A legacy name-keyed prefix is still
+  // walked for an unambiguous name (unmigrated device); a twin's prefix is their identity only.
+  const prefixes = [id.key];
+  const nk = driverKey(id.name);
+  if (nk && nk !== id.key && !isTwinName(id.name)) prefixes.push(nk);
   const all = loadOverrides();
   const keys = Object.keys(all)
-    .filter(k => k.startsWith(nk + '::') && k.slice(nk.length + 2) <= monthKey) // 'YYYY-MM' string compare
-    .sort((a, b) => a.slice(nk.length + 2) < b.slice(nk.length + 2) ? -1 : 1);  // oldest → newest
+    .map(k => { const i = k.lastIndexOf('::'); return i < 0 ? null : { k, pre: k.slice(0, i), mk: k.slice(i + 2) }; })
+    .filter(x => x && prefixes.includes(x.pre) && x.mk <= monthKey)   // 'YYYY-MM' string compare
+    // oldest → newest; on the same month the IDENTITY-keyed entry is applied last so it wins
+    // over a legacy name-keyed leftover (both can exist only until the migration runs).
+    .sort((a, b) => a.mk < b.mk ? -1 : a.mk > b.mk ? 1
+                  : (a.pre === id.key ? 1 : b.pre === id.key ? -1 : 0))
+    .map(x => x.k);
   const eff = { ...base };
   for (const k of keys) {
     const ov = all[k];
@@ -7767,11 +8140,11 @@ function computeTransferStatus(driverName, cycleDateYMD, log, driverId, phone) {
 // Used to flag a transfer recorded on a date BEFORE the driver was ever on the
 // fleet — the "driver who joined later shows on 9 May" data-integrity bug.
 // Returns null if the driver never appears in history (can't judge).
-function driverFirstSeenMs(name) {
-  const nk = driverKey(name);
+function driverFirstSeenMs(who) {
+  const id = identityOf(who);                     // S7 — identity, not a bare name
   let earliest = null;
   for (const h of getHistory()) {
-    const d = (h.drivers || []).find(x => driverKey(x.name) === nk);
+    const d = (h.drivers || []).find(x => driverRowMatches(x, id));
     if (!d) continue;
     const ms = periodSortKey(h.period);
     if (!ms) continue;
@@ -7924,13 +8297,17 @@ function deriveCycleWindow(transferDate) {
   return { start: ymdLocal(start), end: ymdLocal(end), dayOfWeek: dow };
 }
 function pInfoToYMD(p) { return p.year + '-' + String(p.month+1).padStart(2,'0') + '-' + String(p.day).padStart(2,'0'); }
-function computeDriverNetForPeriod(name, monthKey) {
+// S7 — `who` is an identity (identityOf) or a bare name. Everything downstream of here keys
+// on the identity, so a same-name pair produces two independent P&L rows.
+function computeDriverNetForPeriod(who, monthKey) {
   const [y, m] = monthKey.split('-').map(Number);
-  return sumDriverNetForMonth(name, m - 1, y);   // canonical, periodInfo-independent
+  return sumDriverNetForMonth(identityOf(who), m - 1, y);   // canonical, periodInfo-independent
 }
-function computeDriverPnL(name, monthKey) {
-  const p = getEffectiveProfile(name, monthKey);
-  const income = computeDriverNetForPeriod(name, monthKey);
+function computeDriverPnL(who, monthKey) {
+  const id = identityOf(who);
+  const name = id.name;
+  const p = getEffectiveProfile(id, monthKey);
+  const income = computeDriverNetForPeriod(id, monthKey);
   const sign = (dir, amt) => dir === 'IN' ? +amt : dir === 'OUT' ? -amt : 0;
   const acctRent = sign(p.accountRent?.dir, p.accountRent?.amount || 0);
   const carRent  = sign(p.carRent?.dir,     p.carRent?.amount || 0);
@@ -7947,7 +8324,7 @@ function computeDriverPnL(name, monthKey) {
   // driver's own monthly bonus (frozen pre-cutover at the old flat 500/Model-A-only rule;
   // from NEW_BONUS_CUTOVER, tiered 400/800, any ambassador-referred Saudi not on Model B —
   // Model B's "Saudi" is the account holder, not the one earning the net being measured).
-  const ambP      = ambPayoutFor(name, p, income, monthKey);
+  const ambP      = ambPayoutFor(id, p, income, monthKey);
   const ambOwed   = ambP.owed || 0;
   const saudiA    = monthKey < NEW_BONUS_CUTOVER
     ? ((p.ambassadorModel === 'A' && income >= 5000) ? 500 : 0)
@@ -7958,24 +8335,57 @@ function computeDriverPnL(name, monthKey) {
   const netPnL    = income + acctRent + carRent + salary + fleetCut + other + bonusCost;
   // hasProfile = the driver has a SAVED cost profile (vs falling back to defaultProfile()).
   // Without this, "Fleet keeps" is just raw net with no rent/salary/cut applied.
-  const hasProfile = hasCourierProfile(name);   // S3: identity-aware
-  return { name, model:p.model, modelCustom:p.modelCustom, income, acctRent, carRent, salary, fleetCut, other,
+  const hasProfile = hasCourierProfile(id);   // S3: identity-aware
+  // `ident`/`key`/`twin` ride along so a row the UI renders can open, edit and override THIS
+  // captain without having to re-resolve a name that may belong to two people.
+  return { name, ident:id, key:id.key, driverId:id.driverId, phone:id.phone, twin:twinSuffix(id),
+           model:p.model, modelCustom:p.modelCustom, income, acctRent, carRent, salary, fleetCut, other,
            ambOwed, saudiA, bonusCost, ambPayout:ambP, ambassador:p.ambassador||null, ambModel:p.ambassadorModel||null, netPnL, hasProfile, profile:p };
 }
+// S7 — returns IDENTITIES, not names. `map.set(driverKey(d.name), …)` was THE collapse: two
+// captains sharing a name became one entry, so Finance built one row and summed one of them.
+// Keyed by identity, each captain gets their own entry and their own P&L.
 function getDriversInMonth(monthKey) {
   const [y, m] = monthKey.split('-').map(Number);
   const targetMonth = m - 1, targetYear = y;
   const map = new Map();
   getHistory().forEach(h => {
     if (!entryInMonth(h, targetMonth, targetYear)) return;   // same rule as the net sum
-    (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => { if (d.name) map.set(driverKey(d.name), d.name.trim()); });
+    (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => {
+      if (!d.name) return;
+      const id = identityOf(d);
+      const cur = map.get(id.key);
+      // Keep the richest row per identity: a later day may be the one that carries the phone.
+      if (!cur) map.set(id.key, id);
+      else if (!cur.phone && id.phone) map.set(id.key, id);
+    });
   });
   return [...map.values()];
 }
+// Identities that hold a SAVED profile but no row in the month — an ambassador's captain who
+// simply did not work. Replaces the `courierProfileNames()` + name-compare pattern that was
+// repeated at five call sites and could not tell two same-named captains apart.
+function profileOnlyIdentities(present) {
+  const have = new Set((present || []).map(p => identKeyOf(p)));
+  const out = [];
+  const store = loadCourierProfiles();
+  for (const k of Object.keys(store)) {
+    if (have.has(k)) continue;
+    have.add(k);
+    const nm = courierKeyToName(k, store[k]);
+    if (!driverKey(nm)) continue;
+    // Reconstruct the identity from the key itself, so the profile is read back under the very
+    // key it is stored at (never re-resolved into some other captain's record).
+    out.push({ key: k, name: nm,
+               driverId: k.startsWith('id:') ? k.slice(3) : '',
+               phone:    k.startsWith('ph:') ? k.slice(3) : '' });
+  }
+  return out;
+}
 function computeModelRollup(monthKey) {
   const drivers = getDriversInMonth(monthKey);
-  courierProfileNames().forEach(nm => { if (!drivers.some(d => driverKey(d) === driverKey(nm))) drivers.push(nm); });   // S3: profile-only by name
-  const pls = drivers.map(name => computeDriverPnL(name, monthKey));
+  profileOnlyIdentities(drivers).forEach(id => drivers.push(id));
+  const pls = drivers.map(id => computeDriverPnL(id, monthKey));
   const groups = {};
   pls.forEach(pl => {
     const key = pl.model === 'Custom' ? (pl.modelCustom || 'Custom') : pl.model;
@@ -8000,17 +8410,26 @@ function computeCycleReconciliation(transferDate) {
     if (!h.periodInfo) return;
     const py = pInfoToYMD(h.periodInfo.start);
     if (py < window.start || py > window.end) return;
+    // S7 — key by IDENTITY. Keyed by name, a same-name pair's expected payout was one merged
+    // figure, so the cycle looked short-paid for one of them and over-paid for the other.
     h.drivers.forEach(d => {
       if (!d.name) return;
-      const key = driverKey(d.name);
-      if (!drivers.has(key)) drivers.set(key, { name: d.name, expected: 0, actual: null });
-      drivers.get(key).expected += (d.netEarnings || 0);
+      const id = identityOf(d);
+      if (!drivers.has(id.key)) drivers.set(id.key, { name: d.name + twinSuffix(id), ident: id, expected: 0, actual: null });
+      drivers.get(id.key).expected += (d.netEarnings || 0);
     });
   });
   if (receipt?.perDriverActual) {
     Object.entries(receipt.perDriverActual).forEach(([k, amount]) => {
-      if (drivers.has(k)) drivers.get(k).actual = +amount;
-      else drivers.set(k, { name: k, expected: 0, actual: +amount });
+      if (drivers.has(k)) { drivers.get(k).actual = +amount; return; }
+      // A receipt saved before S7 is name-keyed. Attach it to the captain that name resolves
+      // to when that is unambiguous; a twin's legacy figure covers the pair, so it is shown as
+      // its own row rather than credited to either of them.
+      if (!/^(id:|ph:|nm:)/.test(k) && !getProfileResolver().ambiguousNames.has(k)) {
+        const idk = courierIdentityKey(k);
+        if (drivers.has(idk)) { drivers.get(idk).actual = +amount; return; }
+      }
+      drivers.set(k, { name: courierKeyToName(k, null), expected: 0, actual: +amount });
     });
   }
   const confirmed = receipt?.confirmed === true;
@@ -8399,10 +8818,15 @@ function handleReconcileFile(file) {
     try { drivers = parseCSV(e.target.result); } catch (err) { toast('Could not parse the CSV'); return; }
     if (!drivers || !drivers.length) { toast('No driver rows found — is this the Bolt "Earnings per driver" report?'); return; }
     const [y, m] = monthKey.split('-').map(Number);
+    // S7 — key each locked row by IDENTITY, resolved from the uuid/phone the Bolt report
+    // carries. A name-keyed lock wrote ONE finalised figure for a same-name pair, and both
+    // captains then read it as their own month.
     const rows = drivers.filter(d => d.name).map(d => {
       const bolt = sN(d.netEarnings);
-      const dash = rawDailyNetForMonth(d.name, m - 1, y, d.driverId);
-      return { name: d.name.trim(), key: driverKey(d.name), bolt, dash, gap: Math.round((bolt - dash) * 100) / 100 };
+      const id   = identityOf(d);
+      const dash = rawDailyNetForMonth(id, m - 1, y);
+      return { name: d.name.trim(), key: id.key, ident: id, twin: twinSuffix(id),
+               bolt, dash, gap: Math.round((bolt - dash) * 100) / 100 };
     });
     reconcilePending = { monthKey, rows, drivers: rows.length };
     renderReconcileDiff();
@@ -8429,13 +8853,13 @@ function renderReconcileDiff() {
   const crosserCallout = crossers.length ? `
     <div style="background:rgba(255,170,0,.12);border:1px solid var(--amber,#f59e0b);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;line-height:1.55">
       ⚠ <b>${crossers.length}</b> driver${crossers.length===1?'':'s'} ${crossers.length===1?'crosses':'cross'} a bonus tier after locking — their fleet bonus changes:
-      ${crossers.map(c => `<div style="margin-top:4px">• <b>${c.name}</b>: ${bandName[c.db]} → <b>${bandName[c.bb]}</b> (${fmt(c.dash)} → ${fmt(c.bolt)}), fleet bonus <b style="color:${c.bonusDelta>=0?'var(--green)':'var(--red)'}">${c.bonusDelta>=0?'+':'−'}${fmt(Math.abs(c.bonusDelta))} SAR</b></div>`).join('')}
+      ${crossers.map(c => `<div style="margin-top:4px">• <b>${c.name}</b>${c.twin?`<span class="twin-chip" title="Shares a name with another captain">${c.twin}</span>`:''}: ${bandName[c.db]} → <b>${bandName[c.bb]}</b> (${fmt(c.dash)} → ${fmt(c.bolt)}), fleet bonus <b style="color:${c.bonusDelta>=0?'var(--green)':'var(--red)'}">${c.bonusDelta>=0?'+':'−'}${fmt(Math.abs(c.bonusDelta))} SAR</b></div>`).join('')}
     </div>` : '';
   const table = material.length ? `<div style="overflow:auto;max-height:300px;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:12px">
     <thead><tr style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;position:sticky;top:0;background:var(--bg-card,#171B21)">
       <th style="padding:5px 8px">Driver</th><th style="padding:5px 8px;text-align:right">Bolt (final)</th><th style="padding:5px 8px;text-align:right">Dashboard</th><th style="padding:5px 8px;text-align:right">Gap</th></tr></thead>
     <tbody>${material.map(r => `<tr style="border-top:1px solid var(--border)">
-      <td style="padding:5px 8px">${r.name}</td>
+      <td style="padding:5px 8px">${r.name}${r.twin?`<span class="twin-chip" title="Shares a name with another captain">${r.twin}</span>`:''}</td>
       <td style="padding:5px 8px;text-align:right;font-family:var(--mono)">${fmt(r.bolt)}</td>
       <td style="padding:5px 8px;text-align:right;font-family:var(--mono);color:var(--text-muted)">${fmt(r.dash)}</td>
       <td style="padding:5px 8px;text-align:right;font-weight:700;color:${r.gap > 0 ? 'var(--amber)' : 'var(--red)'}">${sign(r.gap)}</td></tr>`).join('')}</tbody></table></div>`
@@ -8563,28 +8987,26 @@ function renderFinanceAlerts() {
 
 function renderFinanceCourierView() {
   const monthKey = financeMonth;
-  const nameMap = new Map();
-  getHistory().forEach(h => {
-    (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => {
-      if (d.name) nameMap.set(driverKey(d.name), d.name.trim());
-    });
-  });
-  courierProfileNames().forEach(nm => { const k = driverKey(nm); if (k && !nameMap.has(k)) nameMap.set(k, nm); });   // S3: profile-only by name
-  const allDriverNames = [...nameMap.values()].sort((a,b) => a.localeCompare(b));
-  if (!allDriverNames.length) {
+  // S7 — one row per CAPTAIN. This used to build a name map (driverKey → display name), which
+  // merged a same-name pair into a single row and a single P&L; the money for one of them was
+  // simply gone (Turki 1,573 shown against 1,901 + 181 real). getAllDriverIdentities keys on
+  // the Bolt driver_uuid, so the pair renders as two rows that sum to the Captains tab.
+  const allIdents = getAllDriverIdentities();
+  if (!allIdents.length) {
     document.getElementById('financeMainContent').innerHTML =
       `<div class="finance-section"><div class="finance-empty">No driver data for ${monthLabel(monthKey)}.<br>Upload Bolt CSVs in the Fleet tab, then return here.</div></div>`;
     return;
   }
-  const allPls = allDriverNames.map(name => computeDriverPnL(name, monthKey));
+  const allPls = allIdents.map(id => computeDriverPnL(id, monthKey));
   allPls.sort((a,b) => {
     if (financeSortCol === 'name') return financeSortAsc ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
     return financeSortAsc ? (a[financeSortCol]||0) - (b[financeSortCol]||0) : (b[financeSortCol]||0) - (a[financeSortCol]||0);
   });
   // Apply search + multi-select filter (filtered view only affects displayed rows, totals reflect full roster)
+  // S7 — the driver multi-select holds identity KEYS, so ticking one twin no longer selects both.
   const q = finCourierSearch.trim().toLowerCase();
   let visPls = allPls;
-  if (finCourierSelected.size > 0) visPls = visPls.filter(p => finCourierSelected.has(p.name));
+  if (finCourierSelected.size > 0) visPls = visPls.filter(p => finCourierSelected.has(p.key));
   if (finCourierAmbSelected.size > 0) visPls = visPls.filter(p => (p.ambassador||'').trim() && finCourierAmbSelected.has((p.ambassador||'').trim().toLowerCase()));
   if (q) visPls = visPls.filter(p => p.name.toLowerCase().includes(q) || (lookupForeignName(p.name)||'').toLowerCase().includes(q));
   const tot = allPls.reduce((a,p) => ({
@@ -8598,20 +9020,23 @@ function renderFinanceCourierView() {
   const escAttr = s => String(s||'').replace(/\\/g,'\\\\').replace(/'/g, "\\'").replace(/"/g,'&quot;');
   const rows = visPls.map(p => {
     const foreign = lookupForeignName(p.name);
-    const hasOverride = !!getOverride(p.name, monthKey);
+    const hasOverride = !!getOverride(p.ident, monthKey);
     const nameAttr = escAttr(p.name);
+    // S7 — every action on the row carries the identity KEY, not the display name, so a same-
+    // name pair can be opened, tagged and overridden independently.
+    const keyAttr = escAttr(p.key);
     return `<tr>
       <td>
-        <div class="fin-name-link" onclick="openFinanceCaptainPanel('${nameAttr}')" title="View captain summary">
-          <span class="fin-name-text" style="font-weight:600">${p.name}</span>
+        <div class="fin-name-link" onclick="openFinanceCaptainPanel('${keyAttr}')" title="View captain summary">
+          <span class="fin-name-text" style="font-weight:600">${p.name}</span>${p.twin?`<span class="twin-chip" title="Another captain shares this name — this is the one ending ${p.twin.replace(/^·/,'')}">${p.twin}</span>`:''}
         </div>
         ${foreign?`<span class="d-foreign">${foreign}</span>`:''}
       </td>
       <td style="white-space:nowrap">
         <input value="${(p.ambassador||'').replace(/"/g,'&quot;')}" placeholder="—" title="Type the ambassador's name (e.g. Omar) to tag this driver"
-          onchange="setDriverAmbassador('${nameAttr}', this.value)"
+          onchange="setDriverAmbassador('${keyAttr}', this.value)"
           style="width:78px;padding:3px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--bg);color:var(--text)">
-        <select onchange="setDriverAmbModel('${nameAttr}', this.value)" title="Ambassador model A/B/C"
+        <select onchange="setDriverAmbModel('${keyAttr}', this.value)" title="Ambassador model A/B/C"
           style="padding:3px 2px;border:1px solid var(--border);border-radius:5px;font-size:11px;background:var(--bg);color:var(--text);margin-left:3px">
           <option value=""  ${!p.ambModel?'selected':''}>–</option>
           <option value="A" ${p.ambModel==='A'?'selected':''}>A</option>
@@ -8623,18 +9048,20 @@ function renderFinanceCourierView() {
       <td style="text-align:right">${signed(p.bonusCost)}${(p.ambModel||p.saudiA)?`<div style="font-size:10px;color:${p.ambPayout&&p.ambPayout.qualifies?'var(--text-muted)':'var(--amber)'}">${p.ambOwed?`${p.ambassador||'Amb'} ${fmt(p.ambOwed)}`:''}${p.saudiA?`${p.ambOwed?' · ':''}Saudi ${fmt(p.saudiA)}`:''}${(!p.ambOwed&&!p.saudiA)?p.ambModel:''}</div>`:''}</td>
       <td style="text-align:right">${pnlCell(p.netPnL)}</td>
       <td style="text-align:right;white-space:nowrap">
-        <button class="finance-btn finance-btn-secondary" onclick="openCourierProfileModal('${nameAttr}')" title="Permanent deal — applies to ALL months">Profile</button>
-        <button class="finance-btn finance-btn-secondary" onclick="openOverrideModal('${nameAttr}','${monthKey}')" title="Change a value from ${monthLabel(monthKey)} FORWARD only">${hasOverride?'✓ Changed':'Change ▸'}</button>
+        <button class="finance-btn finance-btn-secondary" onclick="openCourierProfileModal(identityByKey('${keyAttr}'))" title="Permanent deal — applies to ALL months">Profile</button>
+        <button class="finance-btn finance-btn-secondary" onclick="openOverrideModal('${keyAttr}','${monthKey}')" title="Change a value from ${monthLabel(monthKey)} FORWARD only">${hasOverride?'✓ Changed':'Change ▸'}</button>
       </td>
     </tr>`;
   }).join('');
-  // Build dropdown list items for the multi-select
-  const ddItems = allDriverNames.map(n => {
-    const sel = finCourierSelected.has(n);
-    const safe = encodeURIComponent(n);
-    return `<div class="fin-dd-item${sel?' checked':''}" data-name="${escAttr(n)}" onmousedown="_toggleFinCourierInDd('${safe}')">
+  // Build dropdown list items for the multi-select. S7 — the checkbox value is the identity KEY;
+  // a twin therefore appears twice (with its phone-suffix chip) and each can be picked alone.
+  const ddItems = allIdents.map(id => {
+    const sel = finCourierSelected.has(id.key);
+    const safe = encodeURIComponent(id.key);
+    const tw = twinSuffix(id);
+    return `<div class="fin-dd-item${sel?' checked':''}" data-name="${escAttr(id.name + tw)}" onmousedown="_toggleFinCourierInDd('${safe}')">
       <span class="fin-dd-chk${sel?' on':''}">${sel?'✓':''}</span>
-      <span>${n}${lookupForeignName(n)?`<span style="color:var(--text-muted);font-size:11px;margin-left:4px">→ ${lookupForeignName(n)}</span>`:''}</span>
+      <span>${id.name}${tw?`<span class="twin-chip">${tw}</span>`:''}${lookupForeignName(id.name)?`<span style="color:var(--text-muted);font-size:11px;margin-left:4px">→ ${lookupForeignName(id.name)}</span>`:''}</span>
     </div>`;
   }).join('');
   // Distinct ambassador names (from the full roster), preserving display casing.
@@ -8651,7 +9078,8 @@ function renderFinanceCourierView() {
     </div>`;
   }).join('') || `<div style="padding:9px 12px;font-size:12px;color:var(--text-muted)">No ambassadors tagged yet</div>`;
   const hasFilt = finCourierSearch || finCourierSelected.size > 0 || finCourierAmbSelected.size > 0;
-  const tagHtml = [...finCourierSelected].map(n => `<span class="fin-tag">${n}<span class="fin-tag-x" onmousedown="event.preventDefault();_removeFinCourierSel('${encodeURIComponent(n)}')">✕</span></span>`).join('')
+  const tagHtml = [...finCourierSelected].map(k => { const id = identityByKey(k);
+      return `<span class="fin-tag">${id.name}${twinSuffix(id)}<span class="fin-tag-x" onmousedown="event.preventDefault();_removeFinCourierSel('${encodeURIComponent(k)}')">✕</span></span>`; }).join('')
     + [...finCourierAmbSelected].map(lc => `<span class="fin-tag" style="background:rgba(0,212,255,.08);border-color:rgba(0,212,255,.25);color:var(--cyan)">🎖 ${ambByLower.get(lc)||lc}<span class="fin-tag-x" onmousedown="event.preventDefault();_removeFinAmbSel('${encodeURIComponent(lc)}')">✕</span></span>`).join('');
   document.getElementById('financeMainContent').innerHTML = `
     <div class="finance-section">
@@ -8717,9 +9145,9 @@ function renderFinanceCourierView() {
 // from computeDriverPnL / bonusFor — the exact functions behind By Captain — so
 // this view can never disagree with the detail views.
 function computeExecMonth(monthKey) {
-  const names = getDriversInMonth(monthKey);
-  courierProfileNames().forEach(nm => { if (!names.some(d => driverKey(d) === driverKey(nm))) names.push(nm); });   // S3: profile-only by name
-  const pls = names.map(n => computeDriverPnL(n, monthKey));
+  const idents = getDriversInMonth(monthKey);            // S7: identities, not names
+  profileOnlyIdentities(idents).forEach(id => idents.push(id));
+  const pls = idents.map(id => computeDriverPnL(id, monthKey));
   // ★ HIS INCOME MODEL (Build-159 fix): the driver's Bolt net is the DRIVER'S money —
   // it is NEVER company revenue. The company earns from (1) rentals/deal income on the
   // cost profiles and (2) the Bolt tier bonus (gross per tier − op cost, then 50/50
@@ -8744,7 +9172,7 @@ function computeExecMonth(monthKey) {
     S.salaryOut += Math.max(0, -(p.salary || 0));      // actual salary paid from the profile
     if (p.income > 0) { S.activeN++; if (!p.hasProfile) S.noProfile++; }
     if (!imported) {
-      const b = bonusForDriver(p.name, p.income, monthKey);   // estimate (pace) for the in-progress month
+      const b = bonusForDriver(p.ident, p.income, monthKey);   // estimate (pace) for the in-progress month
       if (b.tierFloor) {
         S.tierCompany += b.company; S.tierPartnerB += b.partnerB; S.tierGross += b.gross;
         S.tierCounts[b.tierFloor >= 6000 ? 2 : b.tierFloor >= 5000 ? 1 : 0]++;
@@ -9023,8 +9451,10 @@ document.addEventListener('click', e => {
 // ─────────────────────────────────────────────────
 // Finance Captain Detail Panel
 // ─────────────────────────────────────────────────
-function openFinanceCaptainPanel(name) {
-  finCaptainCtx = { name, monthKey: financeMonth };
+// S7 — `arg` is an identity KEY (what the Finance rows emit) or a bare name/identity.
+function openFinanceCaptainPanel(arg) {
+  const id = (typeof arg === 'string' && /^(id:|ph:|nm:)/.test(arg)) ? identityByKey(arg) : identityOf(arg);
+  finCaptainCtx = { name: id.name, ident: id, monthKey: financeMonth };
   finCaptainSortCol = 'period';
   finCaptainSortAsc = true;
   renderFinanceCaptainPanel();
@@ -9047,8 +9477,11 @@ function setFinCaptainSort(col) {
 function renderFinanceCaptainPanel() {
   if (!finCaptainCtx) return;
   const { name, monthKey } = finCaptainCtx;
-  const pnl = computeDriverPnL(name, monthKey);
-  const allHist = getDriverAllHistory('', name);
+  const ident = finCaptainCtx.ident || identityOf(name);
+  const pnl = computeDriverPnL(ident, monthKey);
+  // S7 — the day-by-day rows must be THIS captain's. getDriverAllHistory('', name) matched by
+  // name, so a twin's panel listed both captains' days under one total.
+  const allHist = getDriverAllHistory(ident.driverId || '', ident.name, ident.phone || '');
   const monthRows = allHist.filter(h => getMonthKey(h.period) === monthKey);
   const agg = aggregateDriverRows(monthRows);
   const s = loadSettings();
@@ -9073,7 +9506,7 @@ function renderFinanceCaptainPanel() {
   document.getElementById('finCaptainHeader').innerHTML = `
     <div class="modal-avatar">${(name[0]||'?').toUpperCase()}</div>
     <div>
-      <div class="modal-driver-name">${name}${foreign ? `<span class="d-foreign" style="font-size:13px;margin-left:6px">→ ${foreign}</span>` : ''}</div>
+      <div class="modal-driver-name">${name}${twinSuffix(ident)?`<span class="twin-chip">${twinSuffix(ident)}</span>`:''}${foreign ? `<span class="d-foreign" style="font-size:13px;margin-left:6px">→ ${foreign}</span>` : ''}</div>
       <div class="modal-driver-meta">${monthLabel(monthKey)} · <span class="${modelBadgeClass(pnl.model)}">${modelLabel}</span></div>
     </div>
     <div class="modal-close" onclick="closeFinanceCaptainPanel()">×</div>`;
@@ -9710,19 +10143,23 @@ function renderFleetBoltBonus() {
     // over getDriversInMonth silently dropped invoice-paid drivers whose stored phone
     // didn't match (e.g. a blank-name invoice row) — under-counting the fleet bonus.
     // Resolve a display name: CSV driver matched by phone(9) → invoice name → phone tail.
+    // S7 — index the month's captains by phone(9) as IDENTITIES, so an invoice row resolves to
+    // the captain who owns that phone and the per-driver split % is read off their own profile.
     const csvByPhone = {};
-    monthDrivers.forEach(name => { const ph = String(getKnownDriverPhone(name)||'').replace(/\D/g,'').slice(-9); if (ph && !csvByPhone[ph]) csvByPhone[ph] = name; });
+    monthDrivers.forEach(id => { const ph = String(id.phone || getKnownDriverPhone(id) || '').replace(/\D/g,'').slice(-9); if (ph && !csvByPhone[ph]) csvByPhone[ph] = id; });
     rows = Object.entries(imported).map(([ph, d]) => {
       const gross = +d.gross || 0, net = +d.net || 0;
-      const name = csvByPhone[ph] || (d.name && d.name.trim()) || ('#' + String(ph).slice(-4));
+      const who  = csvByPhone[ph] || null;
+      const name = who ? who.name : ((d.name && d.name.trim()) || ('#' + String(ph).slice(-4)));
       const floor = gross > 0 ? (net >= 6000 ? 6000 : net >= 5000 ? 5000 : 4000) : null;
-      return { name, net, bonus: gross > 0 ? splitAfterOpCost(gross, monthKey, name).company : 0, floor };
+      return { name, twin: who ? twinSuffix(who) : '', net,
+               bonus: gross > 0 ? splitAfterOpCost(gross, monthKey, who || name).company : 0, floor };
     }).filter(r => r.bonus > 0).sort((a, b) => b.net - a.net);   // only Bolt-paid qualifiers
   } else {
-    rows = monthDrivers.map(name => {
-      const pl = computeDriverPnL(name, monthKey);
-      const b = bonusForDriver(name, pl.income, monthKey);
-      return { name, net: pl.income, bonus: b.company, floor: b.tierFloor };
+    rows = monthDrivers.map(id => {
+      const pl = computeDriverPnL(id, monthKey);
+      const b = bonusForDriver(id, pl.income, monthKey);
+      return { name: id.name, twin: twinSuffix(id), net: pl.income, bonus: b.company, floor: b.tierFloor };
     }).sort((a, b) => b.net - a.net);
   }
 
@@ -9746,7 +10183,7 @@ function renderFleetBoltBonus() {
       </tr></thead>
       <tbody>
         ${rows.map(r => `<tr>
-          <td>${r.name}</td>
+          <td>${r.name}${r.twin?`<span class="twin-chip" title="Shares a name with another captain">${r.twin}</span>`:''}</td>
           <td style="text-align:right;font-family:var(--mono)">${fmt(r.net)}</td>
           <td style="text-align:right" class="${tierClass(r.floor)}">${tierLabel(r.floor)}</td>
           <td style="text-align:right;font-family:var(--mono);font-weight:600;color:${r.bonus>0?'var(--green)':'var(--text-muted)'}">${r.bonus>0?'+'+fmt(r.bonus):'—'}</td>
@@ -9783,13 +10220,17 @@ function _tierClassify(monthKey) {
     // (pace-aware bonusForDriver.tierFloor — identical to computeExecMonth's count), then
     // split that tier into achieved (banked ≥ floor) vs on-pace (projected, not yet banked).
     // Earning but untiered (tierFloor falsy, income>0) → the `below` pipeline bucket.
-    getDriversInMonth(monthKey).forEach(name => {
-      const income = computeDriverNetForPeriod(name, monthKey);
-      const b = bonusForDriver(name, income, monthKey);
+    // S7 — per CAPTAIN. The name list each bucket carries is now `name + twin suffix` for a
+    // colliding name, so the click-through list can tell the pair apart.
+    getDriversInMonth(monthKey).forEach(id => {
+      const income = computeDriverNetForPeriod(id, monthKey);
+      const b = bonusForDriver(id, income, monthKey);
       const f = b.tierFloor;
-      if (!f) { if (income > 0) { below.count++; below.names.push(name); } return; }
+      const label = id.name + twinSuffix(id);
+      if (!f) { if (income > 0) { below.count++; below.names.push(label); below.idents = (below.idents||[]).concat([id]); } return; }
       if (income >= f) st[f].achieved++; else st[f].projected++;
-      st[f].names.push(name);
+      st[f].names.push(label);
+      st[f].idents = (st[f].idents || []).concat([id]);
     });
   }
   return { tiers: st, below };
@@ -10225,12 +10666,12 @@ const AMBASSADOR_LIST_FALLBACK = ['Omar', 'Khaled Met3eb', 'Mohammad Hefny', 'Ab
 let AMBASSADOR_LIST = AMBASSADOR_LIST_FALLBACK.slice();
 
 // Earliest YYYY-MM-DD this driver shows any trips/earnings in uploaded history.
-function detectFirstTrip(name) {
-  const nk = driverKey(name);
+function detectFirstTrip(who) {
+  const id = identityOf(who);                 // S7 — Model B rent starts on THIS captain's 1st trip
   let best = null;
   for (const h of getHistory()) {
     const drivers = Array.isArray(h.drivers) ? h.drivers : [];
-    const d = drivers.find(x => driverKey(x.name) === nk);
+    const d = drivers.find(x => driverRowMatches(x, id));
     if (!d) continue;
     if (!((d.orders||0) > 0 || (d.netEarnings||0) > 0)) continue;
     const k = periodSortKey(h.period);
@@ -10257,19 +10698,22 @@ function effFirstTrip(name, profile) {
 // entries lack, so on cloud-only data it returned null and the ambassador bonus
 // silently computed to 0 ("Net 6,000 < 5,000 (not yet)"). entryMonthYear falls back to
 // the period string, matching how sumDriverNetForMonth already attributes a month.
-function firstAchieveMonth(name, threshold) {
-  const nk = driverKey(name);
+// S7 — `who` is an identity or a bare name. Both the "did they appear" test and the net read
+// now go through the identity, so one twin's strong month can no longer trigger the other
+// twin's referral incentive (a real payout, to a real ambassador, for the wrong driver).
+function firstAchieveMonth(who, threshold) {
+  const id = identityOf(who);
   const months = new Set();
   for (const h of getHistory()) {
     const drivers = Array.isArray(h.drivers) ? h.drivers : [];
-    if (!drivers.some(x => driverKey(x.name) === nk)) continue;   // driver appears this entry
+    if (!drivers.some(x => driverRowMatches(x, id))) continue;      // driver appears this entry
     const my = entryMonthYear(h);                                  // periodInfo-independent
     if (my) months.add(my.year + '-' + String(my.month + 1).padStart(2, '0'));
   }
   let earliest = null;
   for (const mk of [...months].sort().reverse()) {                 // newest→oldest; last write = oldest
     const [y, m] = mk.split('-').map(Number);
-    if (getMonthlyNet(null, name, m - 1, y) >= threshold) earliest = mk;
+    if (sumDriverNetForMonth(id, m - 1, y) >= threshold) earliest = mk;
   }
   return earliest;
 }
@@ -10295,7 +10739,8 @@ function incToSar(amount, currency) { return currency === 'EGP' ? Math.round(amo
 // the P&L. One-time (default) locks at the driver's first qualifying month (a pre-cutover
 // qualifier is paid in the cutover month, mirroring v2); the Settings toggle switches it to
 // recurring (paid every month the driver's net clears the threshold).
-function teamIncentiveFor(name, profile, monthKey) {
+function teamIncentiveFor(who, profile, monthKey) {
+  const name = identityOf(who);                    // S7 — identity, not a bare name
   const base = (extra) => Object.assign(
     { owed: 0, owedSar: 0, currency: 'SAR', qualifies: false, team: '', nationality: '', threshold: 0, amount: 0, reason: '—' }, extra);
   if (!profile || !profile.ambassador) return base({ reason: 'No referrer tagged' });
@@ -10337,7 +10782,10 @@ function teamIncentiveFor(name, profile, monthKey) {
 }
 
 // Payout owed to the ambassador for one driver in one month (monthKey 'YYYY-MM').
-function ambPayoutFor(name, profile, monthlyNet, monthKey) {
+// S7 — `who` is an identity or a bare name; every downstream lookup (first trip, first
+// achievement, team incentive) is threaded with it so the payout belongs to one captain.
+function ambPayoutFor(who, profile, monthlyNet, monthKey) {
+  const name = identityOf(who);
   const model = profile && profile.ambassadorModel;
 
   // Model B (account rent-share) is a separate mechanism, unaffected by the cutover.
@@ -10388,11 +10836,44 @@ function ambPayoutFor(name, profile, monthlyNet, monthKey) {
 }
 
 // Every driver name ever seen in history, plus any profile-only keys.
+// DISPLAY ONLY — a name cannot address a captain when two of them share it. Anything that
+// reads or writes money or a profile must use getAllDriverIdentities().
 function getAllDriverNames() {
   const map = new Map();
   getHistory().forEach(h => (Array.isArray(h.drivers)?h.drivers:[]).forEach(d => { if (d.name) map.set(driverKey(d.name), d.name.trim()); }));
   courierProfileNames().forEach(nm => { const k = driverKey(nm); if (k && !map.has(k)) map.set(k, nm); });   // S3: profile-only drivers by display name
   return [...map.values()].sort((a,b)=>a.localeCompare(b));
+}
+// S7 — every distinct CAPTAIN ever seen, as identities, plus profile-only records. This is the
+// enumeration every money and profile loop should use: the name-keyed version above silently
+// dropped one of each same-name pair, so an incentive was computed for one twin and the other
+// was invisible to the Incentives tab entirely.
+let _allIdentCache = null, _allIdentH = null, _allIdentP = null;
+function getAllDriverIdentities() {
+  const rawH = localStorage.getItem('khair_perf_history') || '';
+  const rawP = localStorage.getItem(COURIER_PROFILES_KEY) || '';
+  if (_allIdentCache && rawH === _allIdentH && rawP === _allIdentP) return _allIdentCache;
+  const map = new Map();
+  getHistory().forEach(h => (Array.isArray(h.drivers) ? h.drivers : []).forEach(d => {
+    if (!d.name) return;
+    const id = identityOf(d);
+    const cur = map.get(id.key);
+    if (!cur || (!cur.phone && id.phone)) map.set(id.key, id);
+  }));
+  profileOnlyIdentities([...map.values()]).forEach(id => map.set(id.key, id));
+  const out = [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  _allIdentCache = out; _allIdentH = rawH; _allIdentP = rawP;
+  return out;
+}
+// Recover a full identity from its key — lets a <select>/onclick carry the KEY (which is
+// unambiguous) instead of a display name (which is not).
+function identityByKey(key) {
+  const k = String(key || '');
+  const hit = getAllDriverIdentities().find(i => i.key === k);
+  if (hit) return hit;
+  return { key: k, name: courierKeyToName(k, loadCourierProfiles()[k]),
+           driverId: k.startsWith('id:') ? k.slice(3) : '',
+           phone:    k.startsWith('ph:') ? k.slice(3) : '' };
 }
 
 // ── Sheet→dashboard driver matching (Phase 1b of the onboarding-sheet link) ──
@@ -10528,11 +11009,12 @@ function rebuildCpAmbassadorOptions() {
 
 // Best-effort phone lookup for a driver from the currently loaded period or, failing
 // that, their most recent historical record.
-function getKnownDriverPhone(name) {
-  const key = driverKey(name);
-  const d = (currentDrivers||[]).find(x => driverKey(x.name) === key);
+function getKnownDriverPhone(who) {
+  const id = identityOf(who);                        // S7 — identity or bare name
+  if (id.phone) return id.phone;
+  const d = (currentDrivers||[]).find(x => driverRowMatches(x, id));
   if (d && d.phone) return d.phone;
-  const hist = getDriverAllHistory('', name);
+  const hist = getDriverAllHistory(id.driverId || '', id.name);
   for (let i = hist.length - 1; i >= 0; i--) { if (hist[i].d && hist[i].d.phone) return hist[i].d.phone; }
   return '';
 }
@@ -10631,19 +11113,19 @@ function incentiveTotalsFor(monthKey) {
   const overrides = loadIncentiveOverrides();
   const refsMap = {};
   let noNat = 0, totalDrivers = 0;
-  getAllDriverNames().forEach(name => {
-    const p = getCourierProfile(name);
+  getAllDriverIdentities().forEach(id => {         // S7 — per CAPTAIN, not per name
+    const p = getCourierProfile(id);
     if (!p || !p.ambassador) return;
-    const net = getMonthlyNet(null, name, monthIdx, year);
+    const net = sumDriverNetForMonth(id, monthIdx, year);
     if (net <= 0) return;                          // only drivers earning this month matter to a threshold
     totalDrivers++;
     const ref  = p.ambassador.trim();
     const team = teamForReferrer(ref);
-    const ti   = teamIncentiveFor(name, p, monthKey);
+    const ti   = teamIncentiveFor(id, p, monthKey);
     const k = ref.toLowerCase();
     const g = refsMap[k] = refsMap[k] || { name: ref, key: k, team, currency: team === 'egypt' ? 'EGP' : 'SAR',
                                            drivers: [], autoNative: 0, autoSar: 0, hit: 0, qualifying: 0 };
-    g.drivers.push({ name, net, nationality: p.nationality || '', ti });
+    g.drivers.push({ name: id.name + twinSuffix(id), ident: id, net, nationality: p.nationality || '', ti });
     g.autoNative += ti.owed; g.autoSar += ti.owedSar;
     if (ti.qualifies) g.qualifying++;
     if (ti.threshold && net >= ti.threshold) g.hit++;
@@ -11212,25 +11694,32 @@ function ambEditDriver(name) {
 }
 function ambAssignFromPicker() {
   const sel = document.getElementById('ambAssignPicker');
-  const name = sel && sel.value;
-  if (!name) { toast('Pick a driver first'); return; }
-  ambEditDriver(name);
+  const key = sel && sel.value;
+  if (!key) { toast('Pick a driver first'); return; }
+  ambEditDriver(identityByKey(key));   // S7 — the option value is an identity key
 }
 
 // Inline quick-edit from the Finance By-Captain table — just type the ambassador's
 // name / pick a model, no long modal. Detailed Model-B cut / Model-C support / 1st-trip
 // override stay in the full Profile modal + Ambassadors tab (defaults apply otherwise).
-function setDriverAmbassador(name, val) {
-  const p = getCourierProfile(name);
+// S7 — `who` is an identity KEY (what the Finance/Ambassador rows now emit) or a bare name.
+// The ambassador tag pays a real incentive, so it must land on one captain, not on a name.
+function ambTargetOf(who) {
+  return (typeof who === 'string' && /^(id:|ph:|nm:)/.test(who)) ? identityByKey(who) : identityOf(who);
+}
+function setDriverAmbassador(who, val) {
+  const id = ambTargetOf(who);
+  const p = getCourierProfile(id);
   p.ambassador = (val || '').trim() || null;
-  upsertCourierProfile(name, p);
+  upsertCourierProfile(id, p);
   refreshAmbViews();
   syncToCloud();
 }
-function setDriverAmbModel(name, model) {
-  const p = getCourierProfile(name);
+function setDriverAmbModel(who, model) {
+  const id = ambTargetOf(who);
+  const p = getCourierProfile(id);
   p.ambassadorModel = model || null;
-  upsertCourierProfile(name, p);
+  upsertCourierProfile(id, p);
   refreshAmbViews();
   syncToCloud();
 }
@@ -11364,17 +11853,21 @@ async function ambAutoFillFromSheet(force) {
     synced.filter(s => !normPhoneForMatch(s.phone))
           .map(s => ({ driverId:s.id, name:s.name, phone:s.phone, ambassador:s.ambassador, nationality:s.nationality })));
   let ambSet = 0, natSet = 0, matched = 0;
-  getAllDriverNames().forEach(name => {
-    const match = matchSheetDriverToDashboard({ name, phone: getKnownDriverPhone(name) }, sheetRows);
+  // S7 — walk CAPTAINS. A twin is skipped rather than guessed at: the sheet is phone-keyed and
+  // a name-only match cannot say which of the pair a row belongs to, and this writes the
+  // ambassador tag that pays a real incentive. They surface in the data-conflicts list instead.
+  getAllDriverIdentities().forEach(id => {
+    if (isTwinName(id.name) && !id.phone && !id.driverId) return;
+    const match = matchSheetDriverToDashboard({ name: id.name, phone: id.phone || getKnownDriverPhone(id) }, sheetRows);
     if (match.confidence !== 'high' || !match.driverId) return;
     const row = sheetRows.find(s => s.driverId === match.driverId);
     if (!row) return;
     matched++;
-    const p = getCourierProfile(name);
+    const p = getCourierProfile(id);
     let changed = false;
     if (!p.ambassador && row.ambassador && AMBASSADOR_LIST.includes(row.ambassador)) { p.ambassador = row.ambassador; ambSet++; changed = true; }
     if (!p.nationality && (row.nationality === 'saudi' || row.nationality === 'foreigner')) { p.nationality = row.nationality; p.nationalityConfirmed = true; natSet++; changed = true; }
-    if (changed) upsertCourierProfile(name, p);
+    if (changed) upsertCourierProfile(id, p);
   });
   if (ambSet || natSet) syncToCloud();
   return { ambSet, natSet, matched };
@@ -11439,20 +11932,24 @@ function ambKpiClick(kind) {
   const t = document.getElementById('ambFilterCards');
   if (t) t.scrollIntoView({ behavior:'smooth', block:'start' });
 }
-function setDriverNationality(name, val) {
-  const p = getCourierProfile(name);
+// S7 — `who` is an identity KEY (what the Ambassadors rows emit) or a bare name. Nationality
+// picks the incentive rule and threshold, so it must land on one captain.
+function setDriverNationality(who, val) {
+  const id = ambTargetOf(who);
+  const p = getCourierProfile(id);
   p.nationality = val || null;
   p.nationalityConfirmed = !!val;          // picking a value IS the confirmation
-  upsertCourierProfile(name, p);
+  upsertCourierProfile(id, p);
   if (document.getElementById('ambassadors')?.classList.contains('active')) renderAmbassadorsView();
   syncToCloud();
 }
 // Confirm an already-set (e.g. assumed) nationality without changing it.
-function ambConfirmNationality(name) {
-  const p = getCourierProfile(name);
+function ambConfirmNationality(who) {
+  const id = ambTargetOf(who);
+  const p = getCourierProfile(id);
   if (!p.nationality) return;
   p.nationalityConfirmed = true;
-  upsertCourierProfile(name, p);
+  upsertCourierProfile(id, p);
   renderAmbassadorsView();
   syncToCloud();
 }
@@ -11460,9 +11957,9 @@ function ambConfirmNationality(name) {
 // UNCONFIRMED — bonuses compute provisionally while the one-time confirmation happens.
 function ambAssumeForeigner() {
   let n = 0;
-  getAllDriverNames().forEach(name => {
-    const p = getCourierProfile(name);
-    if (p.ambassador && !p.nationality) { p.nationality = 'foreigner'; p.nationalityConfirmed = false; upsertCourierProfile(name, p); n++; }
+  getAllDriverIdentities().forEach(id => {          // S7 — per CAPTAIN, not per name
+    const p = getCourierProfile(id);
+    if (p.ambassador && !p.nationality) { p.nationality = 'foreigner'; p.nationalityConfirmed = false; upsertCourierProfile(id, p); n++; }
   });
   if (n) syncToCloud();
   toast(n ? `Set ${n} unset driver${n===1?'':'s'} to Foreigner (assumed) — now confirm each in the checklist.` : 'No unset drivers to default.');
@@ -11497,9 +11994,13 @@ function renderAmbassadorsView() {
   const [yy, mm] = monthKey.split('-').map(Number);
   const monthIdx = mm - 1, year = yy;
 
-  const allNames = getAllDriverNames();
+  // S7 — the picker's VALUE is the identity key, not the name. A twin's name appears twice with
+  // a phone-suffix chip, and picking either opens that captain's own record instead of falling
+  // into the shared 'nm:' bucket where the edit silently applied to neither of them.
+  const allIdents = getAllDriverIdentities();
   const pickerOpts = ['<option value="">— pick a driver to assign / edit —</option>']
-    .concat(allNames.map(n => { const p = getCourierProfile(n); const tag = p&&p.ambassador?` · 🎖 ${p.ambassador}`:''; return `<option value="${n.replace(/"/g,'&quot;')}">${n}${tag}</option>`; })).join('');
+    .concat(allIdents.map(id => { const p = getCourierProfile(id); const tag = p&&p.ambassador?` · 🎖 ${p.ambassador}`:'';
+      return `<option value="${String(id.key).replace(/"/g,'&quot;')}">${id.name}${twinSuffix(id)}${tag}</option>`; })).join('');
   const monthOpts = (months.length ? months : [monthKey]).map(m => `<option value="${m}" ${m===monthKey?'selected':''}>${monthLabel(m)}</option>`).join('');
 
   const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -11519,14 +12020,16 @@ function renderAmbassadorsView() {
   </div></div>`;
 
   // Every driver WITH an ambassador (model no longer required — the new system uses nationality).
+  // S7 — per CAPTAIN. `name` carries the twin suffix for display; `ident` is what every
+  // money/profile call uses, so a same-name pair shows two rows with their own payouts.
   const assigned = [];
-  allNames.forEach(name => {
-    const p = getCourierProfile(name);
+  allIdents.forEach(id => {
+    const p = getCourierProfile(id);
     if (!p || !p.ambassador) return;
-    const net  = getMonthlyNet(null, name, monthIdx, year);
+    const net  = sumDriverNetForMonth(id, monthIdx, year);
     const proj = ambProjectMonthEnd(net, monthKey);
-    assigned.push({ name, profile:p, ambassador:p.ambassador.trim(), nationality:p.nationality||'',
-      net, proj, payout: ambPayoutFor(name, p, net, monthKey), track: ambTrackStatus(net, proj, ambPaceGated(monthKey)) });
+    assigned.push({ name: id.name + twinSuffix(id), ident: id, profile:p, ambassador:p.ambassador.trim(), nationality:p.nationality||'',
+      net, proj, payout: ambPayoutFor(id, p, net, monthKey), track: ambTrackStatus(net, proj, ambPaceGated(monthKey)) });
   });
 
   // Unassigned-earners worklist: drivers who earned this month but carry no ambassador on
@@ -11535,12 +12038,13 @@ function renderAmbassadorsView() {
   // it with a verify flag so coverage grows without needing a phone match. Reads the sheet
   // cache synchronously (renderAmbassadors primes it on tab open).
   const unassignedEarners = [];
-  allNames.forEach(name => {
-    const p = getCourierProfile(name);
+  allIdents.forEach(id => {
+    const p = getCourierProfile(id);
     if (p && p.ambassador) return;                 // already attributed
-    const net = getMonthlyNet(null, name, monthIdx, year);
+    const net = sumDriverNetForMonth(id, monthIdx, year);
     if (net <= 0) return;                           // not earning this month
-    unassignedEarners.push({ name, net, suggestion: sheetAmbSuggestionCached(name, getKnownDriverPhone(name)) });
+    unassignedEarners.push({ name: id.name + twinSuffix(id), ident: id, net,
+      suggestion: sheetAmbSuggestionCached(id.name, id.phone || getKnownDriverPhone(id)) });
   });
   unassignedEarners.sort((a, b) => b.net - a.net);
 
@@ -11616,12 +12120,12 @@ function renderAmbassadorsView() {
         .concat(AMBASSADOR_LIST.map(a => `<option value="${escA(a)}"${sug && sug.ambassador === a ? ' selected' : ''}>${escH(a)}</option>`)).join('');
       const sugCell = sug
         ? `sheet <b style="color:var(--dk-text)">${escH(sug.ambassador)}</b> · ${sug.confidence === 'high' ? 'phone' : 'name'}${sug.confidence === 'medium' ? ' · <span style="color:var(--dk-warn)">verify</span>' : ''}
-           <button class="dk-btn sm" onclick="setDriverAmbassador('${jsq(u.name)}','${jsq(sug.ambassador)}')">✓ Use</button>`
+           <button class="dk-btn sm" onclick="setDriverAmbassador('${jsq(u.ident.key)}','${jsq(sug.ambassador)}')">✓ Use</button>`
         : `<span style="color:var(--dk-dim)">—</span>`;
       return `<div class="dk-row" style="gap:10px;align-items:center">
         <span class="k" style="flex:1;min-width:120px">${escH(u.name)}${foreign ? ` <span style="color:var(--dk-dim)">${escH(foreign)}</span>` : ''}</span>
         <span class="dk-num">${fmt(Math.round(u.net))}</span>
-        <select onchange="setDriverAmbassador('${jsq(u.name)}',this.value)" style="${inpCss};min-width:150px">${opts}</select>
+        <select onchange="setDriverAmbassador('${jsq(u.ident.key)}',this.value)" style="${inpCss};min-width:150px">${opts}</select>
         <span style="font-size:11px;color:var(--dk-mut)">${sugCell}</span>
       </div>`;
     }).join('');
@@ -11631,14 +12135,15 @@ function renderAmbassadorsView() {
   if (needsConfirm.length) {
     const wl = needsConfirm.map(a => {
       const assumed = a.nationality && !a.profile.nationalityConfirmed;
-      const sel = `<select onchange="setDriverNationality('${jsq(a.name)}',this.value)" style="${inpCss}">
+      const _k = (a.ident && a.ident.key) || a.name;      // S7 — address the captain, not the name
+      const sel = `<select onchange="setDriverNationality('${jsq(_k)}',this.value)" style="${inpCss}">
         <option value="" ${!a.nationality?'selected':''}>— set —</option>
         <option value="saudi" ${a.nationality==='saudi'?'selected':''}>Saudi</option>
         <option value="foreigner" ${a.nationality==='foreigner'?'selected':''}>Foreigner</option></select>`;
       return `<div class="dk-row" style="gap:10px;align-items:center">
         <span class="k" style="flex:1;min-width:120px">${escH(a.name)}${assumed?' <span style="color:var(--dk-warn);font-size:10px">assumed</span>':''}</span>
         ${sel}
-        ${a.nationality?`<button class="dk-btn sm" onclick="ambConfirmNationality('${jsq(a.name)}')">✓ Confirm</button>`:''}
+        ${a.nationality?`<button class="dk-btn sm" onclick="ambConfirmNationality('${jsq(_k)}')">✓ Confirm</button>`:''}
       </div>`;
     }).join('');
     html += `<div class="dk-card"><div class="dk-card-t"><span class="t">⚠ Confirm nationality</span><span class="go">${needsConfirm.length} driver${needsConfirm.length===1?'':'s'}</span></div>
@@ -11679,8 +12184,9 @@ function renderAmbassadorsView() {
   // selected, all matching drivers across ambassadors). Every row opens the A1 panel
   // scoped to the tab's month.
   const drillRow = r => {
-    const foreign = lookupForeignName(r.name);
-    return `<div class="dk-row click" onclick="dkOpenDriver('${jsq(r.name)}','${monthKey}')" title="${escA(r.payout.reason || '')}">
+    const foreign = lookupForeignName((r.ident && r.ident.name) || r.name);
+    const _id = r.ident || {};
+    return `<div class="dk-row click" onclick="dkOpenDriver('${jsq(_id.name || r.name)}','${monthKey}','${jsq(_id.driverId||'')}','${jsq(_id.phone||'')}')" title="${escA(r.payout.reason || '')}">
       <span class="k">${escH(r.name)}${foreign ? ` <span style="color:var(--dk-dim)">${escH(foreign)}</span>` : ''}${r.track.push ? ' <span style="color:var(--dk-warn);font-weight:700">PUSH</span>' : ''}${(r.nationality && !r.profile.nationalityConfirmed) ? ' <span style="color:var(--dk-warn);font-size:10px">assumed</span>' : ''}</span>
       <span class="v">${fmt(Math.round(r.net))} · <span style="color:${r.track.color}">${escH(r.track.label)}</span>${r.payout.owed > 0 ? ` · <b style="color:var(--dk-brand)">${fmt(Math.round(r.payout.owed))}</b>` : ''}</span>
     </div>`;
@@ -11740,16 +12246,23 @@ function identityForDriverName(name) {
 // The identity the OPEN modal is editing. Read and write both go through this, so the record
 // shown can never be a different one from the record saved.
 let cpIdentity = null;
-function openCourierProfileModal(name) {
-  cpIdentity = identityForDriverName(name);
-  const profile = getCourierProfile(cpIdentity || name);
+// S7 — `arg` may be an IDENTITY (from Finance, Captains or the ambassador picker, all of which
+// now carry one) or a bare name (legacy callers). Given an identity, the modal edits exactly
+// that captain and the ambiguity warning stays hidden — that is what makes a same-name pair
+// editable at all. Given a bare name, the old resolve-or-warn behaviour is unchanged.
+function openCourierProfileModal(arg) {
+  const passed = (arg && typeof arg === 'object') ? identityOf(arg) : null;
+  const name = passed ? passed.name : arg;
+  cpIdentity = (passed && passed.key && !passed.key.startsWith('nm:')) ? passed : identityForDriverName(name);
+  const profile = getCourierProfile(cpIdentity || passed || name);
   const amb = document.getElementById('cpAmbiguousWarn');
   if (amb) {
     const isAmbiguous = !cpIdentity && getProfileResolver().ambiguousNames.has(driverKey(name));
     amb.style.display = isAmbiguous ? '' : 'none';
   }
+  const twin = passed ? twinSuffix(passed) : '';
   document.getElementById('cpDriverName').value = name;
-  document.getElementById('cpDriverDisplay').textContent = name + (lookupForeignName(name) ? ` (${lookupForeignName(name)})` : '');
+  document.getElementById('cpDriverDisplay').textContent = name + twin + (lookupForeignName(name) ? ` (${lookupForeignName(name)})` : '');
   document.getElementById('cpModel').value = resolveModelDisplay(profile.model) || 'F';
   onCpModelChange(profile.model);
   document.getElementById('cpModelCustom').value = profile.modelCustom || '';
@@ -11783,7 +12296,7 @@ function openCourierProfileModal(name) {
   // driver's modal is still open by the time it resolves (guards a fast tab-switch),
   // and never overwrites a value the user already picked in the meantime.
   if (!profile.ambassador) {
-    suggestAmbassadorFromSheet(name, getKnownDriverPhone(name)).then(suggested => {
+    suggestAmbassadorFromSheet(name, (passed && passed.phone) || getKnownDriverPhone(cpIdentity || name)).then(suggested => {
       if (!suggested) return;
       if (document.getElementById('cpDriverName')?.value !== name) return;
       if (document.getElementById('cpAmbassador').value) return;
@@ -11791,7 +12304,7 @@ function openCourierProfileModal(name) {
       if (cpAmbHint) cpAmbHint.textContent = 'Suggested from the onboarding sheet — confirm or change before saving.';
     });
   }
-  const detected = detectFirstTrip(name);
+  const detected = detectFirstTrip(cpIdentity || passed || name);
   document.getElementById('cpAmbFirstTrip').value = profile.ambFirstTrip || detected || '';
   document.getElementById('cpAmbFirstTripAuto').textContent = detected ? `(auto: ${detected})` : '(no trips in data yet)';
   document.getElementById('cpAmbAmtA').value = profile.ambAmtA != null ? profile.ambAmtA : '';
@@ -11908,11 +12421,18 @@ function saveCourierProfileFromModal() {
   toast(`Saved profile for ${name}`);
 }
 
-function openOverrideModal(name, monthKey) {
+// The identity the OPEN override modal is editing — mirrors cpIdentity, so a monthly change
+// entered for one twin is read back and written under that captain's key and nobody else's.
+// S7 — callers pass an identity key (Finance rows carry one); a bare name still works.
+let ovIdentity = null;
+function openOverrideModal(arg, monthKey) {
+  const id = (typeof arg === 'string' && /^(id:|ph:|nm:)/.test(arg)) ? identityByKey(arg) : identityOf(arg);
+  ovIdentity = id;
+  const name = id.name;
   document.getElementById('ovDriverName').value = name;
   document.getElementById('ovMonthKey').value = monthKey;
-  document.getElementById('ovDriverDisplay').textContent = `${name} — ${monthLabel(monthKey)}`;
-  const override = getOverride(name, monthKey) || {};
+  document.getElementById('ovDriverDisplay').textContent = `${name}${twinSuffix(id)} — ${monthLabel(monthKey)}`;
+  const override = getOverride(id, monthKey) || {};
   ['ovUseModel','ovUseAcctRent','ovUseCarRent','ovUseSalary','ovUseFleetCut','ovUseOther'].forEach(id => { document.getElementById(id).checked = false; });
   if (override.model !== undefined) { document.getElementById('ovUseModel').checked = true; document.getElementById('ovModel').value = override.model; }
   if (override.accountRent) { document.getElementById('ovUseAcctRent').checked = true; setOvDir('accountRent', override.accountRent.dir); document.getElementById('ovAcctRentAmount').value = override.accountRent.amount || ''; }
@@ -11927,7 +12447,7 @@ function openOverrideModal(name, monthKey) {
   else { document.getElementById('ovOtherLabel').value = ''; setOvDir('other','NONE'); document.getElementById('ovOtherAmount').value = ''; }
   document.getElementById('overrideModal').classList.add('open');
 }
-function closeOverrideModal() { document.getElementById('overrideModal').classList.remove('open'); }
+function closeOverrideModal() { ovIdentity = null; document.getElementById('overrideModal').classList.remove('open'); }
 function setOvDir(field, val) {
   const idMap = { accountRent:'ovAcctRentDir', carRent:'ovCarRentDir', other:'ovOtherDir' };
   document.getElementById(idMap[field]).value = val;
@@ -11960,7 +12480,7 @@ function saveOverrideFromModal() {
     { label:'Car Rent',     dir:override.carRent?.dir,     amount:override.carRent?.amount },
     { label:'Other',        dir:override.other?.dir,       amount:override.other?.amount },
   ])) return;
-  upsertOverride(name, monthKey, override);
+  upsertOverride(ovIdentity || name, monthKey, override);
   closeOverrideModal();
   renderFinanceTab();
   syncToCloud();
@@ -11969,7 +12489,7 @@ function saveOverrideFromModal() {
 function clearOverrideFromModal() {
   const name = document.getElementById('ovDriverName').value;
   const monthKey = document.getElementById('ovMonthKey').value;
-  upsertOverride(name, monthKey, null);
+  upsertOverride(ovIdentity || name, monthKey, null);
   closeOverrideModal();
   renderFinanceTab();
   syncToCloud();
@@ -12014,21 +12534,24 @@ function onCrpDateChange() {
     if (!h.periodInfo) return;
     const py = pInfoToYMD(h.periodInfo.start);
     if (py < win.start || py > win.end) return;
+    // S7 — keyed by IDENTITY, matching computeCycleReconciliation. The `data-crp-driver`
+    // attribute (which becomes the receipt's key) therefore names a captain, not a name.
     h.drivers.forEach(d2 => {
       if (!d2.name) return;
-      const k = driverKey(d2.name);
-      if (!drivers.has(k)) drivers.set(k, { name: d2.name, expected: 0 });
-      drivers.get(k).expected += (d2.netEarnings || 0);
+      const id = identityOf(d2);
+      if (!drivers.has(id.key)) drivers.set(id.key, { name: d2.name + twinSuffix(id), key: id.key, expected: 0 });
+      drivers.get(id.key).expected += (d2.netEarnings || 0);
     });
   });
   const existing = getCycleReceipt(ymd)?.perDriverActual || {};
-  Object.keys(existing).forEach(k => { if (!drivers.has(k)) drivers.set(k, { name: k, expected: 0 }); });
+  // A receipt saved before this build is name-keyed; keep those rows visible and editable.
+  Object.keys(existing).forEach(k => { if (!drivers.has(k)) drivers.set(k, { name: courierKeyToName(k, null), key: k, expected: 0 }); });
   if (!drivers.size) {
     listEl.innerHTML = `<div style="padding:10px;color:var(--text-muted);font-size:12px">No driver activity in this window. Upload daily CSVs covering ${win.start} → ${win.end} first.</div>`;
     return;
   }
   listEl.innerHTML = [...drivers.values()].sort((a,b) => b.expected - a.expected).map(d2 => {
-    const k = driverKey(d2.name);
+    const k = d2.key;
     const actual = existing[k];
     return `<div style="display:grid;grid-template-columns:1fr 130px 100px;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
       <div style="font-size:12px"><div style="font-weight:600">${d2.name}</div><div style="font-size:10px;color:var(--text-muted)">Expected: ${fmt(d2.expected)} SAR</div></div>
@@ -12078,18 +12601,20 @@ function escCsv(s) {
 }
 function exportFinanceCSV() {
   const monthKey = financeMonth;
-  const drivers = getDriversInMonth(monthKey);
-  courierProfileNames().forEach(nm => { if (!drivers.some(d => driverKey(d) === driverKey(nm))) drivers.push(nm); });   // S3: profile-only by name
-  const pls = drivers.map(name => computeDriverPnL(name, monthKey));
+  const drivers = getDriversInMonth(monthKey);            // S7: identities
+  profileOnlyIdentities(drivers).forEach(id => drivers.push(id));
+  const pls = drivers.map(id => computeDriverPnL(id, monthKey));
   const lines = [];
   lines.push(`# Bolt Finance v2 export — generated ${new Date().toISOString()}`);
   lines.push(`# Month: ${monthLabel(monthKey)}`);
   lines.push('');
   lines.push('# ── PER-COURIER P&L ──');
-  lines.push('Driver,Model,Bolt Net,Acct Rent,Car Rent,Salary,Fleet Cut,Other,Net P&L');
+  lines.push('Driver,Phone,Model,Bolt Net,Acct Rent,Car Rent,Salary,Fleet Cut,Other,Net P&L');
   pls.forEach(p => {
     const model = p.model === 'Custom' ? (p.modelCustom || 'Custom') : p.model;
-    lines.push([escCsv(p.name), escCsv(model), p.income.toFixed(2), p.acctRent.toFixed(2), p.carRent.toFixed(2), p.salary.toFixed(2), p.fleetCut.toFixed(2), p.other.toFixed(2), p.netPnL.toFixed(2)].join(','));
+    // S7 — the export names a CAPTAIN. A same-name pair exports as two rows; the phone column
+    // is what tells them apart in Excel, so it is written out beside the name.
+    lines.push([escCsv(p.name), escCsv(p.phone || ''), escCsv(model), p.income.toFixed(2), p.acctRent.toFixed(2), p.carRent.toFixed(2), p.salary.toFixed(2), p.fleetCut.toFixed(2), p.other.toFixed(2), p.netPnL.toFixed(2)].join(','));
   });
   lines.push('');
   lines.push('# ── MODEL ROLL-UP ──');
@@ -12129,8 +12654,8 @@ function exportFinanceReport() { window.print(); }
 // Returns the earliest date in `monthKey` where the driver had orders > 0.
 // Period strings are like "22 May 2026" (single day) or "22 May 2026 → 28 May 2026" (range).
 // We use the START date of the period as the work date for display.
-function getDriverFirstTripDateInMonth(driverName, monthKey) {
-  const nk = driverKey(driverName);
+function getDriverFirstTripDateInMonth(who, monthKey) {
+  const id = identityOf(who);                     // S7 — identity, not a bare name
   const [y, m] = monthKey.split('-').map(Number);
   const targetMonth = m - 1, targetYear = y;
   const seen = new Set();
@@ -12139,7 +12664,7 @@ function getDriverFirstTripDateInMonth(driverName, monthKey) {
   for (const h of getHistory()) {
     if (!entryInMonth(h, targetMonth, targetYear) || seen.has(h.period)) continue;
     seen.add(h.period);
-    const d = (h.drivers || []).find(x => driverKey(x.name) === nk);
+    const d = (h.drivers || []).find(x => driverRowMatches(x, id));
     if (!d) continue;
     const sk = periodSortKey(h.period);
     if (d.orders > 0 && (earliestTrip === null || sk < earliestTrip.sk)) earliestTrip = { sk, period: h.period };
@@ -12156,8 +12681,8 @@ function getDriverFirstTripDateInMonth(driverName, monthKey) {
 
 // Returns email + phone for a driver, preferring data from the selected month,
 // falling back to any history entry if not found in that month.
-function getDriverContactInfo(driverName, monthKey) {
-  const nk = driverKey(driverName);
+function getDriverContactInfo(who, monthKey) {
+  const id = identityOf(who);                     // S7 — identity, not a bare name
   const [y, m] = monthKey.split('-').map(Number);
   const targetMonth = m - 1, targetYear = y;
   let email = '', phone = '';
@@ -12165,7 +12690,7 @@ function getDriverContactInfo(driverName, monthKey) {
   // First pass: same month (most recent contact data)
   for (const h of hist) {
     if (!entryInMonth(h, targetMonth, targetYear)) continue;
-    const d = (h.drivers || []).find(x => driverKey(x.name) === nk);
+    const d = (h.drivers || []).find(x => driverRowMatches(x, id));
     if (d) {
       if (d.email) email = d.email;
       if (d.phone) phone = d.phone;
@@ -12175,7 +12700,7 @@ function getDriverContactInfo(driverName, monthKey) {
   // Second pass: fall back to any history if still missing
   if (!email || !phone) {
     for (const h of hist) {
-      const d = (h.drivers || []).find(x => driverKey(x.name) === nk);
+      const d = (h.drivers || []).find(x => driverRowMatches(x, id));
       if (d) {
         if (!email && d.email) email = d.email;
         if (!phone && d.phone) phone = d.phone;
@@ -12190,12 +12715,13 @@ function getDriverContactInfo(driverName, monthKey) {
 function buildEomReportData(monthKey) {
   const [y, m] = monthKey.split('-').map(Number);
   const targetMonth = m - 1, targetYear = y;
-  const driverNames = getDriversInMonth(monthKey);
-  return driverNames.map(name => {
-    const net      = sumDriverNetForMonth(name, targetMonth, targetYear, null);
-    const contact  = getDriverContactInfo(name, monthKey);
-    const firstTrip = getDriverFirstTripDateInMonth(name, monthKey);
-    return { name, email: contact.email, phone: contact.phone, net, firstTrip };
+  const idents = getDriversInMonth(monthKey);              // S7: identities
+  return idents.map(id => {
+    const net      = sumDriverNetForMonth(id, targetMonth, targetYear);
+    const contact  = getDriverContactInfo(id, monthKey);
+    const firstTrip = getDriverFirstTripDateInMonth(id, monthKey);
+    return { name: id.name + twinSuffix(id), ident: id,
+             email: contact.email, phone: contact.phone || id.phone, net, firstTrip };
   })
   .filter(r => r.net > 0)          // only drivers who earned this month
   .sort((a, b) => b.net - a.net);  // highest earner first
@@ -12715,7 +13241,9 @@ function rxBuildRows(fromMs, toMs, opts) {
   if (wantPnL) {
     rows.forEach(r => {
       months.forEach(mk => {
-        const p = computeDriverPnL(r.name, mk);
+        // S7 — the row already carries its identity (it was GROUPED by identity above); passing
+        // r.name here made a same-name pair's P&L resolve to the 'nm:' bucket, i.e. no deal at all.
+        const p = computeDriverPnL(r.ident || r.name, mk);
         r.pnlAcctRent += p.acctRent; r.pnlCarRent += p.carRent; r.pnlSalary += p.salary;
         r.pnlFleetCut += p.fleetCut; r.pnlOther += p.other;   r.pnlBonus  += p.bonusCost;
         r.pnlNet      += p.netPnL;
@@ -13325,7 +13853,7 @@ function dkAnalyticsTierMovement(R) {
   const ups = [], downs = [], held = [];
   R.current.forEach(d => {
     if (d.idle) return;
-    const last = getMonthlyNet(null, d.name, pm0, py);
+    const last = sumDriverNetForMonth(d, pm0, py);   // S7: the roster row IS the identity
     if (last <= 0) return;                       // absent last month → not a "move"
     const lb = R.bandOf(last);
     if (d.band > lb) ups.push({ d, lb, tb: d.band });
@@ -14098,7 +14626,7 @@ function dkTierMoves(R) {
   const ups = [], downs = [];
   R.current.forEach(d => {
     if (d.idle) return;
-    const last = getMonthlyNet(null, d.name, pm0, py);
+    const last = sumDriverNetForMonth(d, pm0, py);   // S7: the roster row IS the identity
     if (last <= 0) return;                        // absent last month → not a "move"
     const lb = bandOf(last);
     if (d.band > lb) ups.push({ d, lb, tb: d.band });
@@ -14266,11 +14794,17 @@ function todayStatDrill(kind, ev) {
     const td = smTierDetail(mk);
     const floor = kind === 'below' ? 0 : Number(kind);
     const band = { '6000': 3, '5000': 2, '4000': 1, 'below': 0 }[kind];
-    const names = kind === 'below' ? td.below.names.slice() : ((td[floor] || {}).names || []);
-    const enriched = names.map(n => ({ n, net: computeDriverNetForPeriod(n, mk) })).sort((a, b) => b.net - a.net);
+    // S7 — smTierDetail carries `idents` beside `names`; drill on the identity so a same-name
+    // pair shows two rows with their own nets, ambassadors and day counts.
+    const bucket = kind === 'below' ? td.below : (td[floor] || {});
+    const bIdents = bucket.idents || [];
+    const items = bIdents.length ? bIdents.map(identityOf) : (bucket.names || []).map(n => identityOf(n));
+    const enriched = items.map(id => ({ id, net: computeDriverNetForPeriod(id, mk) })).sort((a, b) => b.net - a.net);
     // Pill = the tier THIS bucket represents (smTierDetail), filled if banked ≥ floor,
     // hollow if only on pace — so clicking "6K 18" shows 6K pills, not the banked <4K band.
-    list = enriched.map(x => ({ name: x.n, pill: floor ? dkTierPill(band, { hollow: x.net < floor }) : dkTierPill(0), sub: irtAmbTag(x.n) + irtRowMeta(x.n, x.net, floor, mk, R).line, right: sar(x.net) }));
+    list = enriched.map(x => ({ name: x.id.name + twinSuffix(x.id), driverId: x.id.driverId, phone: x.id.phone,
+      pill: floor ? dkTierPill(band, { hollow: x.net < floor }) : dkTierPill(0),
+      sub: irtAmbTag(x.id) + irtRowMeta(x.id, x.net, floor, mk, R).line, right: sar(x.net) }));
     title = kind === 'below' ? '&lt;4k — below pace'
       : smTierIsLanding(mk) ? 'Landing at ' + (Number(kind) / 1000) + 'k (projected)'
       : 'Paid at ' + (Number(kind) / 1000) + 'k rate (Bolt invoice)';
@@ -14293,12 +14827,15 @@ function dkAlertRail(alerts) {
 // are SILENT — nothing throws, nothing looks wrong on screen, the numbers are just quietly
 // attributed to the wrong person:
 //   1. TWINS      two different captains share a name but are different people in Bolt
-//                 (different driver_uuid). Finance still merges them, so their money is
-//                 combined and under-counted until the identity-unification build lands.
+//                 (different driver_uuid). S7 SPLIT their money — Finance now shows one row
+//                 each — so this is no longer a money error; it is kept as a heads-up that two
+//                 rows will read alike, and it is where a PARKED setting is surfaced (below).
 //   2. UNREADABLE a saved profile whose key no live captain resolves to — its ambassador /
 //                 nationality silently does not apply.
 //   3. FROZEN     a profile stamped in the FUTURE. The cloud merge keeps whichever copy is
 //                 newer, so an edit made today can never win and is reverted on the next pull.
+//   4. PARKED     (S7) a setting the migration REFUSED to guess at: one saved deal/ambassador
+//                 for a name two captains share. Neither inherits it — assign it by hand.
 // Surfaced on TODAY (an unlocked tab) because Settings is locked to agents by design.
 // Memoised on the raw history + profile strings, so it costs nothing per render.
 let _dcCache = null, _dcH = null, _dcP = null;
@@ -14306,7 +14843,7 @@ function dkDataConflicts() {
   const rawH = localStorage.getItem('khair_perf_history') || '';
   const rawP = localStorage.getItem(COURIER_PROFILES_KEY) || '';
   if (_dcCache && rawH === _dcH && rawP === _dcP) return _dcCache;
-  const out = { twins: [], unreadable: [], frozen: [], total: 0 };
+  const out = { twins: [], unreadable: [], frozen: [], parked: [], total: 0 };
   try {
     // unique (name, uuid, phone) triples — cheap basis for everything below
     const seen = new Set(), rows = [];
@@ -14328,6 +14865,16 @@ function dkDataConflicts() {
     }
     for (const [nk, ids] of uuidsByName)
       if (ids.size >= 2) out.twins.push({ name: labelByName.get(nk) || nk, count: ids.size });
+    // 1b · PARKED settings (S7) — a stored deal/ambassador the migration would have had to
+    // GUESS to place, so it placed it nowhere. These are the ones that need a human decision;
+    // the twins list above is merely informational now that Finance splits the pair.
+    const pStore = loadCourierProfiles();
+    for (const [k, p] of Object.entries(pStore)) {
+      if (!p || !p._collision) continue;
+      const idents = Array.isArray(p._collisionIdents) ? p._collisionIdents : [];
+      out.parked.push({ key: k, name: (p && p._name) || courierKeyToName(k, p),
+                        amb: (p && p.ambassador) || '—', candidates: idents.length });
+    }
     // 2 · unreadable profiles — a saved setting the app cannot reach
     const reachable = new Set(rows.map(r => courierIdentityKey(r)));
     const store = loadCourierProfiles();
@@ -14336,13 +14883,14 @@ function dkDataConflicts() {
       (p.fleetCut && p.fleetCut.value));
     const now = Date.now();
     for (const [k, p] of Object.entries(store)) {
-      if (meaningful(p) && !reachable.has(k))
+      // A PARKED record is unreachable BY DESIGN (see 1b) — don't report it twice.
+      if (meaningful(p) && !reachable.has(k) && !(p && p._collision))
         out.unreadable.push({ key: k, name: (p && p._name) || k, amb: (p && p.ambassador) || '—' });
       if (p && typeof p._t === 'number' && p._t > now)
         out.frozen.push({ key: k, name: (p && p._name) || k, until: new Date(p._t).toISOString().slice(0, 10) });
     }
   } catch (_) { /* a detector must never break a render */ }
-  out.total = out.twins.length + out.unreadable.length + out.frozen.length;
+  out.total = out.twins.length + out.unreadable.length + out.frozen.length + out.parked.length;
   _dcCache = out; _dcH = rawH; _dcP = rawP;
   return out;
 }
@@ -14358,15 +14906,22 @@ function dkShowDataConflicts(ev) {
        ${items.map(x => `<div class="dk-mini"><span class="nm">${esc(x.name)}</span><span class="rt" style="color:var(--dk-warn)">${esc(x.detail)}</span></div>`).join('')}</div>`
     : '';
   const body =
+    sec('⚠️ Needs your decision — one setting, two captains',
+        'The dashboard found ONE saved deal or ambassador for a name that two different captains share, and would have had to guess which of them it belongs to. It guessed nothing: neither captain has it right now. Open each captain from the Ambassadors picker (they are listed separately, with their phone) and set it on the right one.',
+        c.parked.map(x => ({ name: x.name, detail: 'ambassador: ' + x.amb + ' · ' + x.candidates + ' possible captains' }))) +
     sec('👥 Same name, different captains',
-        'Bolt says these are different people. Captains lists them separately, but Finance still merges them — treat their combined money as unreliable until the identity fix lands.',
+        'Bolt says these are different people, and their money is now counted separately everywhere — nothing to fix. Listed so you know two rows will read alike; each carries the last 3 digits of its phone beside the name.',
         c.twins.map(x => ({ name: x.name, detail: x.count + ' different Bolt accounts' }))) +
     sec('🚫 Settings that do not apply',
         'A saved ambassador or deal the dashboard cannot read. Re-enter it on the captain\'s profile to make it count.',
         c.unreadable.map(x => ({ name: x.name, detail: 'ambassador: ' + x.amb }))) +
     sec('🕒 Edits will not stick',
-        'These records are stamped with a future date (a device had the wrong clock), so a change made today is reverted on the next sync. Needs a one-time repair.',
-        c.frozen.map(x => ({ name: x.name, detail: 'stamped ' + x.until })));
+        'These records are stamped with a future date (a device had the wrong clock), so a change made today is reverted on the next sync. One click repairs them — only the timestamp changes.',
+        c.frozen.map(x => ({ name: x.name, detail: 'stamped ' + x.until }))) +
+    sec('🔀 Two records disagreed — newest kept',
+        'One captain had two saved records with different values. The newer value is in use; the older one is listed so you can confirm the right one is showing.',
+        profileMergeConflicts().map(x => ({ name: x.name, detail: x.field + ': kept "' + x.kept + '", dropped "' + x.discarded + '"' }))) +
+    (c.frozen.length ? `<div style="margin-block-start:8px"><button class="dk-btn sm" onclick="dkCloseOverlay();repairFrozenProfiles()">🕒 Repair ${c.frozen.length} frozen record${c.frozen.length===1?'':'s'}</button></div>` : '');
   dkListOverlay(`Data conflicts · ${c.total} need a look`,
     body || '<div style="color:var(--dk-dim);font-size:12px;padding:6px">Nothing to look at — all captains resolve cleanly.</div>');
 }
@@ -14824,7 +15379,8 @@ document.addEventListener('DOMContentLoaded', () => {
     autoLoadLatest();
     renderHistory();
     renderToday();               // Build-156: Today is the landing tab
-    migrateProfilesToIdentity().then(() => renderToday()).catch(() => {});  // S3: local-only re-key
+    // S3/S7: local-only re-key (profiles then monthly overrides)
+    migrateProfilesToIdentity().then(() => { migrateOverridesToIdentity(); renderToday(); }).catch(() => {});
     if (cloudReady) updateShareUI(binId);
   } else if (cloudReady) {
     fetchFromCloud().then(() => {
@@ -14856,7 +15412,8 @@ document.addEventListener('DOMContentLoaded', () => {
         autoLoadLatest();
         renderHistory();
         renderToday();               // Build-156: Today is the landing tab
-        migrateProfilesToIdentity().then(() => renderToday()).catch(() => {});  // S3: local-only re-key
+        // S3/S7: local-only re-key (profiles then monthly overrides)
+    migrateProfilesToIdentity().then(() => { migrateOverridesToIdentity(); renderToday(); }).catch(() => {});
       }
     });
   }
@@ -15091,12 +15648,17 @@ function smTierDetail(monthKey) {
       // R.drivers (not R.current) so "earned this month, since left" still counts in
       // the bar — same population _tierClassify used (income > 0, even 0-trip rows
       // with adjustment earnings; their proj stays 0 → they land in `below`).
+      // S7 — carry the IDENTITY alongside the display label. The drill overlay re-reads each
+      // driver's net, and a bare name cannot address one of a same-name pair.
       (R.drivers || []).forEach(d => {
         if (!(d.net > 0)) return;
+        const id = identityOf(d);
+        const label = d.name + twinSuffix(id);
         const f = d.band === 3 ? 6000 : d.band === 2 ? 5000 : d.band === 1 ? 4000 : 0;
-        if (!f) { below.count++; below.names.push(d.name); return; }
+        if (!f) { below.count++; below.names.push(label); below.idents = (below.idents||[]).concat([id]); return; }
         if (d.net >= f) st[f].achieved++; else st[f].projected++;
-        st[f].names.push(d.name);
+        st[f].names.push(label);
+        st[f].idents = (st[f].idents || []).concat([id]);
       });
       return { 6000: st[6000], 5000: st[5000], 4000: st[4000], below };
     }
@@ -15137,9 +15699,13 @@ function smCloseOverlay() { const h = document.getElementById('smOverlayHost'); 
 // per-driver proj already computed by computeRosterForMonth (so it can never drift); falls
 // back to mirroring its math (banked + pace×remaining) for a name not on the roster. Returns
 // null when nothing lands (closed / past / all-time → no remaining days to project over).
-function irtLanding(name, net, R) {
+function irtLanding(who, net, R) {
   if (!R || !R.projectable || !R.isCurrentMonth) return null;
-  const d = (R.drivers || []).find(x => x.key === driverKey(name));
+  // S7 — match on the roster row's IDENTITY key first (R.drivers carry `ik`); `key` is still
+  // the name key, which cannot pick one of a same-name pair.
+  const id = identityOf(who);
+  const d = (R.drivers || []).find(x => x.ik && x.ik === id.key)
+         || (!isTwinName(id.name) ? (R.drivers || []).find(x => x.key === driverKey(id.name)) : null);
   if (d) return { proj: d.proj, band: d.band };   // exact — the value Analytics shows
   const elapsed = Math.max(1, R.elapsedDays || 1);  // defensive mirror (roster names ~always hit above)
   const proj = Math.round((net || 0) + ((net || 0) / elapsed) * (R.remainingDays || 0));
@@ -15148,10 +15714,16 @@ function irtLanding(name, net, R) {
 
 // The Bolt-invoice gross for a driver in a CLOSED month = the imported "Max Value" (banked
 // truth), matched by name. null when no invoice is imported or the name isn't on it.
-function irtInvoiceGross(name, monthKey) {
+function irtInvoiceGross(who, monthKey) {
   const imp = boltBonusMonth(monthKey);
   if (!imp) return null;
-  const nk = driverKey(name);
+  const id = identityOf(who);
+  // S7 — the invoice is PHONE-keyed, so prefer the captain's own phone. Falling back to the
+  // name would hand a twin whichever invoice row happened to carry that spelling.
+  const ph9 = normPhoneForMatch(id.phone);
+  if (ph9 && imp[ph9]) return +imp[ph9].gross || 0;
+  if (isTwinName(id.name)) return null;
+  const nk = driverKey(id.name);
   for (const ph in imp) { const d = imp[ph]; if (d && d.name && driverKey(d.name) === nk) return +d.gross || 0; }
   return null;
 }
@@ -15209,8 +15781,10 @@ function smLadderDrill(kind) {
   // Pill = the tier the driver's BUCKET represents (smTierDetail), filled if banked ≥
   // floor, hollow if only on pace — so clicking "6K 18" shows 6K pills, not the banked
   // <4K net-band. floor 0 → the plain <4K pill (below-pace bucket).
-  const row = (name, net, floor) => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(name)}','${R.monthSel}')">
-    <span class="k">${escH(name)} ${floor ? dkTierPill({ 6000: 3, 5000: 2, 4000: 1 }[floor], { hollow: net < floor }) : dkTierPill(0)}${irtAmbTag(name)}${irtRowMeta(name, net, floor, R.monthSel, R).line}</span>
+  // S7 — the row is built from an IDENTITY, so the ambassador tag, day count and landing
+  // projection beside a name all describe the same captain the net belongs to.
+  const row = (id, net, floor) => `<div class="dk-row click" onclick="smCloseOverlay();dkOpenDriver('${jsq(id.name)}','${R.monthSel}','${jsq(id.driverId||'')}','${jsq(id.phone||'')}')">
+    <span class="k">${escH(id.name + twinSuffix(id))} ${floor ? dkTierPill({ 6000: 3, 5000: 2, 4000: 1 }[floor], { hollow: net < floor }) : dkTierPill(0)}${irtAmbTag(id)}${irtRowMeta(id, net, floor, R.monthSel, R).line}</span>
     <span class="v"><span class="dk-num">${fmt(Math.round(net))}</span></span></div>`;
   let rows, title, count;
   if (kind === 'idle' || kind === 'blocked' || kind === 'activated' || kind === 'earning') {
@@ -15225,22 +15799,26 @@ function smLadderDrill(kind) {
       <span class="k">${escH(d.name)} ${dkDriverTierPill(d, R)}</span><span class="v"><span class="dk-num">${fmt(Math.round(d.proj || d.net))}</span></span></div>`).join('');
   } else {
     const td = smTierDetail(R.monthSel);
-    let items;   // [{ n, floor }] — floor tags each name with the tier bucket it fell in
+    // S7 — read each bucket's `idents` (identities) rather than its display names, which now
+    // carry a phone-suffix chip and could not be resolved back to a captain.
+    const bucketItems = (b, floor) => {
+      const ids = (b && b.idents) || null;
+      const src = ids || ((b && b.names) || []).map(n => identityOf(n));
+      return src.map(id => ({ id: identityOf(id), floor }));
+    };
+    let items;   // [{ id, floor }] — floor tags each captain with the tier bucket they fell in
     if (kind === 'tiers') {
-      items = [].concat(
-        td[6000].names.map(n => ({ n, floor: 6000 })),
-        td[5000].names.map(n => ({ n, floor: 5000 })),
-        td[4000].names.map(n => ({ n, floor: 4000 })));
+      items = [].concat(bucketItems(td[6000], 6000), bucketItems(td[5000], 5000), bucketItems(td[4000], 4000));
       title = 'On a tier (4k+)';
     } else if (kind === 'below') {
-      items = td.below.names.map(n => ({ n, floor: 0 })); title = '<4k — below pace';
+      items = bucketItems(td.below, 0); title = '<4k — below pace';
     } else {
-      const f = Number(kind); items = ((td[f] || {}).names || []).map(n => ({ n, floor: f }));
+      const f = Number(kind); items = bucketItems(td[f], f);
       title = smTierIsLanding(R.monthSel) ? 'Landing at ' + (f / 1000) + 'k (projected)' : 'Paid at ' + (f / 1000) + 'k rate (Bolt invoice)';
     }
-    const enriched = items.map(it => ({ n: it.n, floor: it.floor, net: computeDriverNetForPeriod(it.n, R.monthSel) })).sort((a, b) => b.net - a.net);
+    const enriched = items.map(it => ({ id: it.id, floor: it.floor, net: computeDriverNetForPeriod(it.id, R.monthSel) })).sort((a, b) => b.net - a.net);
     count = enriched.length;
-    rows = enriched.map(x => row(x.n, x.net, x.floor)).join('');
+    rows = enriched.map(x => row(x.id, x.net, x.floor)).join('');
   }
   smShowOverlay(`${escH(title)} · ${count} · ${escH(R.periodLabel)}`,
     rows || `<div style="color:var(--dk-dim);font-size:12px;padding:6px">No drivers in this band.</div>`);
