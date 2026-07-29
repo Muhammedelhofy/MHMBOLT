@@ -3985,7 +3985,7 @@ function dkCaptainsDeck() {
     status: dkStatusChip(),
     actions: `<button class="dk-btn" onclick="exportBlockLogCSV()" title="Export the current block report">⬇ Block report</button>`
   });
-  const rail = dkAlertRail(dkAlertRegistry(['blocked', 'slipping', 'stale']));
+  const rail = dkAlertRail(dkAlertRegistry(['blocked', 'slipping', 'stale', 'dataconflict']));
   const ladder = (R && R.projectable) ? `<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
       ${dkTierPill(3, { hollow: true, count: bandCounts[3] })}${dkTierPill(2, { hollow: true, count: bandCounts[2] })}${dkTierPill(1, { hollow: true, count: bandCounts[1] })}${dkTierPill(0, { count: bandCounts[0] })}
     </div>` : `<div class="v">—</div>`;
@@ -13510,7 +13510,7 @@ function renderAnalytics() {
     status: dkStatusChip(),
     actions: `<button class="dk-btn" onclick="openChaseList()">📋 Chase list</button>`
   });
-  const rail = dkAlertRail(dkAlertRegistry(['blocked', 'slipping', 'onboarding-stuck', 'amb-slipping', 'stale']));
+  const rail = dkAlertRail(dkAlertRegistry(['blocked', 'slipping', 'onboarding-stuck', 'amb-slipping', 'stale', 'dataconflict']));
   const strip = `<div class="dk-strip">
     ${statBox(`${t('withActivity')} view`, totalDrivers, 'all')}
     ${statBox('Active · had trips', activeCount, 'active')}
@@ -13872,6 +13872,7 @@ const DK_T = {
   blockedOnBolt:{ en: 'blocked on Bolt — unblock queue', ar: 'محظور على بولت — قائمة فك الحظر' },
   reconcileDue: { en: 'reconcile due',            ar: 'تسوية مستحقة' },
   slipping:     { en: 'drivers slipping (tier / pace / acceptance)', ar: 'سائقون يتراجعون (فئة / وتيرة / قبول)' },
+  dataConflicts:{ en: 'data conflicts — check before trusting these numbers', ar: 'تعارضات بيانات — تحقّق قبل الاعتماد على هذه الأرقام' },
   fleetNet:     { en: 'Fleet net (MTD)',          ar: 'صافي الأسطول (الشهر)' },
   projBonus:    { en: 'Proj. company bonus',      ar: 'عمولة الشركة المتوقعة' },
   tierLadder:   { en: 'Tier ladder (proj.)',      ar: 'سلّم الفئات (متوقع)' },
@@ -14287,6 +14288,88 @@ function dkAlertRail(alerts) {
 // The source registry — each tab shows a subset via `only`. Synchronous sources
 // only (blocked / stale / reconcile / slipping); async ones (onboarding-stuck,
 // cron-failed) are surfaced on Today's onboarding card + Settings System Status.
+// ── DATA-CONFLICT DETECTOR (Build-194) ───────────────────────────────────────
+// The ops team runs this dashboard unsupervised, and the failure modes that have cost the most
+// are SILENT — nothing throws, nothing looks wrong on screen, the numbers are just quietly
+// attributed to the wrong person:
+//   1. TWINS      two different captains share a name but are different people in Bolt
+//                 (different driver_uuid). Finance still merges them, so their money is
+//                 combined and under-counted until the identity-unification build lands.
+//   2. UNREADABLE a saved profile whose key no live captain resolves to — its ambassador /
+//                 nationality silently does not apply.
+//   3. FROZEN     a profile stamped in the FUTURE. The cloud merge keeps whichever copy is
+//                 newer, so an edit made today can never win and is reverted on the next pull.
+// Surfaced on TODAY (an unlocked tab) because Settings is locked to agents by design.
+// Memoised on the raw history + profile strings, so it costs nothing per render.
+let _dcCache = null, _dcH = null, _dcP = null;
+function dkDataConflicts() {
+  const rawH = localStorage.getItem('khair_perf_history') || '';
+  const rawP = localStorage.getItem(COURIER_PROFILES_KEY) || '';
+  if (_dcCache && rawH === _dcH && rawP === _dcP) return _dcCache;
+  const out = { twins: [], unreadable: [], frozen: [], total: 0 };
+  try {
+    // unique (name, uuid, phone) triples — cheap basis for everything below
+    const seen = new Set(), rows = [];
+    for (const h of getHistory()) for (const d of (h.drivers || [])) {
+      if (!d.name) continue;
+      const sig = d.name + '|' + (d.driverId || '') + '|' + (d.phone || '');
+      if (seen.has(sig)) continue;
+      seen.add(sig);
+      rows.push({ name: d.name, driverId: d.driverId || '', phone: d.phone || '' });
+    }
+    // 1 · twins — one name key carrying two or more distinct Bolt uuids
+    const uuidsByName = new Map(), labelByName = new Map();
+    for (const r of rows) {
+      const nk = driverKey(r.name); if (!nk) continue;
+      if (!labelByName.has(nk)) labelByName.set(nk, r.name);
+      if (!r.driverId) continue;
+      if (!uuidsByName.has(nk)) uuidsByName.set(nk, new Set());
+      uuidsByName.get(nk).add(r.driverId);
+    }
+    for (const [nk, ids] of uuidsByName)
+      if (ids.size >= 2) out.twins.push({ name: labelByName.get(nk) || nk, count: ids.size });
+    // 2 · unreadable profiles — a saved setting the app cannot reach
+    const reachable = new Set(rows.map(r => courierIdentityKey(r)));
+    const store = loadCourierProfiles();
+    const meaningful = p => p && (p.ambassador || p.nationality || p.salary || p.bonusSplitPct ||
+      (p.accountRent && p.accountRent.amount) || (p.carRent && p.carRent.amount) ||
+      (p.fleetCut && p.fleetCut.value));
+    const now = Date.now();
+    for (const [k, p] of Object.entries(store)) {
+      if (meaningful(p) && !reachable.has(k))
+        out.unreadable.push({ key: k, name: (p && p._name) || k, amb: (p && p.ambassador) || '—' });
+      if (p && typeof p._t === 'number' && p._t > now)
+        out.frozen.push({ key: k, name: (p && p._name) || k, until: new Date(p._t).toISOString().slice(0, 10) });
+    }
+  } catch (_) { /* a detector must never break a render */ }
+  out.total = out.twins.length + out.unreadable.length + out.frozen.length;
+  _dcCache = out; _dcH = rawH; _dcP = rawP;
+  return out;
+}
+// The click-through list behind the alert-rail row.
+function dkShowDataConflicts(ev) {
+  if (ev) ev.stopPropagation();
+  const c = dkDataConflicts();
+  // `he` is scoped inside renderBlocks, not global — escape locally.
+  const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const sec = (title, note, items) => items.length
+    ? `<div style="margin-block-start:12px"><div style="font-size:12px;font-weight:700;color:var(--dk-text)">${title} · ${items.length}</div>
+       <div style="font-size:11px;color:var(--dk-mut);margin-block:3px 6px;line-height:1.5">${note}</div>
+       ${items.map(x => `<div class="dk-mini"><span class="nm">${esc(x.name)}</span><span class="rt" style="color:var(--dk-warn)">${esc(x.detail)}</span></div>`).join('')}</div>`
+    : '';
+  const body =
+    sec('👥 Same name, different captains',
+        'Bolt says these are different people. Captains lists them separately, but Finance still merges them — treat their combined money as unreliable until the identity fix lands.',
+        c.twins.map(x => ({ name: x.name, detail: x.count + ' different Bolt accounts' }))) +
+    sec('🚫 Settings that do not apply',
+        'A saved ambassador or deal the dashboard cannot read. Re-enter it on the captain\'s profile to make it count.',
+        c.unreadable.map(x => ({ name: x.name, detail: 'ambassador: ' + x.amb }))) +
+    sec('🕒 Edits will not stick',
+        'These records are stamped with a future date (a device had the wrong clock), so a change made today is reverted on the next sync. Needs a one-time repair.',
+        c.frozen.map(x => ({ name: x.name, detail: 'stamped ' + x.until })));
+  dkListOverlay(`Data conflicts · ${c.total} need a look`,
+    body || '<div style="color:var(--dk-dim);font-size:12px;padding:6px">Nothing to look at — all captains resolve cleanly.</div>');
+}
 function dkAlertRegistry(only) {
   const want = only ? new Set(only) : null, on = k => !want || want.has(k), out = [];
   const R = computeRosterForMonth('');
@@ -14302,6 +14385,11 @@ function dkAlertRegistry(only) {
   }
   if (on('slipping')) { const slip = dkTodaySlipping(R, computeTrailingWindows());
     if (slip.count) out.push({ src:'slipping', cls:'warn', n:slip.count, txt:t('slipping'), go:"todayGo('blocks')" }); }
+  // Build-194 · silent data conflicts (twins / unreadable settings / frozen records). Shown on
+  // an UNLOCKED tab on purpose: Settings is closed to agents, and these are exactly the things
+  // an operator needs to notice before trusting a number.
+  if (on('dataconflict')) { const c = dkDataConflicts();
+    if (c.total) out.push({ src:'dataconflict', cls:'warn', n:c.total, txt:t('dataConflicts'), go:'dkShowDataConflicts(event)' }); }
   // S3 · Onboarding contributes "stuck > SLA" — reads the stage-snapshot cache other tabs
   // prime; an async source, so it contributes nothing until loaded (never blocks the rail).
   if (on('onboarding-stuck') && Array.isArray(stageSnapshotCache) && stageSnapshotCache.length) {
@@ -14531,6 +14619,10 @@ function renderToday() {
   if (F && F.stale) alerts.push({ cls:'warn', n:F.pulse.daysAgo + 'd', txt:t('staleData'), go:"todayGo('settings')" });
   if (reconDue) alerts.push({ cls:'warn', n:monthLabel(prevKey), txt:t('reconcileDue'), go:'todayGoExec(event)' });
   if (slip.count) alerts.push({ cls:'warn', n:slip.count, txt:t('slipping'), go:'dkToggleSlip(event)' });
+  // Build-194 · silent data conflicts. Today is the ops team's front door AND stays unlocked,
+  // so this is the one place an agent is guaranteed to see that a number needs checking.
+  const _dc = dkDataConflicts();
+  if (_dc.total) alerts.push({ cls:'warn', n:_dc.total, txt:t('dataConflicts'), go:'dkShowDataConflicts(event)' });
   const rail = dkAlertRail(alerts);   // A3 · one renderer, shared with the S2 tabs
 
   // ── Stat strip — six instruments, each drilling to its own driver list → A1 panel.

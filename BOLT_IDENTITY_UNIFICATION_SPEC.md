@@ -1,11 +1,11 @@
 # Bolt dashboard — IDENTITY UNIFICATION (next session kickoff)
 
-**Model / Effort:** Fable 5 · high — this is a drift fix on money-critical code with many call
-sites, exactly the class Fable is reserved for. An Opus·high session can do it if Fable isn't
-available, but do NOT do it as a quick patch at the end of a long session.
+**Model / Effort:** **Opus · max effort.** Fable is not available. Give it a full session with
+nothing else queued — this is a drift fix on money-critical code with many call sites, not a
+patch. Do NOT attempt it at the end of a long session.
 
 **Repo:** `MHMBOLT` — `C:\Users\m7ofy\dev\Claude\Projects\Bolt`, single file `index.html`
-**Branch off `origin/main`** into a worktree (`Bolt-wt-identity`). `main` is at Build-193.
+**Branch off `origin/main`** into a worktree (`Bolt-wt-identity`). `main` is at Build-194.
 **Prod:** https://mhmbolt.vercel.app (push to main auto-deploys — needs his explicit OK).
 
 ---
@@ -96,6 +96,14 @@ unless migrated. Requirements:
 - `computeRosterForMonth` has a **current-tick cache** (Build-190). It cannot go stale across
   renders, but don't add a longer-lived cache without a dependency story.
 - **`api/` is at exactly 12 files = the Vercel Hobby cap.** A 13th silently fails the deploy.
+- **A direct write to `fleet_data` in Supabase does NOT survive.** `syncToCloud` pushes the
+  WHOLE local `khair_courier_profiles` blob, so the next push from his browser replaces
+  anything written server-side (this happened 2026-07-29: two restored tags were wiped by his
+  next Pull/push cycle). **The browser is the source of truth in practice** — repairs must run
+  IN the dashboard (a migration button) or be made by hand in the UI, never by SQL.
+- **`dkDataConflicts()` (Build-194) already detects twins / unreadable / frozen profiles** and
+  feeds the Today + Captains alert rails. Reuse it as the migration's "needs a human" list
+  rather than writing a second detector; retire the twin check only once Finance is identity-keyed.
 
 ## 6. Acceptance criteria
 
