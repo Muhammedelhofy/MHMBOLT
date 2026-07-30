@@ -122,12 +122,45 @@ Backups, both written before the first change:
 `khair_courier_profiles_backup_preS3`, `khair_courier_overrides_backup_preS7`.
 Restore with `restoreProfilesPreS3()` / `restoreOverridesPreS7()` in the console.
 
-## 8 · Not verified, and why
+## 8 · Verified on prod after deploy
 
-- **The rendered twin chip was never seen on screen.** The browser preview pane wedged partway
-  through this session (the known hang on this page) and did not recover. The chip is covered by
-  unit tests at the function level and its CSS is a plain `<span class="twin-chip">`, but
-  section 2 above is a real check, not a formality — do it before this goes to the team.
+Both builds are LIVE: `fb4dd98` (Build-195) and `2a1696e` (Build-196).
+
+- **Twin chip: confirmed rendering on prod.** Exactly **10 chips across 227 Captains rows** — the
+  5 pairs × 2, and nothing else. Observed: `Turki Aldawsari ·821` / `TURKI ALDAWSARI ·152`,
+  `Meshari Alanazi ·036` / `MESHARI ALANAZI ·495`, `Khalid Asiri ·867`,
+  `Mohammed Alsubaie ·081`, `ABDULLAH ALOTAIBI ·526`.
+  ⚠️ Cosmetic wrinkle: a twin with **no phone in the data** falls back to a uuid stub, so a pair
+  can read `·867` / `#9018` instead of two phone suffixes. Readable and still unambiguous, but
+  inconsistent within the pair — say the word if you want that fallback changed.
+- **Deployed script parses**; `api/` is still exactly **12** functions (the Hobby cap — a 13th
+  silently fails the whole deploy); health OK: Bolt connected, Supabase connected, last cron
+  720 orders / 209 drivers.
+- **Migration on prod:** 197 records — 191 `id:` · 1 `ph:` · 5 parked; both schema markers at
+  `s7-uuid-identity`.
+
+### 🔴 A render regression was found on prod and fixed (Build-196)
+
+First prod measurement came back **Captains 3240ms, Today 3087ms** against the ~219ms / ~51ms
+this spec asks for. Cause: making `driverFirstSeenMs` identity-correct swapped a cheap name
+compare for `driverRowMatches` inside a full-history scan, and the Captains table calls it once
+per rendered row. Replaced with a one-pass index: **2937ms → 13ms over 221 captains (230x)**,
+proven by `tests/identity_perf_verify.js` against your real data, with identical results for all
+211 unambiguous captains.
+
+**One number I still owe you.** I could not re-measure end-to-end `renderCaptains()` after the
+fix — the browser pane wedged and never came back. The 2.9s component is provably gone, but paste
+this on prod and tell me what it says:
+
+```javascript
+renderCaptains(); renderToday(); console.time('captains'); renderCaptains(); console.timeEnd('captains'); console.time('today'); renderToday(); console.timeEnd('today');
+```
+
+## 9 · Still not verified
+
+- **The visual/interaction half of section 6** — the company-data lock actually hiding its 6 tabs,
+  mobile search, and the tier ladder / ambassador counts on screen. Their behaviour is covered at
+  the function level; how they LOOK with this code running is not.
 - **`no money deal is lost` passed vacuously** on your data: not one of the 352 profiles carries
-  a salary, rent or fleet-cut value, so there was nothing for that check to protect. It will
-  start protecting something the first time a deal is entered.
+  a salary, rent or fleet-cut value, so there was nothing for that check to protect. It starts
+  protecting something the first time a deal is entered.

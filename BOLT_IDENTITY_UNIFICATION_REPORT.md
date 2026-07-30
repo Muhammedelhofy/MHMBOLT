@@ -3,7 +3,8 @@
 **Spec:** `BOLT_IDENTITY_UNIFICATION_SPEC.md`
 **Branch:** `feat/identity-unification` off `origin/main` @ `c6ebfda` (Build-194)
 **Model / effort:** Opus · max
-**Deployed:** NO. Not pushed, not merged. Prod is still Build-194.
+**Deployed:** ✅ LIVE on prod — `fb4dd98` (Build-195) + `2a1696e` (Build-196, perf fix), on his
+explicit OK. Verified against the deployed bytes, not the local file.
 **Live test:** `tests/BUILD195_LIVE_TEST.md`
 
 ---
@@ -91,10 +92,26 @@ every fixture test before this was found.
 
 **On #5:** the arithmetic regressions are covered (fleet-wide conservation holds for all three
 months; the locked-month gap is fully attributable to Bolt's locks; the tier ladder, split % and
-lock paths are exercised). What is **not** confirmed is the **visual/interaction** half — the
-lock's hidden tabs, mobile search, and the render timings — because the browser preview pane
-wedged partway through this session and did not recover. Those are section 6 of the live-test doc
-and need a human pass before this goes to the ops team.
+lock paths are exercised), and the **render timings caught a real regression I had introduced**
+(see §4b). What is still **not** confirmed is the **visual/interaction** half — the lock's hidden
+tabs, mobile search, the on-screen tier ladder — because the browser pane wedged and did not
+recover. Section 6 of the live-test doc, needs a human pass before the ops team leans on it.
+
+## 4b · 🔴 The render regression prod caught (Build-196)
+
+The first prod measurement came back **Captains 3240ms / Today 3087ms** against the ~219ms / ~51ms
+this spec pins. Making `driverFirstSeenMs` identity-correct had replaced a cheap name compare with
+`driverRowMatches` **inside a full-history scan**, and the Captains table calls it once per
+rendered row — 6.44ms × 227 rows ≈ 1.5s, twice over.
+
+Fixed with `firstSeenIndex()`: one pass over history building `identity → earliest day`, memoised
+on the raw history string like `getProfileResolver`. **2937ms → 13ms over 221 captains (230x)**,
+and it agrees with the old implementation for all 211 unambiguous captains — so it is faster than
+the code I replaced *and* than the original, while being identity-correct.
+
+Lesson worth keeping: a correctness fix that swaps a cheap predicate for an expensive one inside a
+loop is a perf change too. The unit tests were all green and said nothing about this; only
+measuring the real render on real data did.
 
 ## 5 · Tests
 
@@ -102,6 +119,7 @@ and need a human pass before this goes to the ops team.
 |---|---|---|
 | `tests/identity_unification.test.js` | 55 assertions over functions **extracted from index.html** (same technique as `codec_parity.test.js`), so it cannot pass against drifted code | **55/55** |
 | `tests/identity_live_verify.js` | the same functions run against the **real Supabase `fleet_data` record** | **32/32** |
+| `tests/identity_perf_verify.js` | old vs new `driverFirstSeenMs` over the real history — agreement + speed | **4/4** |
 
 No PowerShell mirror. The PS-mirror convention exists to catch drift between two implementations
 of one compute path; here there is only one implementation, and the tests execute it directly out
@@ -121,13 +139,34 @@ Both are pre-existing, outside this spec, and each would need its own decision:
 2. **The Saudi→foreigner name map stays name-keyed.** Its only source is an Excel with no phone
    or uuid column, so a colliding name cannot be split without a new column in that upload.
    Already documented in the file.
+3. **`loadCourierProfiles()` re-parses the whole profile store on every call** (~0.31ms), and the
+   Captains render calls it several times per row — roughly 250-280ms of a render. Pre-existing.
+   A parse cache would fix it, but the returned profile objects are MUTATED by callers before
+   `upsertCourierProfile`, so caching introduces an aliasing hazard in money code. Not worth it
+   without its own think; flagged rather than done.
+4. **The twin chip falls back to a uuid stub when a captain has no phone** in the data, so a pair
+   can read `·867` / `#9018` instead of two phone suffixes. Cosmetic, still unambiguous.
 
 ## 7 · What needs you
 
 | | Item |
 |---|---|
-| 🔴 | Walk `tests/BUILD195_LIVE_TEST.md` sections 1-4 — especially the visual checks the wedged preview pane could not confirm |
+| 🔴 | Paste the render-timing snippet on prod (live-test §8) — it is the one number I owe you |
+| 🔴 | Walk `tests/BUILD195_LIVE_TEST.md` §6 — the visual half the wedged pane could not confirm |
 | 🔴 | Resolve the 5 parked ambassadors (you already know Meshari `·036` = Menna Mahmoud) |
 | 🔴 | Click the frozen-record repair when you are ready — 34 records |
 | 🔴 | Confirm `nawaf albahwan` should be `Khaled Met3eb`, not `Boda` |
-| 🔴 | Deploy decision. Nothing is pushed. Push to `main` auto-deploys prod |
+| 🟢 | Deploy is DONE — `fb4dd98` + `2a1696e` live and verified against the deployed bytes |
+
+## 8 · Rollback, if it is ever needed
+
+```bash
+git -C "C:/Users/m7ofy/dev/Claude/Projects/Bolt" revert --no-edit 2a1696e fb4dd98 && git -C "C:/Users/m7ofy/dev/Claude/Projects/Bolt" push origin main
+```
+
+That returns prod to Build-194. The stored profiles are re-keyed independently of the code, so
+also restore them from the browser console on any device that has migrated:
+
+```javascript
+restoreProfilesPreS3(); restoreOverridesPreS7(); location.reload();
+```
