@@ -2553,8 +2553,8 @@ function invalidateNetCache() {
   _netCache.clear();
   // The month/day index self-heals on the raw history string, but drop it here too so one call
   // clears every derived net figure — a future caller should not have to know which is which.
-  _monthNetIdx = null; _monthNetIdxRaw = null;
-  _firstSeenIdx = null; _firstSeenIdxRaw = null;
+  _monthNetIdx = null; _monthNetIdxSrc = null; _monthNetIdxRes = null;
+  _firstSeenIdx = null; _firstSeenIdxSrc = null; _firstSeenIdxRes = null;
 }
 // S7 — `who` is an IDENTITY (identityOf) or, for back-compat, a bare driver name. The cache
 // keys on the identity key, not the name key: two captains sharing a name have two different
@@ -2599,16 +2599,27 @@ function sumDriverNetForMonth(who, month, year, driverId) {
 // the same two de-dupes the scan did: one history entry per period, and one row per account
 // per day (a person may hold two Bolt accounts — Model B — and both are their earnings).
 // Memoised on the raw history string, like getProfileResolver and firstSeenIndex.
-let _monthNetIdx = null, _monthNetIdxRaw = null;
+// Staleness is checked against the history CACHE ARRAY by reference (_histCacheArr), never by
+// re-reading localStorage. `khair_perf_history` is a 2.2MB string on his device: memoising on its
+// CONTENT meant a 2.2MB read + full string compare on every lookup, and these are leaf functions
+// called once per captain — that alone put Captains back up at 3.8s. A reference compare is O(1).
+// Correctness rests on saveHistory() (the only writer) calling invalidateNetCache(), plus the
+// reference check as a second line of defence if a future writer ever forgets.
+// The token also includes the RESOLVER object (_profRes read directly, not through its getter,
+// which does the expensive read): the index stores courierIdentityKey values, and a resolver
+// rebuild can legitimately relabel a captain from 'ph:' to 'id:' once a sheet row ties their
+// phone to a uuid. Without this the index would keep pre-rebuild keys while every lookup used
+// post-rebuild ones, and a captain's net would silently read 0.
+let _monthNetIdx = null, _monthNetIdxSrc = null, _monthNetIdxRes = null;
 function monthlyNetIndex() {
-  const raw = localStorage.getItem('khair_perf_history') || '';
-  if (_monthNetIdx && raw === _monthNetIdxRaw) return _monthNetIdx;
+  if (_monthNetIdx && _monthNetIdxSrc === _histCacheArr && _monthNetIdxRes === _profRes) return _monthNetIdx;
   const idx = new Map();                       // 'year-month0' -> Map(identityKey -> {net, days})
   const periodsSeen = new Map();               // 'year-month0' -> Set(period)
   const acctSig = d => String(d.driverId || '').trim()
     || ('p' + String(d.phone || '').replace(/\D/g, '').slice(-9))
     || ('n' + driverKey(d.name));
-  for (const h of getHistory()) {
+  const hist = getHistory();                   // one read; also refreshes _histCacheArr
+  for (const h of hist) {
     const my = entryMonthYear(h);
     if (!my) continue;
     const mk = my.year + '-' + my.month;
@@ -2637,7 +2648,7 @@ function monthlyNetIndex() {
     }
     workedToday.forEach(k => { m.get(k).days++; });
   }
-  _monthNetIdx = idx; _monthNetIdxRaw = raw;
+  _monthNetIdx = idx; _monthNetIdxSrc = _histCacheArr; _monthNetIdxRes = _profRes;
   return idx;
 }
 function monthlyNetEntry(who, month, year, driverId, phone) {
@@ -5426,6 +5437,7 @@ function toast(msg) {
 }
 function clearAllData() {
   if (!confirm('Clear all history? Cannot be undone.')) return;
+  invalidateNetCache();          // the net/day and first-seen indexes are derived from history
   localStorage.removeItem('khair_perf_history');
   currentDrivers=null; currentPeriod=''; currentPeriodInfo=null;
   summarySelectedDays=null; captainSearch=''; sumPeriodMode='all'; sumMonthFilter='all'; sumModelFilter='all'; sumFunnelFilter='all'; sumMonthInitDone=false;
@@ -8196,12 +8208,13 @@ function computeTransferStatus(driverName, cycleDateYMD, log, driverId, phone) {
 // a single pass costs one traversal for the whole render instead of one per captain, so it is both
 // identity-correct and faster than the original. Memoised on the raw history string, exactly like
 // getProfileResolver, so it cannot go stale.
-let _firstSeenIdx = null, _firstSeenIdxRaw = null;
+// Same memo discipline as monthlyNetIndex — reference compare, never a 2.2MB content read.
+let _firstSeenIdx = null, _firstSeenIdxSrc = null, _firstSeenIdxRes = null;
 function firstSeenIndex() {
-  const raw = localStorage.getItem('khair_perf_history') || '';
-  if (_firstSeenIdx && raw === _firstSeenIdxRaw) return _firstSeenIdx;
+  if (_firstSeenIdx && _firstSeenIdxSrc === _histCacheArr && _firstSeenIdxRes === _profRes) return _firstSeenIdx;
   const idx = new Map();
-  for (const h of getHistory()) {
+  const hist = getHistory();                   // one read; also refreshes _histCacheArr
+  for (const h of hist) {
     const ms = periodSortKey(h.period);
     if (!ms) continue;
     for (const d of (h.drivers || [])) {
@@ -8211,7 +8224,7 @@ function firstSeenIndex() {
       if (cur === undefined || ms < cur) idx.set(k, ms);
     }
   }
-  _firstSeenIdx = idx; _firstSeenIdxRaw = raw;
+  _firstSeenIdx = idx; _firstSeenIdxSrc = _histCacheArr; _firstSeenIdxRes = _profRes;
   return idx;
 }
 function driverFirstSeenMs(who) {

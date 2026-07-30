@@ -119,7 +119,8 @@ function buildSandbox(history) {
     const _r2 = v => Math.round((v || 0) * 100) / 100;
     const fmt = v => String(Math.round(v || 0));
     const toast = () => {};
-    function getHistory() { return __history; }
+    let _histCacheArr = null;                    // mirrors the real getHistory cache handshake
+    function getHistory() { _histCacheArr = __history; return __history; }
     function periodSortKey(p) {
       const m = String(p||'').match(/(\\d{1,2})\\s(\\w{3})\\s(\\d{4})/g);
       if (!m || !m.length) return 0;
@@ -129,14 +130,14 @@ function buildSandbox(history) {
     let _netCache = new Map();
     let _profRes = null, _profResHraw = null, _profResCd = -1, _profResSc = -1;
     let _allIdentCache = null, _allIdentH = null, _allIdentP = null;
-    let _monthNetIdx = null, _monthNetIdxRaw = null;
-    let _firstSeenIdx = null, _firstSeenIdxRaw = null;
+    let _monthNetIdx = null, _monthNetIdxSrc = null, _monthNetIdxRes = null;
+    let _firstSeenIdx = null, _firstSeenIdxSrc = null, _firstSeenIdxRes = null;
   `;
   const body = preamble
     + "\n" + CONSTS.map(grabConst).join("\n")
     + "\n" + FUNCS.map(grabFunction).join("\n")
     + "\n return { " + FUNCS.join(", ")
-    + ", resetCaches: () => { _netCache = new Map(); _profRes = null; _profResHraw = null; _profResCd = -1; _profResSc = -1; _allIdentCache = null; _allIdentH = null; _allIdentP = null; _monthNetIdx = null; _monthNetIdxRaw = null; _firstSeenIdx = null; _firstSeenIdxRaw = null; }"
+    + ", resetCaches: () => { _netCache = new Map(); _profRes = null; _profResHraw = null; _profResCd = -1; _profResSc = -1; _allIdentCache = null; _allIdentH = null; _allIdentP = null; _monthNetIdx = null; _monthNetIdxSrc = null; _monthNetIdxRes = null; _firstSeenIdx = null; _firstSeenIdxSrc = null; _firstSeenIdxRes = null; }"
     + ", COURIER_PROFILES_KEY, COURIER_OVERRIDES_KEY, PROFILE_SCHEMA_S7, ls: __ls };";
   // eslint-disable-next-line no-new-func
   return new Function("__ls", "__history", body)(localStorage, history);

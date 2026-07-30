@@ -86,7 +86,8 @@ function buildSandbox(history) {
     const MONTH_MAP = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
     const sN = v => { const n = Number(v); return isNaN(n) ? 0 : n; };
     const _r2 = v => Math.round((v || 0) * 100) / 100;
-    function getHistory() { return __history; }
+    let _histCacheArr = null;                    // mirrors the real getHistory cache handshake
+    function getHistory() { _histCacheArr = __history; return __history; }
     function periodSortKey(p) {
       const m = String(p||'').match(/(\\d{1,2})\\s(\\w{3})\\s(\\d{4})/g);
       if (!m || !m.length) return 0;
@@ -94,10 +95,10 @@ function buildSandbox(history) {
       return Date.UTC(+last[3], MONTH_MAP[last[2]] || 0, +last[1]);
     }
     let _profRes = null, _profResHraw = null, _profResCd = -1, _profResSc = -1;
-    let _firstSeenIdx = null, _firstSeenIdxRaw = null;
-    let _monthNetIdx = null, _monthNetIdxRaw = null;
+    let _firstSeenIdx = null, _firstSeenIdxSrc = null, _firstSeenIdxRes = null;
+    let _monthNetIdx = null, _monthNetIdxSrc = null, _monthNetIdxRes = null;
     let _netCache = new Map();
-    function invalidateNetCache() { _netCache = new Map(); _monthNetIdx = null; _monthNetIdxRaw = null; _firstSeenIdx = null; _firstSeenIdxRaw = null; }
+    function invalidateNetCache() { _netCache = new Map(); _monthNetIdx = null; _monthNetIdxSrc = null; _monthNetIdxRes = null; _firstSeenIdx = null; _firstSeenIdxSrc = null; _firstSeenIdxRes = null; }
     // The PRE-index implementations, kept here ONLY so the two can be compared. If these ever
     // disagree with the indexed versions on real data, the index has a bug.
     function driverFirstSeenMs_scan(who) {
@@ -147,7 +148,7 @@ function buildSandbox(history) {
   const body = preamble + "\n" + CONSTS.map(grabConst).join("\n") + "\n" + FUNCS.map(grabFunction).join("\n")
     + "\n return { " + FUNCS.join(", ")
     + ", driverFirstSeenMs_scan, rawDailyNetForMonth_scan, daysWorkedForMonth_scan, ls: __ls,"
-    + " resetIdx: () => { _firstSeenIdx = null; _firstSeenIdxRaw = null; _monthNetIdx = null; _monthNetIdxRaw = null; } };";
+    + " resetIdx: () => { _firstSeenIdx = null; _firstSeenIdxSrc = null; _firstSeenIdxRes = null; _monthNetIdx = null; _monthNetIdxSrc = null; _monthNetIdxRes = null; } };";
   return new Function("__ls", "__history", body)(ls, history);
 }
 
