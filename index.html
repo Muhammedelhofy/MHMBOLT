@@ -14957,10 +14957,22 @@ function dkDataConflicts() {
     // 1b · PARKED settings (S7) — a stored deal/ambassador the migration would have had to
     // GUESS to place, so it placed it nowhere. These are the ones that need a human decision;
     // the twins list above is merely informational now that Finance splits the pair.
+    //
+    // RESOLVED-DETECTION: a parked record is a leftover from migration and nothing else ever
+    // touches it — assigning the ambassador on the correct twin via the picker writes to THAT
+    // twin's own id:/ph: record, not to this one. Without checking the candidates here, a parked
+    // entry stayed on this list forever even after being correctly resolved, because the two
+    // records are otherwise unrelated. If any candidate identity now carries a real ambassador,
+    // a human has already made the call for this name — stop surfacing it.
     const pStore = loadCourierProfiles();
     for (const [k, p] of Object.entries(pStore)) {
       if (!p || !p._collision) continue;
       const idents = Array.isArray(p._collisionIdents) ? p._collisionIdents : [];
+      const alreadyResolved = idents.some(idk => {
+        const rec = pStore[idk];
+        return rec && rec.ambassador && String(rec.ambassador).trim();
+      });
+      if (alreadyResolved) continue;
       out.parked.push({ key: k, name: (p && p._name) || courierKeyToName(k, p),
                         amb: (p && p.ambassador) || '—', candidates: idents.length });
     }

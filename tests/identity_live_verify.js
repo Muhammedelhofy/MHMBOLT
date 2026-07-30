@@ -94,6 +94,7 @@ const FUNCS = [
   "getAllDriverIdentities", "identityByKey",
   "_profFieldIsBlank", "mergeProfileRecords", "rekeyProfileStore", "rekeyOverrideStore",
   "frozenProfileRecords", "unpackDriver", "unpackEntry", "readCloudHistory",
+  "dkDataConflicts",
 ];
 const CONSTS = [
   "COURIER_PROFILES_KEY", "COURIER_OVERRIDES_KEY", "COURIER_PROFILES_SCHEMA_KEY",
@@ -132,12 +133,13 @@ function buildSandbox(history) {
     let _allIdentCache = null, _allIdentH = null, _allIdentP = null;
     let _monthNetIdx = null, _monthNetIdxSrc = null, _monthNetIdxRes = null;
     let _firstSeenIdx = null, _firstSeenIdxSrc = null, _firstSeenIdxRes = null;
+    let _dcCache = null, _dcH = null, _dcP = null;
   `;
   const body = preamble
     + "\n" + CONSTS.map(grabConst).join("\n")
     + "\n" + FUNCS.map(grabFunction).join("\n")
     + "\n return { " + FUNCS.join(", ")
-    + ", resetCaches: () => { _netCache = new Map(); _profRes = null; _profResSrc = null; _profResCd = -1; _profResSc = -1; _allIdentCache = null; _allIdentH = null; _allIdentP = null; _monthNetIdx = null; _monthNetIdxSrc = null; _monthNetIdxRes = null; _firstSeenIdx = null; _firstSeenIdxSrc = null; _firstSeenIdxRes = null; }"
+    + ", resetCaches: () => { _netCache = new Map(); _profRes = null; _profResSrc = null; _profResCd = -1; _profResSc = -1; _allIdentCache = null; _allIdentH = null; _allIdentP = null; _monthNetIdx = null; _monthNetIdxSrc = null; _monthNetIdxRes = null; _firstSeenIdx = null; _firstSeenIdxSrc = null; _firstSeenIdxRes = null; _dcCache = null; _dcH = null; _dcP = null; }"
     + ", COURIER_PROFILES_KEY, COURIER_OVERRIDES_KEY, PROFILE_SCHEMA_S7, ls: __ls };";
   // eslint-disable-next-line no-new-func
   return new Function("__ls", "__history", body)(localStorage, history);
@@ -421,6 +423,27 @@ async function main() {
   const frozen = S.frozenProfileRecords();
   out.frozen = frozen.length;
   check("future-stamped records are detected and counted for the repair button", () => frozen.length + " frozen (latest stamp " + (frozen[0] ? frozen[0].until : "n/a") + ")");
+
+  // ── data-conflicts panel · the "still parked after resolving" bug (2026-07-30) ───
+  // He assigned the ambassador on the correct twin via the picker, but the panel kept listing
+  // the pair as "needs your decision" — the parked record and the twin's own record are
+  // unrelated storage, and nothing told the parked one it had been handled. The fix: a parked
+  // entry drops off the list once ANY of its candidate identities carries a real ambassador.
+  log("\nData-conflicts panel (2026-07-30 fix — resolved entries must clear)");
+  S.ls.setItem(S.COURIER_PROFILES_KEY, JSON.stringify(mig.migrated));
+  S.resetCaches();
+  const conflicts = S.dkDataConflicts();
+  out.dataConflicts = { parked: conflicts.parked.length, twins: conflicts.twins.length, total: conflicts.total };
+  check("no parked entry is still listed if any of its candidates already has an ambassador", () => {
+    const store = mig.migrated;
+    const stale = conflicts.parked.filter(p => {
+      const rec = store[p.key];
+      const idents = (rec && Array.isArray(rec._collisionIdents)) ? rec._collisionIdents : [];
+      return idents.some(idk => store[idk] && store[idk].ambassador && String(store[idk].ambassador).trim());
+    });
+    if (stale.length) throw new Error(stale.length + " parked entries are resolved but still showing: " + stale.map(s => s.name).join(", "));
+    return conflicts.parked.length + " parked entries currently listed, none of them already resolved";
+  });
 
   log("\n" + (fails === 0 ? "ALL GREEN" : "RED") + " — " + out.checks.filter(c => c.ok).length + " passed, " + fails + " failed");
   if (wantJson) console.log(JSON.stringify(out, null, 1));

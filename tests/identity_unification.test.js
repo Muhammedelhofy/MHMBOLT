@@ -111,6 +111,8 @@ const FUNCS = [
   "_profFieldIsBlank", "mergeProfileRecords", "rekeyProfileStore", "rekeyOverrideStore", "frozenProfileRecords",
   // merge
   "mergeStampedByKey",
+  // data-conflicts panel
+  "dkDataConflicts",
 ];
 const CONSTS = [
   "COURIER_PROFILES_KEY", "COURIER_OVERRIDES_KEY", "COURIER_PROFILES_SCHEMA_KEY",
@@ -624,6 +626,47 @@ console.log("\n6b · override migration");
   });
   check("the month is preserved (keys keep their ::YYYY-MM suffix)", () => {
     Object.keys(out.migrated).forEach(k => ok(/::\d{4}-\d{2}$/.test(k), "malformed override key: " + k));
+  });
+}
+
+// ── 6d · a parked ambassador conflict must clear itself once resolved ───────────────
+// Bug found live on his dashboard (2026-07-30): he assigned the ambassador on the correct twin
+// via the Ambassadors picker, but the "Needs your decision" panel kept listing the pair. The
+// parked 'nm:' record and the twin's real id:-keyed record are two unrelated pieces of storage —
+// assigning the ambassador writes only the twin's own record, and nothing ever told the parked
+// entry it had been handled. dkDataConflicts must now recognise that and stop surfacing it.
+console.log("\n6d · a resolved parked conflict stops appearing in the panel");
+{
+  const R = S.getProfileResolver();
+  const store = {};
+  store["nm:" + S.driverKey(PAIRS.asiri.name)] = {
+    _name: PAIRS.asiri.name, ambassador: "Omar", _collision: true,
+    _collisionIdents: ["id:" + PAIRS.asiri.a.id, "id:" + PAIRS.asiri.b.id],
+  };
+  S.saveCourierProfiles(store);
+  check("an untouched parked conflict IS listed", () => {
+    const c = S.dkDataConflicts();
+    ok(c.parked.some(p => p.name === PAIRS.asiri.name), "parked entry missing before resolution");
+  });
+  check("assigning the ambassador on ONE twin clears it from the panel", () => {
+    const A = identOf("asiri", "a");
+    S.upsertCourierProfile(A, { ...S.defaultProfile(), ambassador: "Real Ambassador" });
+    const c = S.dkDataConflicts();
+    ok(!c.parked.some(p => p.name === PAIRS.asiri.name), "still listed after being resolved");
+  });
+  check("the OTHER twin is untouched by that assignment (still no ambassador)", () => {
+    const B = identOf("asiri", "b");
+    eq(S.getCourierProfile(B).ambassador, null, "twin B should not have inherited the tag");
+  });
+  check("a genuinely still-open conflict (neither twin assigned) keeps showing", () => {
+    const store2 = {};
+    store2["nm:" + S.driverKey(PAIRS.meshari.name)] = {
+      _name: PAIRS.meshari.name, ambassador: "Someone", _collision: true,
+      _collisionIdents: ["id:" + PAIRS.meshari.a.id, "id:" + PAIRS.meshari.b.id],
+    };
+    S.saveCourierProfiles(store2);
+    const c = S.dkDataConflicts();
+    ok(c.parked.some(p => p.name === PAIRS.meshari.name), "an unresolved conflict must still show");
   });
 }
 
