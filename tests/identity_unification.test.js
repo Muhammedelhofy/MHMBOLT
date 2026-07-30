@@ -94,7 +94,7 @@ function grabConst(name) {
 const FUNCS = [
   // identity core
   "driverKey", "identSigsOf", "normPhoneForMatch", "buildProfileResolver", "getProfileResolver",
-  "courierIdentityKey", "identityOf", "identKeyOf", "identNameOf", "isTwinName", "twinSuffix",
+  "courierIdentityKey", "isIdentityKey", "identityOf", "identKeyOf", "identNameOf", "isTwinName", "twinSuffix",
   "driverRowMatches", "courierKeyToName", "courierProfileNames",
   // profile store
   "defaultProfile", "loadCourierProfiles", "saveCourierProfiles",
@@ -103,6 +103,7 @@ const FUNCS = [
   "loadOverrides", "saveOverrides", "overrideKey", "getOverride", "upsertOverride", "getEffectiveProfile",
   // money
   "entryMonthYear", "entryInMonth", "loadReconcile", "getReconciledNet",
+  "monthlyNetIndex", "monthlyNetEntry", "daysWorkedForMonth", "firstSeenIndex", "driverFirstSeenMs",
   "sumDriverNetForMonth", "rawDailyNetForMonth", "invalidateNetCache",
   "computeDriverNetForPeriod", "getDriversInMonth", "profileOnlyIdentities",
   "getAllDriverIdentities", "identityByKey",
@@ -147,12 +148,14 @@ function buildSandbox(history) {
     let _profRes = null, _profResHraw = null, _profResCd = -1, _profResSc = -1;
     let _allIdentCache = null, _allIdentH = null, _allIdentP = null;
     let _dcCache = null, _dcH = null, _dcP = null;
+    let _monthNetIdx = null, _monthNetIdxRaw = null;
+    let _firstSeenIdx = null, _firstSeenIdxRaw = null;
   `;
   const body = preamble
     + "\n" + CONSTS.map(grabConst).join("\n")
     + "\n" + FUNCS.map(grabFunction).join("\n")
     + "\n return { " + FUNCS.join(", ") + ", "
-    + "resetCaches: () => { _netCache = new Map(); _profRes = null; _profResHraw = null; _profResCd = -1; _profResSc = -1; _allIdentCache = null; _allIdentH = null; _allIdentP = null; },"
+    + "resetCaches: () => { _netCache = new Map(); _profRes = null; _profResHraw = null; _profResCd = -1; _profResSc = -1; _allIdentCache = null; _allIdentH = null; _allIdentP = null; _monthNetIdx = null; _monthNetIdxRaw = null; _firstSeenIdx = null; _firstSeenIdxRaw = null; },"
     + "COURIER_PROFILES_KEY, COURIER_OVERRIDES_KEY, RECONCILE_KEY, PROFILE_SCHEMA_S7, ls: __ls };";
   // eslint-disable-next-line no-new-func
   const api = new Function("__ls", "__history", body)(localStorage, history);
@@ -241,6 +244,84 @@ check("a colliding name is reported as a twin; a unique one is not", () => {
 check("the twin chip shows the phone's last 3 digits, and only for twins", () => {
   eq(S.twinSuffix(identOf("turki", "a")), "·" + PAIRS.turki.a.ph.slice(-3), "turki A suffix");
   eq(S.twinSuffix({ name: "Solo Captain", driverId: "50100000-0000-4000-8000-00000000000a", phone: "500111222" }), "", "solo suffix");
+});
+
+// ── 0b · a roster row's `key` is a NAME key — never mistake it for an identity ──────
+// Found on prod: computeRosterForMonth rows carry `key` = driverKey(name) with the real identity
+// in `ik`. identKeyOf trusted any `.key`, so every Today / Command Center lookup fell back to a
+// name key and re-collapsed two twins onto one cache slot and one profile record.
+console.log("\n0b · roster rows must not be mistaken for identities");
+check("isIdentityKey only accepts a prefixed key", () => {
+  ok(S.isIdentityKey("id:abc"), "id: should be an identity key");
+  ok(S.isIdentityKey("ph:557299821"), "ph: should be an identity key");
+  ok(S.isIdentityKey("nm:someone"), "nm: should be an identity key");
+  ok(!S.isIdentityKey("turki aldawsari"), "a bare name key must NOT be an identity key");
+  ok(!S.isIdentityKey(undefined), "undefined must not be an identity key");
+});
+check("a roster-shaped row resolves through its `ik`, not its name `key`", () => {
+  const real = identOf("turki", "a");
+  const rosterRow = { key: S.driverKey(PAIRS.turki.name), ik: real.key,
+                      name: PAIRS.turki.name, driverId: PAIRS.turki.a.id, phone: PAIRS.turki.a.ph };
+  eq(S.identKeyOf(rosterRow), real.key, "identKeyOf on a roster row");
+  eq(S.identityOf(rosterRow).key, real.key, "identityOf on a roster row");
+});
+check("two roster-shaped twin rows do NOT collapse onto one key", () => {
+  const A = identOf("turki", "a"), B = identOf("turki", "b");
+  const rowA = { key: S.driverKey(PAIRS.turki.name), ik: A.key, name: PAIRS.turki.name, driverId: PAIRS.turki.a.id, phone: PAIRS.turki.a.ph };
+  const rowB = { key: S.driverKey(PAIRS.turki.name), ik: B.key, name: PAIRS.turki.name, driverId: PAIRS.turki.b.id, phone: PAIRS.turki.b.ph };
+  ok(S.identKeyOf(rowA) !== S.identKeyOf(rowB), "twin roster rows collapsed onto one key");
+  eq(S.sumDriverNetForMonth(rowA, 6, 2026), PAIRS.turki.netA, "roster row A net");
+  eq(S.sumDriverNetForMonth(rowB, 6, 2026), PAIRS.turki.netB, "roster row B net");
+});
+check("a roster row with NO ik still resolves from its uuid/phone", () => {
+  const A = identOf("turki", "a");
+  const row = { key: S.driverKey(PAIRS.turki.name), name: PAIRS.turki.name, driverId: PAIRS.turki.a.id, phone: PAIRS.turki.a.ph };
+  eq(S.identityOf(row).key, A.key, "fell back to resolving the uuid");
+});
+
+// ── 0c · the month index must agree with a per-captain scan ─────────────────────────
+console.log("\n0c · monthlyNetIndex agrees with scanning, and counts worked days");
+check("the index returns the same net as summing that captain's rows by hand", () => {
+  const mismatch = [];
+  Object.keys(PAIRS).forEach(k => ["a", "b"].forEach(w => {
+    const id = identOf(k, w);
+    // by hand: per period, per distinct account, rows whose identity key matches
+    const seenP = new Set(); let total = 0;
+    history.forEach(h => {
+      if (seenP.has(h.period)) return;
+      seenP.add(h.period);
+      const day = new Set();
+      h.drivers.forEach(d => {
+        if (S.courierIdentityKey(d) !== id.key) return;
+        const sig = String(d.driverId || '') || ('p' + d.phone);
+        if (day.has(sig)) return;
+        day.add(sig);
+        total += d.netEarnings;
+      });
+    });
+    const viaIndex = S.rawDailyNetForMonth(id, 6, 2026);
+    if (viaIndex !== total) mismatch.push(`${PAIRS[k].name}/${w}: index ${viaIndex} vs hand ${total}`);
+  }));
+  if (mismatch.length) throw new Error(mismatch.join("; "));
+  return "8 captains agree";
+});
+check("worked-days counts a day ONCE per captain, and only when a row earned > 0", () => {
+  // Turki A earns on 3 of the 3 July days in the fixture; B has a 0 day in the fixture
+  const A = identOf("turki", "a");
+  eq(S.daysWorkedForMonth(A, 6, 2026), 3, "Turki A worked days");
+  const solo = S.identityOf({ name: "Solo Captain", driverId: "50100000-0000-4000-8000-00000000000a", phone: "500111222" });
+  eq(S.daysWorkedForMonth(solo, 6, 2026), 3, "Solo worked days");
+});
+check("a captain with two accounts on one day counts ONE day but BOTH nets", () => {
+  const hist4 = [{ period: "1 Jun 2026", drivers: [
+    row("Two Acct", { id: "cc110000-0000-4000-8000-0000000000c1", ph: "532000001" }, 300),
+    row("Two Acct", { id: "cc110000-0000-4000-8000-0000000000c1", ph: "532000001" }, 300),
+  ] }];
+  const S4 = buildSandbox(hist4);
+  S4.ls.setItem("khair_perf_history", JSON.stringify(hist4));
+  const id = S4.identityOf({ name: "Two Acct", driverId: "cc110000-0000-4000-8000-0000000000c1", phone: "532000001" });
+  eq(S4.daysWorkedForMonth(id, 5, 2026), 1, "should be one worked day");
+  eq(S4.rawDailyNetForMonth(id, 5, 2026), 300, "duplicate account row must not double-count");
 });
 
 // ── 1 · AC1 — the money splits, and the parts sum to the whole ─────────────────────

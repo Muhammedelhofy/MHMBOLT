@@ -2549,7 +2549,13 @@ function entryInMonth(h, month, year) {
 // main source of Finance-tab lag. Memoize the result; the cache is cleared whenever the two
 // inputs change (saveHistory / saveReconcile), so it can never go stale.
 let _netCache = new Map();
-function invalidateNetCache() { _netCache.clear(); }
+function invalidateNetCache() {
+  _netCache.clear();
+  // The month/day index self-heals on the raw history string, but drop it here too so one call
+  // clears every derived net figure — a future caller should not have to know which is which.
+  _monthNetIdx = null; _monthNetIdxRaw = null;
+  _firstSeenIdx = null; _firstSeenIdxRaw = null;
+}
 // S7 — `who` is an IDENTITY (identityOf) or, for back-compat, a bare driver name. The cache
 // keys on the identity key, not the name key: two captains sharing a name have two different
 // keys, so their months can no longer land in the same cache slot and collapse into one.
@@ -2559,7 +2565,7 @@ function sumDriverNetForMonth(who, month, year, driverId) {
   // captures late-posted campaign bonuses + adjustments the daily uploads can't have
   // (they're snapshots taken before Bolt settles). Un-reconciled months / unmatched
   // drivers fall back to the daily-sum. This is the single point every bonus reads.
-  const id = (typeof who === 'object' && who && who.key)
+  const id = (typeof who === 'object' && who && isIdentityKey(who.key))
     ? who
     : identityOf(typeof who === 'string' ? { name: who, driverId } : who);
   const key = id.key + '|' + month + '|' + year;
@@ -2583,28 +2589,66 @@ function sumDriverNetForMonth(who, month, year, driverId) {
 // person's earnings. Distinct-account de-duping is what keeps that from becoming a double
 // count — a merged history entry can carry the same account row twice (the F1/R2 union merge),
 // and `.find` used to hide that by construction.
-function rawDailyNetForMonth(who, month, year, driverId, phone) {
-  const target = (typeof who === 'object' && who && who.key)
-    ? who
-    : identityOf(typeof who === 'string' ? { name: who, driverId, phone } : who);
+// month -> (identityKey -> net), built in ONE pass over history.
+//
+// S7 perf — this replaces a per-captain scan of the whole history. That scan cost ~2ms per
+// captain, and Today alone asks for every roster row's previous month several times per render:
+// measured on prod, renderToday took 5.5s against a ~51ms baseline and the tab looked hung on
+// "Loading today's picture...". Grouping by identity in a single traversal is O(rows) for the
+// entire fleet instead of O(rows x captains), and it produces the SAME numbers because it applies
+// the same two de-dupes the scan did: one history entry per period, and one row per account
+// per day (a person may hold two Bolt accounts — Model B — and both are their earnings).
+// Memoised on the raw history string, like getProfileResolver and firstSeenIndex.
+let _monthNetIdx = null, _monthNetIdxRaw = null;
+function monthlyNetIndex() {
+  const raw = localStorage.getItem('khair_perf_history') || '';
+  if (_monthNetIdx && raw === _monthNetIdxRaw) return _monthNetIdx;
+  const idx = new Map();                       // 'year-month0' -> Map(identityKey -> {net, days})
+  const periodsSeen = new Map();               // 'year-month0' -> Set(period)
   const acctSig = d => String(d.driverId || '').trim()
     || ('p' + String(d.phone || '').replace(/\D/g, '').slice(-9))
     || ('n' + driverKey(d.name));
-  const seen = new Set(); let total = 0;
   for (const h of getHistory()) {
-    if (!entryInMonth(h, month, year) || seen.has(h.period)) continue;
+    const my = entryMonthYear(h);
+    if (!my) continue;
+    const mk = my.year + '-' + my.month;
+    let seen = periodsSeen.get(mk);
+    if (!seen) { seen = new Set(); periodsSeen.set(mk, seen); }
+    if (seen.has(h.period)) continue;           // duplicate upload of the same day
     seen.add(h.period);
-    const drivers = Array.isArray(h.drivers) ? h.drivers : [];
+    let m = idx.get(mk);
+    if (!m) { m = new Map(); idx.set(mk, m); }
     const day = new Set();
-    for (const d of drivers) {
-      if (!driverRowMatches(d, target)) continue;
-      const sig = acctSig(d);
+    const workedToday = new Set();              // identities with a net>0 row on THIS day
+    for (const d of (Array.isArray(h.drivers) ? h.drivers : [])) {
+      if (!d.name) continue;
+      const k = courierIdentityKey(d);
+      const sig = k + '|' + acctSig(d);
       if (day.has(sig)) continue;
       day.add(sig);
-      total += sN(d.netEarnings);
+      const net = sN(d.netEarnings);
+      let e = m.get(k);
+      if (!e) { e = { net: 0, days: 0 }; m.set(k, e); }
+      e.net += net;
+      // A WORKED DAY is a day with at least one row earning net > 0 — matching the old
+      // `rows.some(d => net > 0)` exactly (not "the day's sum is positive", which a reversal
+      // could zero out). Counted once per day however many accounts the person holds.
+      if (net > 0) workedToday.add(k);
     }
+    workedToday.forEach(k => { m.get(k).days++; });
   }
-  return total;
+  _monthNetIdx = idx; _monthNetIdxRaw = raw;
+  return idx;
+}
+function monthlyNetEntry(who, month, year, driverId, phone) {
+  const id = (typeof who === 'object' && who && isIdentityKey(who.key))
+    ? who
+    : identityOf(typeof who === 'string' ? { name: who, driverId, phone } : who);
+  const m = monthlyNetIndex().get(year + '-' + month);
+  return (m && m.get(id.key)) || { net: 0, days: 0 };
+}
+function rawDailyNetForMonth(who, month, year, driverId, phone) {
+  return monthlyNetEntry(who, month, year, driverId, phone).net;
 }
 // ── Month-end Bolt reconcile store ─────────────────────────────────────────────
 // { 'YYYY-MM': { byKey: { identityKey|driverKey: finalisedNet }, at, drivers } }. Synced to cloud.
@@ -4621,24 +4665,17 @@ function bonusFor(net, monthKey, opts) {
 // through driverRowMatches, the same test the net sum uses, so the DAY COUNT and the NET behind
 // a prorated bonus always describe the same person. The old name-or-uuid `.find` counted a
 // twin's days for whichever of the pair was asked about first.
+// S7 perf — reads the shared monthlyNetIndex rather than re-scanning the whole history per
+// captain. bonusForDriver calls this for every captain in the fleet, so the scan version cost
+// seconds on the Executive P&L and the tier classification.
 function daysWorkedForMonth(who, month, year, driverId) {
-  const target = (typeof who === 'object' && who && who.key)
-    ? who
-    : identityOf(typeof who === 'string' ? { name: who, driverId } : who);
-  const seen = new Set(); let days = 0;
-  for (const h of getHistory()) {
-    if (!entryInMonth(h, month, year) || seen.has(h.period)) continue;
-    seen.add(h.period);
-    const rows = (Array.isArray(h.drivers) ? h.drivers : []).filter(x => driverRowMatches(x, target));
-    if (rows.some(d => sN(d.netEarnings) > 0)) days++;   // a day counts once, however many accounts
-  }
-  return days;
+  return monthlyNetEntry(who, month, year, driverId).days;
 }
 // Invoice-matching Bolt bonus for a driver in a month: resolves worked-days + daily pace,
 // then prorates via bonusFor(...opts). Use wherever we report what Bolt ACTUALLY paid the fleet.
 function bonusForDriver(who, income, monthKey, driverId) {
   const [y, m] = monthKey.split('-').map(Number);
-  const id = (typeof who === 'object' && who && who.key)
+  const id = (typeof who === 'object' && who && isIdentityKey(who.key))
     ? who
     : identityOf(typeof who === 'string' ? { name: who, driverId } : who);
   const days = daysWorkedForMonth(id, m - 1, y);
@@ -7466,17 +7503,28 @@ function courierIdentityKey(arg) {
 // callers never have to branch. A bare AMBIGUOUS name yields key 'nm:<name>', which resolves
 // to NEITHER colliding captain — deliberately, so a name-only caller can never be handed the
 // wrong person's money. Pass driverId/phone to address a specific twin.
+// An identity KEY always carries one of these prefixes. Testing the SHAPE rather than merely
+// "does it have a .key" matters: a computeRosterForMonth row carries `key` = the NAME key (with
+// `ik` holding its real identity), so a bare `arg.key` shortcut silently handed back a name key
+// and re-collapsed two twins onto one cache slot and one profile record — the very bug this
+// build exists to kill. Anything whose `key` is not prefixed gets resolved properly instead.
+function isIdentityKey(k) { return typeof k === 'string' && /^(id:|ph:|nm:)/.test(k); }
 function identityOf(arg) {
-  if (arg && typeof arg === 'object' && typeof arg.key === 'string' && arg.key) return arg;
+  if (arg && typeof arg === 'object' && isIdentityKey(arg.key)) return arg;
   const d = (typeof arg === 'string') ? { name: arg } : (arg || {});
   const name = String(d.name == null ? '' : d.name).trim();
   const driverId = String(d.driverId || '').trim();
   const phone = String(d.phone || '');
-  return { key: courierIdentityKey({ name, driverId, phone }), name, driverId, phone };
+  // A roster row already knows its identity as `ik` — take it rather than re-resolving.
+  const key = isIdentityKey(d.ik) ? d.ik : courierIdentityKey({ name, driverId, phone });
+  return { key, name, driverId, phone };
 }
 // The identity KEY for anything — reuses a carried key, so the hot paths stay O(1).
 function identKeyOf(arg) {
-  if (arg && typeof arg === 'object' && typeof arg.key === 'string' && arg.key) return arg.key;
+  if (arg && typeof arg === 'object') {
+    if (isIdentityKey(arg.key)) return arg.key;
+    if (isIdentityKey(arg.ik)) return arg.ik;
+  }
   return courierIdentityKey(arg);
 }
 // The display NAME for anything identity-like (identity, driver row, or bare name).

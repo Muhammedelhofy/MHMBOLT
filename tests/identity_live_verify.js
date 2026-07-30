@@ -82,8 +82,9 @@ function grabConst(name) {
 
 const FUNCS = [
   "driverKey", "identSigsOf", "normPhoneForMatch", "buildProfileResolver", "getProfileResolver",
-  "courierIdentityKey", "identityOf", "identKeyOf", "isTwinName", "twinSuffix", "driverRowMatches",
-  "courierKeyToName", "courierProfileNames",
+  "courierIdentityKey", "isIdentityKey", "identityOf", "identKeyOf", "isTwinName", "twinSuffix",
+  "driverRowMatches", "courierKeyToName", "courierProfileNames",
+  "monthlyNetIndex", "monthlyNetEntry", "daysWorkedForMonth", "firstSeenIndex", "driverFirstSeenMs",
   "defaultProfile", "loadCourierProfiles", "saveCourierProfiles", "getCourierProfile",
   "upsertCourierProfile", "hasCourierProfile",
   "loadOverrides", "saveOverrides", "getOverride", "upsertOverride", "getEffectiveProfile",
@@ -128,12 +129,14 @@ function buildSandbox(history) {
     let _netCache = new Map();
     let _profRes = null, _profResHraw = null, _profResCd = -1, _profResSc = -1;
     let _allIdentCache = null, _allIdentH = null, _allIdentP = null;
+    let _monthNetIdx = null, _monthNetIdxRaw = null;
+    let _firstSeenIdx = null, _firstSeenIdxRaw = null;
   `;
   const body = preamble
     + "\n" + CONSTS.map(grabConst).join("\n")
     + "\n" + FUNCS.map(grabFunction).join("\n")
     + "\n return { " + FUNCS.join(", ")
-    + ", resetCaches: () => { _netCache = new Map(); _profRes = null; _profResHraw = null; _profResCd = -1; _profResSc = -1; _allIdentCache = null; _allIdentH = null; _allIdentP = null; }"
+    + ", resetCaches: () => { _netCache = new Map(); _profRes = null; _profResHraw = null; _profResCd = -1; _profResSc = -1; _allIdentCache = null; _allIdentH = null; _allIdentP = null; _monthNetIdx = null; _monthNetIdxRaw = null; _firstSeenIdx = null; _firstSeenIdxRaw = null; }"
     + ", COURIER_PROFILES_KEY, COURIER_OVERRIDES_KEY, PROFILE_SCHEMA_S7, ls: __ls };";
   // eslint-disable-next-line no-new-func
   return new Function("__ls", "__history", body)(localStorage, history);
