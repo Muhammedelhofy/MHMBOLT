@@ -69,9 +69,11 @@ function grabConst(name) {
 }
 
 const FUNCS = ["driverKey", "identSigsOf", "normPhoneForMatch", "buildProfileResolver", "getProfileResolver",
-  "courierIdentityKey", "identityOf", "identKeyOf", "isTwinName", "driverRowMatches", "courierKeyToName",
-  "courierProfileNames", "defaultProfile", "loadCourierProfiles", "saveCourierProfiles",
-  "firstSeenIndex", "driverFirstSeenMs", "unpackDriver", "unpackEntry", "readCloudHistory"];
+  "courierIdentityKey", "isIdentityKey", "identityOf", "identKeyOf", "isTwinName", "driverRowMatches",
+  "courierKeyToName", "courierProfileNames", "defaultProfile", "loadCourierProfiles", "saveCourierProfiles",
+  "firstSeenIndex", "driverFirstSeenMs", "entryMonthYear", "entryInMonth",
+  "monthlyNetIndex", "monthlyNetEntry", "rawDailyNetForMonth", "daysWorkedForMonth",
+  "unpackDriver", "unpackEntry", "readCloudHistory"];
 const CONSTS = ["COURIER_PROFILES_KEY", "CLOUD_FMT"];
 
 function buildSandbox(history) {
@@ -93,8 +95,12 @@ function buildSandbox(history) {
     }
     let _profRes = null, _profResHraw = null, _profResCd = -1, _profResSc = -1;
     let _firstSeenIdx = null, _firstSeenIdxRaw = null;
-    // the PRE-196 implementation, kept here only so the two can be compared
-    function driverFirstSeenMs_v195(who) {
+    let _monthNetIdx = null, _monthNetIdxRaw = null;
+    let _netCache = new Map();
+    function invalidateNetCache() { _netCache = new Map(); _monthNetIdx = null; _monthNetIdxRaw = null; _firstSeenIdx = null; _firstSeenIdxRaw = null; }
+    // The PRE-index implementations, kept here ONLY so the two can be compared. If these ever
+    // disagree with the indexed versions on real data, the index has a bug.
+    function driverFirstSeenMs_scan(who) {
       const id = identityOf(who);
       let earliest = null;
       for (const h of getHistory()) {
@@ -106,10 +112,42 @@ function buildSandbox(history) {
       }
       return earliest;
     }
+    function rawDailyNetForMonth_scan(who, month, year) {
+      const target = identityOf(who);
+      const acctSig = d => String(d.driverId || '').trim()
+        || ('p' + String(d.phone || '').replace(/\\D/g, '').slice(-9))
+        || ('n' + driverKey(d.name));
+      const seen = new Set(); let total = 0;
+      for (const h of getHistory()) {
+        if (!entryInMonth(h, month, year) || seen.has(h.period)) continue;
+        seen.add(h.period);
+        const day = new Set();
+        for (const d of (Array.isArray(h.drivers) ? h.drivers : [])) {
+          if (!driverRowMatches(d, target)) continue;
+          const sig = acctSig(d);
+          if (day.has(sig)) continue;
+          day.add(sig);
+          total += sN(d.netEarnings);
+        }
+      }
+      return total;
+    }
+    function daysWorkedForMonth_scan(who, month, year) {
+      const target = identityOf(who);
+      const seen = new Set(); let days = 0;
+      for (const h of getHistory()) {
+        if (!entryInMonth(h, month, year) || seen.has(h.period)) continue;
+        seen.add(h.period);
+        const rows = (Array.isArray(h.drivers) ? h.drivers : []).filter(x => driverRowMatches(x, target));
+        if (rows.some(d => sN(d.netEarnings) > 0)) days++;
+      }
+      return days;
+    }
   `;
   const body = preamble + "\n" + CONSTS.map(grabConst).join("\n") + "\n" + FUNCS.map(grabFunction).join("\n")
-    + "\n return { " + FUNCS.join(", ") + ", driverFirstSeenMs_v195, ls: __ls,"
-    + " resetFirstSeen: () => { _firstSeenIdx = null; _firstSeenIdxRaw = null; } };";
+    + "\n return { " + FUNCS.join(", ")
+    + ", driverFirstSeenMs_scan, rawDailyNetForMonth_scan, daysWorkedForMonth_scan, ls: __ls,"
+    + " resetIdx: () => { _firstSeenIdx = null; _firstSeenIdxRaw = null; _monthNetIdx = null; _monthNetIdxRaw = null; } };";
   return new Function("__ls", "__history", body)(ls, history);
 }
 
@@ -143,47 +181,67 @@ function buildSandbox(history) {
     catch (e) { fails++; console.log("  FAIL  " + label + "\n          " + e.message); }
   };
 
-  // 1 · agreement
-  check("indexed and scanning implementations agree for every unambiguous captain", () => {
-    let checked = 0, differ = [];
+  const N = reps.length;
+  const months = [...new Set(history.map(h => { const my = S.entryMonthYear(h); return my ? my.year + '|' + my.month : null; }).filter(Boolean))];
+  const [ly, lm] = months[months.length - 1].split('|').map(Number);
+
+  // ── 1 · AGREEMENT — the indexes must return exactly what the scans returned ──────
+  console.log("1 · the indexes agree with the per-captain scans they replaced");
+  check("driverFirstSeenMs: identical for every unambiguous captain", () => {
+    let checked = 0; const differ = [];
     reps.forEach(d => {
-      if (S.isTwinName(d.name)) return;          // twins: v195 returned the PAIR's earliest, by design of the old bug
-      const a = S.driverFirstSeenMs(d), b = S.driverFirstSeenMs_v195(d);
+      if (S.isTwinName(d.name)) return;   // the scan returned the PAIR's earliest — the old bug
+      const a = S.driverFirstSeenMs(d), b = S.driverFirstSeenMs_scan(d);
       checked++;
       if (a !== b) differ.push((d.name || '?') + ': ' + a + ' vs ' + b);
     });
     if (differ.length) throw new Error(differ.length + " differ: " + differ.slice(0, 5).join("; "));
-    return checked + " captains, identical results";
+    return checked + " captains, identical";
+  });
+  check("rawDailyNetForMonth: identical for EVERY captain, including twins (money)", () => {
+    const differ = [];
+    reps.forEach(d => {
+      const a = S.rawDailyNetForMonth(d, lm, ly), b = S.rawDailyNetForMonth_scan(d, lm, ly);
+      if (Math.abs(a - b) > 0.005) differ.push((d.name || '?') + ': index ' + a + ' vs scan ' + b);
+    });
+    if (differ.length) throw new Error(differ.length + " differ: " + differ.slice(0, 5).join("; "));
+    return N + " captains, identical to the halala";
+  });
+  check("daysWorkedForMonth: identical for EVERY captain (drives prorated bonuses)", () => {
+    const differ = [];
+    reps.forEach(d => {
+      const a = S.daysWorkedForMonth(d, lm, ly), b = S.daysWorkedForMonth_scan(d, lm, ly);
+      if (a !== b) differ.push((d.name || '?') + ': index ' + a + ' vs scan ' + b);
+    });
+    if (differ.length) throw new Error(differ.length + " differ: " + differ.slice(0, 5).join("; "));
+    return N + " captains, identical";
   });
 
-  check("each twin now gets their OWN first day (not the pair's earliest)", () => {
-    const twins = reps.filter(d => S.isTwinName(d.name));
-    if (!twins.length) return "no twins in this data";
-    const vals = twins.map(d => S.driverFirstSeenMs(d)).filter(v => v !== null);
-    return twins.length + " twin rows, " + new Set(vals).size + " distinct first-days";
-  });
+  // ── 2 · SPEED — a full render's worth of calls ───────────────────────────────────
+  console.log("\n2 · speed over " + N + " captains (what one render asks for)");
+  const bench = (label, indexed, scanned) => {
+    S.resetIdx();
+    let t = process.hrtime.bigint();
+    reps.forEach(indexed);
+    const nm = Number(process.hrtime.bigint() - t) / 1e6;
+    t = process.hrtime.bigint();
+    reps.forEach(scanned);
+    const om = Number(process.hrtime.bigint() - t) / 1e6;
+    check(label, () => {
+      if (!(nm * 5 < om)) throw new Error(`indexed ${nm.toFixed(0)}ms vs scanning ${om.toFixed(0)}ms — not a clear win`);
+      return `indexed ${nm.toFixed(0)}ms vs scanning ${om.toFixed(0)}ms  →  ${(om / nm).toFixed(0)}x faster, ~${Math.round(om - nm)}ms off every render`;
+    });
+    return nm;
+  };
+  bench("driverFirstSeenMs", d => S.driverFirstSeenMs(d), d => S.driverFirstSeenMs_scan(d));
+  const netMs = bench("rawDailyNetForMonth", d => S.rawDailyNetForMonth(d, lm, ly), d => S.rawDailyNetForMonth_scan(d, lm, ly));
+  bench("daysWorkedForMonth", d => S.daysWorkedForMonth(d, lm, ly), d => S.daysWorkedForMonth_scan(d, lm, ly));
 
-  // 2 · speed, over a full render's worth of calls
-  const N = reps.length;
-  S.resetFirstSeen();
-  let t = process.hrtime.bigint();
-  reps.forEach(d => S.driverFirstSeenMs(d));
-  const newMs = Number(process.hrtime.bigint() - t) / 1e6;
-
-  t = process.hrtime.bigint();
-  reps.forEach(d => S.driverFirstSeenMs_v195(d));
-  const oldMs = Number(process.hrtime.bigint() - t) / 1e6;
-
-  console.log("");
-  check(`${N} calls (one per captain, as a Captains render does) got dramatically faster`, () => {
-    if (!(newMs * 5 < oldMs)) throw new Error(`indexed ${newMs.toFixed(0)}ms vs scanning ${oldMs.toFixed(0)}ms — not a clear win`);
-    return `indexed ${newMs.toFixed(0)}ms vs scanning ${oldMs.toFixed(0)}ms  →  ${(oldMs / newMs).toFixed(0)}x faster, ${Math.round(oldMs - newMs)}ms removed from every render`;
-  });
   check("the index is memoised — a second full pass is effectively free", () => {
     const t2 = process.hrtime.bigint();
-    reps.forEach(d => S.driverFirstSeenMs(d));
+    reps.forEach(d => S.rawDailyNetForMonth(d, lm, ly));
     const again = Number(process.hrtime.bigint() - t2) / 1e6;
-    if (again > newMs) throw new Error(`second pass ${again.toFixed(1)}ms was not faster than the first ${newMs.toFixed(1)}ms`);
+    if (again > netMs) throw new Error(`second pass ${again.toFixed(1)}ms was not faster than the first ${netMs.toFixed(1)}ms`);
     return `second pass ${again.toFixed(1)}ms`;
   });
 
