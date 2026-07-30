@@ -3237,7 +3237,7 @@ function openModal(id, periodFilter, ctx) {
   // Full history for this driver (since their first working day), not just one month.
   const fullHistory = getDriverAllHistory(d.driverId, d.name, d.phone);   // S3: phone helps scope a collision name
   // "First seen" = earliest day this captain appears in the dashboard's history.
-  const _firstSeenMs = driverFirstSeenMs(d.name);
+  const _firstSeenMs = driverFirstSeenMs(d);   // S7: the row carries the identity — a twin gets their OWN first day
   const firstSeenStr = _firstSeenMs ? new Date(_firstSeenMs).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : null;
   // Store everything the body renderer needs so the month filter can re-render
   // without re-deriving the driver lookup. Inherit the Captains screen's month filter
@@ -8140,17 +8140,36 @@ function computeTransferStatus(driverName, cycleDateYMD, log, driverId, phone) {
 // Used to flag a transfer recorded on a date BEFORE the driver was ever on the
 // fleet — the "driver who joined later shows on 9 May" data-integrity bug.
 // Returns null if the driver never appears in history (can't judge).
-function driverFirstSeenMs(who) {
-  const id = identityOf(who);                     // S7 — identity, not a bare name
-  let earliest = null;
+// First day we have data for each captain, as ONE index over the whole history.
+//
+// S7 perf — this used to scan all 82 history entries per call with a cheap name compare. Making
+// it identity-correct (driverRowMatches) made each call ~6.4ms, and the Captains table calls it
+// once per rendered row: 227 rows x 6.4ms = ~1.5s added to a 219ms render. Building the index in
+// a single pass costs one traversal for the whole render instead of one per captain, so it is both
+// identity-correct and faster than the original. Memoised on the raw history string, exactly like
+// getProfileResolver, so it cannot go stale.
+let _firstSeenIdx = null, _firstSeenIdxRaw = null;
+function firstSeenIndex() {
+  const raw = localStorage.getItem('khair_perf_history') || '';
+  if (_firstSeenIdx && raw === _firstSeenIdxRaw) return _firstSeenIdx;
+  const idx = new Map();
   for (const h of getHistory()) {
-    const d = (h.drivers || []).find(x => driverRowMatches(x, id));
-    if (!d) continue;
     const ms = periodSortKey(h.period);
     if (!ms) continue;
-    if (earliest === null || ms < earliest) earliest = ms;
+    for (const d of (h.drivers || [])) {
+      if (!d.name) continue;
+      const k = courierIdentityKey(d);
+      const cur = idx.get(k);
+      if (cur === undefined || ms < cur) idx.set(k, ms);
+    }
   }
-  return earliest;
+  _firstSeenIdx = idx; _firstSeenIdxRaw = raw;
+  return idx;
+}
+function driverFirstSeenMs(who) {
+  const id = identityOf(who);                     // S7 — identity, not a bare name
+  const hit = firstSeenIndex().get(id.key);
+  return hit === undefined ? null : hit;
 }
 
 function transferStatusBadge(status) {
@@ -13763,7 +13782,7 @@ function _computeRosterForMonth(monthSel) {
 
   const dataStartMs = allSorted.length ? periodSortKey(allSorted[0].period) : 0; // earliest day we actually have
   const drivers = Object.values(agg).map(a => {
-    const firstSeen = driverFirstSeenMs(a.name);
+    const firstSeen = driverFirstSeenMs(a);   // S7: `a` carries this identity's uuid + phone
     // "First seen" is bounded by our loaded history. If a driver is already present on the
     // earliest day we have data, their real join date may be EARLIER — we can't confirm it,
     // so we DON'T call them "new" and we render the date as uncertain (≤) rather than guess.
