@@ -94,7 +94,7 @@ function buildSandbox(history) {
       const last = m[m.length-1].match(/(\\d{1,2})\\s(\\w{3})\\s(\\d{4})/);
       return Date.UTC(+last[3], MONTH_MAP[last[2]] || 0, +last[1]);
     }
-    let _profRes = null, _profResHraw = null, _profResCd = -1, _profResSc = -1;
+    let _profRes = null, _profResSrc = null, _profResCd = -1, _profResSc = -1;
     let _firstSeenIdx = null, _firstSeenIdxSrc = null, _firstSeenIdxRes = null;
     let _monthNetIdx = null, _monthNetIdxSrc = null, _monthNetIdxRes = null;
     let _netCache = new Map();

@@ -128,7 +128,7 @@ function buildSandbox(history) {
       return Date.UTC(+last[3], MONTH_MAP[last[2]] || 0, +last[1]);
     }
     let _netCache = new Map();
-    let _profRes = null, _profResHraw = null, _profResCd = -1, _profResSc = -1;
+    let _profRes = null, _profResSrc = null, _profResCd = -1, _profResSc = -1;
     let _allIdentCache = null, _allIdentH = null, _allIdentP = null;
     let _monthNetIdx = null, _monthNetIdxSrc = null, _monthNetIdxRes = null;
     let _firstSeenIdx = null, _firstSeenIdxSrc = null, _firstSeenIdxRes = null;
@@ -137,7 +137,7 @@ function buildSandbox(history) {
     + "\n" + CONSTS.map(grabConst).join("\n")
     + "\n" + FUNCS.map(grabFunction).join("\n")
     + "\n return { " + FUNCS.join(", ")
-    + ", resetCaches: () => { _netCache = new Map(); _profRes = null; _profResHraw = null; _profResCd = -1; _profResSc = -1; _allIdentCache = null; _allIdentH = null; _allIdentP = null; _monthNetIdx = null; _monthNetIdxSrc = null; _monthNetIdxRes = null; _firstSeenIdx = null; _firstSeenIdxSrc = null; _firstSeenIdxRes = null; }"
+    + ", resetCaches: () => { _netCache = new Map(); _profRes = null; _profResSrc = null; _profResCd = -1; _profResSc = -1; _allIdentCache = null; _allIdentH = null; _allIdentP = null; _monthNetIdx = null; _monthNetIdxSrc = null; _monthNetIdxRes = null; _firstSeenIdx = null; _firstSeenIdxSrc = null; _firstSeenIdxRes = null; }"
     + ", COURIER_PROFILES_KEY, COURIER_OVERRIDES_KEY, PROFILE_SCHEMA_S7, ls: __ls };";
   // eslint-disable-next-line no-new-func
   return new Function("__ls", "__history", body)(localStorage, history);

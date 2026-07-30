@@ -2555,6 +2555,9 @@ function invalidateNetCache() {
   // clears every derived net figure — a future caller should not have to know which is which.
   _monthNetIdx = null; _monthNetIdxSrc = null; _monthNetIdxRes = null;
   _firstSeenIdx = null; _firstSeenIdxSrc = null; _firstSeenIdxRes = null;
+  // The identity resolver is derived from history too, and both indexes above store keys it
+  // produced — drop it in the same breath so they can never be rebuilt against a stale resolver.
+  _profRes = null; _profResSrc = null; _profResCd = -1; _profResSc = -1;
 }
 // S7 — `who` is an IDENTITY (identityOf) or, for back-compat, a bare driver name. The cache
 // keys on the identity key, not the name key: two captains sharing a name have two different
@@ -7480,19 +7483,25 @@ function buildProfileResolver(rows) {
 }
 // Memoised profile resolver over history + the currently-loaded day + the synced onboarding
 // sheet (which carries phone-only rows). Rebuilds only when one of those inputs changes.
-let _profRes = null, _profResHraw = null, _profResCd = -1, _profResSc = -1;
+// S7 perf — the staleness check compares the history CACHE ARRAY by reference, not the raw
+// string. It used to read `khair_perf_history` (2.2MB on his device) and compare it in full on
+// EVERY call. That was tolerable when only a few call sites used it; identity-keying made
+// courierIdentityKey — and therefore this — run roughly once per driver-day, ~18,000 times per
+// Captains render, which is ~3s of pure localStorage reads. A reference compare is O(1).
+// getHistory() (called by the build path below) is what keeps _histCacheArr fresh, and
+// saveHistory — the only writer — drops this cache through invalidateNetCache().
+let _profRes = null, _profResSrc = null, _profResCd = -1, _profResSc = -1;
 function getProfileResolver() {
-  const hraw = localStorage.getItem('khair_perf_history') || '';
   const cd = (typeof currentDrivers !== 'undefined' && Array.isArray(currentDrivers)) ? currentDrivers.length : 0;
   const sc = (typeof sheetAmbassadorSyncCache !== 'undefined' && Array.isArray(sheetAmbassadorSyncCache)) ? sheetAmbassadorSyncCache.length : 0;
-  if (hraw === _profResHraw && cd === _profResCd && sc === _profResSc && _profRes) return _profRes;
+  if (_profRes && _profResSrc === _histCacheArr && cd === _profResCd && sc === _profResSc) return _profRes;
   const rows = [];
   for (const h of getHistory()) for (const d of (h.drivers || [])) rows.push(d);
   if (typeof currentDrivers !== 'undefined' && Array.isArray(currentDrivers)) for (const d of currentDrivers) rows.push(d);
   if (typeof sheetAmbassadorSyncCache !== 'undefined' && Array.isArray(sheetAmbassadorSyncCache))
     for (const s of sheetAmbassadorSyncCache) rows.push({ name: s.name, driverId: s.id, phone: s.phone });
   _profRes = buildProfileResolver(rows);
-  _profResHraw = hraw; _profResCd = cd; _profResSc = sc;
+  _profResSrc = _histCacheArr; _profResCd = cd; _profResSc = sc;
   return _profRes;
 }
 // The single key function used by BOTH the migration and every runtime profile lookup.
