@@ -3,8 +3,9 @@
 **Spec:** `BOLT_IDENTITY_UNIFICATION_SPEC.md`
 **Branch:** `feat/identity-unification` off `origin/main` @ `c6ebfda` (Build-194)
 **Model / effort:** Opus · max
-**Deployed:** ✅ LIVE on prod — `fb4dd98` (Build-195) + `2a1696e` (Build-196, perf fix), on his
-explicit OK. Verified against the deployed bytes, not the local file.
+**Deployed:** ✅ LIVE on prod through `a4c413e` (Build-199), on his explicit OK. Builds 195→199:
+the identity fix, then three rounds of fixing render performance that the identity fix broke.
+Verified against the deployed bytes, not the local file.
 **Live test:** `tests/BUILD195_LIVE_TEST.md`
 
 ---
@@ -97,21 +98,47 @@ lock paths are exercised), and the **render timings caught a real regression I h
 tabs, mobile search, the on-screen tier ladder — because the browser pane wedged and did not
 recover. Section 6 of the live-test doc, needs a human pass before the ops team leans on it.
 
-## 4b · 🔴 The render regression prod caught (Build-196)
+## 4b · 🔴 Render performance: I broke it, then fixed it over Builds 196-199
 
-The first prod measurement came back **Captains 3240ms / Today 3087ms** against the ~219ms / ~51ms
-this spec pins. Making `driverFirstSeenMs` identity-correct had replaced a cheap name compare with
-`driverRowMatches` **inside a full-history scan**, and the Captains table calls it once per
-rendered row — 6.44ms × 227 rows ≈ 1.5s, twice over.
+He reported it before I had finished checking: "page is taking too much to load", with the header
+stuck on **No data**. It was real, and it was mine.
 
-Fixed with `firstSeenIndex()`: one pass over history building `identity → earliest day`, memoised
-on the raw history string like `getProfileResolver`. **2937ms → 13ms over 221 captains (230x)**,
-and it agrees with the old implementation for all 211 unambiguous captains — so it is faster than
-the code I replaced *and* than the original, while being identity-correct.
+| | Captains | Today |
+|---|---|---|
+| Spec baseline (Build-194) | ~219ms | ~51ms |
+| Build-195 (first deploy) | **3240ms** | **3087ms** |
+| Build-196 | 537ms | 5562ms |
+| Build-198 | 2246ms | 987ms |
+| **Build-199 (now)** | **341ms** | **37ms** |
 
-Lesson worth keeping: a correctness fix that swaps a cheap predicate for an expensive one inside a
-loop is a perf change too. The unit tests were all green and said nothing about this; only
-measuring the real render on real data did.
+Three causes, none of which any unit test could see:
+
+1. **`driverFirstSeenMs`** — identity-correctness swapped a cheap name compare for
+   `driverRowMatches` **inside a full-history scan**, called once per rendered row (6.44ms × 227).
+2. **`rawDailyNetForMonth` / `daysWorkedForMonth`** — same shape; Today asks for every roster
+   row's previous month several times per render (~420ms warm / ~870ms cold, several times over).
+3. **The memo checks themselves** — the new indexes, and the pre-existing `getProfileResolver`,
+   validated their cache by comparing the **content** of `khair_perf_history`. That is 2.2MB on his
+   device. Identity-keying made `getProfileResolver` run ~18,000 times per Captains render, so the
+   staleness check alone cost ~3s. This is the subtle one: my *fix* for (1) and (2) carried the
+   same flaw, which is why Build-198 fixed Today but pushed Captains back up to 2.2s.
+
+All three are now one-pass indexes memoised on the history cache array **by reference**, with the
+resolver object folded into the token (a resolver rebuild can relabel a captain `ph:` → `id:`, so
+an index built against the old resolver would read 0 for them).
+
+`tests/identity_perf_verify.js` asserts each index returns exactly what the scan it replaced
+returned, on the real cloud history: **identical for all 221 captains, money to the halala**,
+10-289x faster.
+
+Two lessons I would keep:
+- A correctness fix that swaps a cheap predicate for an expensive one inside a per-item loop is a
+  performance change, and needs measuring on real data volumes.
+- **A cache whose staleness check is O(size of the data) is not a cache.** Memoising on content is
+  fine at ten call sites and catastrophic at eighteen thousand.
+
+Neither would have been caught without measuring the actual page. Every unit test was green
+through all of it.
 
 ## 5 · Tests
 

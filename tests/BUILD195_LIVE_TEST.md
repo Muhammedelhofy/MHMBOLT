@@ -139,28 +139,49 @@ Both builds are LIVE: `fb4dd98` (Build-195) and `2a1696e` (Build-196).
 - **Migration on prod:** 197 records — 191 `id:` · 1 `ph:` · 5 parked; both schema markers at
   `s7-uuid-identity`.
 
-### 🔴 A render regression was found on prod and fixed (Build-196)
+### 🔴 Render performance: broken by this work, then fixed over Builds 196-199
 
-First prod measurement came back **Captains 3240ms, Today 3087ms** against the ~219ms / ~51ms
-this spec asks for. Cause: making `driverFirstSeenMs` identity-correct swapped a cheap name
-compare for `driverRowMatches` inside a full-history scan, and the Captains table calls it once
-per rendered row. Replaced with a one-pass index: **2937ms → 13ms over 221 captains (230x)**,
-proven by `tests/identity_perf_verify.js` against your real data, with identical results for all
-211 unambiguous captains.
+You saw this yourself as "page is taking too much to load" with the header stuck on **No data**.
+It was real. Measured on prod, on your data:
 
-**One number I still owe you.** I could not re-measure end-to-end `renderCaptains()` after the
-fix — the browser pane wedged and never came back. The 2.9s component is provably gone, but paste
-this on prod and tell me what it says:
+| | Captains | Today |
+|---|---|---|
+| Spec baseline (Build-194) | ~219ms | ~51ms |
+| Build-195 (first deploy) | **3240ms** | **3087ms** |
+| Build-196 | 537ms | 5562ms |
+| Build-198 | 2246ms | 987ms |
+| **Build-199 (now)** | **341ms** | **37ms** |
 
-```javascript
-renderCaptains(); renderToday(); console.time('captains'); renderCaptains(); console.timeEnd('captains'); console.time('today'); renderToday(); console.timeEnd('today');
-```
+Today is now **faster than the documented baseline**. Captains is ~1.5x baseline, which is the
+genuine cost of resolving an identity per row plus the twin chip.
+
+Three separate causes, all mine, none of which any unit test could see:
+
+1. `driverFirstSeenMs` — made identity-correct by swapping a cheap name compare for
+   `driverRowMatches` **inside a full-history scan**, called once per rendered row.
+2. `rawDailyNetForMonth` / `daysWorkedForMonth` — same shape; Today asks for every roster row's
+   previous month several times per render.
+3. The memo checks on the new indexes — and on the pre-existing `getProfileResolver` — compared
+   the **content** of `khair_perf_history`. That string is 2.2MB on your device, so each check
+   was a 2.2MB read plus a full compare. Identity-keying made `getProfileResolver` run ~18,000
+   times per Captains render: ~3s of pure localStorage reads.
+
+All three now use one-pass indexes memoised on the history cache array **by reference**.
+`tests/identity_perf_verify.js` asserts each index returns exactly what the scan it replaced
+returned, over your real data — money identical to the halala for all 221 captains.
 
 ## 9 · Still not verified
 
 - **The visual/interaction half of section 6** — the company-data lock actually hiding its 6 tabs,
   mobile search, and the tier ladder / ambassador counts on screen. Their behaviour is covered at
-  the function level; how they LOOK with this code running is not.
+  the function level; how they LOOK with this code running is not. This is the last open item.
 - **`no money deal is lost` passed vacuously** on your data: not one of the 352 profiles carries
   a salary, rent or fleet-cut value, so there was nothing for that check to protect. It starts
   protecting something the first time a deal is entered.
+
+## 10 · Where perf still isn't ideal (not a regression — pre-existing, now visible)
+
+`loadCourierProfiles()` JSON-parses the whole profile store on every call, and a Captains render
+calls it several times per row (~0.3ms each, roughly 160ms of the 341ms). A parse cache would fix
+it, but callers MUTATE the profile object they get back before saving, so caching introduces an
+aliasing hazard in money code. Flagged rather than done — it needs its own think.
